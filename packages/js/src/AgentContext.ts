@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
-import type { MessageSendResponse, Part, StreamEvent } from "./types";
+import { MessageResponse } from "./MessageResponse";
+import type { Part, StreamEvent } from "./types";
 
 /**
  * A stateful conversation context (thread) with a specific agent.
@@ -14,8 +15,11 @@ import type { MessageSendResponse, Part, StreamEvent } from "./types";
  * @example
  * ```ts
  * const ctx = myAgent.createContext();
- * const r1 = await ctx.sendMessage([{ kind: "text", text: "Hello!" }]);
- * const r2 = await ctx.sendMessage([{ kind: "text", text: "Follow-up question…" }]);
+ * const r1 = await ctx.sendText("Hello!");
+ * console.log(r1.text);          // agent reply as plain string
+ * console.log(r1.status);        // "completed"
+ * console.log(r1.artifacts);     // []
+ * console.log(r1.raw);           // full AgentsMessageSendResponse
  * ```
  */
 export class AgentContext {
@@ -35,13 +39,12 @@ export class AgentContext {
   }
 
   /**
-   * Send a message and receive the agent's response.
+   * Send a message and receive a `MessageResponse`.
    *
-   * On the first call the server creates a new context and returns a
-   * `task.contextId`; the wrapper stores that ID and replays it on every
-   * subsequent call so the conversation continues in the same thread.
+   * On the first call the server creates a new context; subsequent calls
+   * automatically continue the same thread.
    */
-  async sendMessage(parts: Part[]): Promise<MessageSendResponse> {
+  async sendMessage(parts: Part[]): Promise<MessageResponse> {
     const response = await this.client.agents.messageSend(this.agentId, {
       message: {
         role: "user",
@@ -59,19 +62,21 @@ export class AgentContext {
       }
     }
 
-    return response;
+    return new MessageResponse(response);
   }
 
   /**
-   * Convenience helper for the common case of sending a plain-text message.
+   * Convenience helper — sends a plain-text message.
    *
    * @example
    * ```ts
-   * const r = await ctx.sendText("What is the weather in Copenhagen?");
-   * console.log(r.task?.status.message?.parts);
+   * const r = await ctx.sendText("What is the ICD-10 code for hypertension?");
+   * console.log(r.text);     // "The ICD-10 code is I10."
+   * console.log(r.status);   // "completed"
+   * console.log(r.raw);      // full response if you need it
    * ```
    */
-  async sendText(text: string): Promise<MessageSendResponse> {
+  async sendText(text: string): Promise<MessageResponse> {
     const part: Corti.AgentsTextPart = { kind: "text", text };
     return this.sendMessage([part]);
   }
@@ -79,10 +84,9 @@ export class AgentContext {
   /**
    * Send a message and receive the agent's response as an async stream of events.
    *
-   * Events are yielded incrementally as the agent produces them. Three event
-   * shapes arrive on the stream (all fields optional):
+   * Events are yielded incrementally as the agent produces them:
    *  - `event.task`           – task state (includes `contextId` on first event)
-   *  - `event.statusUpdate`   – task status transitions (submitted → working → completed)
+   *  - `event.statusUpdate`   – state transitions (submitted → working → completed)
    *  - `event.artifactUpdate` – structured output chunks
    *  - `event.message`        – final assembled message
    *

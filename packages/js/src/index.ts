@@ -1,6 +1,7 @@
 export { AgentsClient } from "./AgentsClient";
 export { AgentContext } from "./AgentContext";
 export { AgentHandle } from "./AgentHandle";
+export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
 
 export type {
@@ -10,7 +11,6 @@ export type {
   CreateAgentOptions,
   Lifecycle,
   McpConnector,
-  MessageSendResponse,
   Part,
   RegistryConnector,
   StreamEvent,

@@ -75,5 +75,4 @@ export interface CreateAgentOptions {
 
 export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
-export type MessageSendResponse = Corti.AgentsMessageSendResponse;
 export type StreamEvent = Corti.AgentsMessageStreamResponse;

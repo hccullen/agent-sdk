@@ -29,7 +29,7 @@ Usage::
 
             ctx = sub.create_context()
             response = await ctx.send_text("ICD-10 code for hypertension?")
-            print(response["task"]["status"]["message"]["parts"])
+            print(response.text)   # e.g. "The ICD-10 code is I10."
 
     asyncio.run(main())
 """
@@ -39,6 +39,7 @@ from .client import CortiClient
 from .connectors import connectors
 from .context import AgentContext
 from .handle import AgentHandle
+from .response import MessageResponse
 from .types import (
     A2aConnector,
     ConnectorDef,
@@ -46,7 +47,6 @@ from .types import (
     CreateAgentOptions,
     Lifecycle,
     McpConnector,
-    MessageSendResponse,
     Part,
     RegistryConnector,
     StreamEvent,
@@ -59,6 +59,7 @@ __all__ = [
     "AgentHandle",
     "AgentsClient",
     "CortiClient",
+    "MessageResponse",
     "connectors",
     # types
     "A2aConnector",
@@ -67,7 +68,6 @@ __all__ = [
     "CreateAgentOptions",
     "Lifecycle",
     "McpConnector",
-    "MessageSendResponse",
     "Part",
     "RegistryConnector",
     "StreamEvent",

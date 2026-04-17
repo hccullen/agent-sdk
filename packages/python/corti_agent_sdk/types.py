@@ -74,7 +74,6 @@ class TextPart(TypedDict):
 
 Part = Union[TextPart, Dict[str, Any]]
 
-# ── Response types (mirrors SDK shapes) ─────────────────────────────────────
+# ── Response types ───────────────────────────────────────────────────────────
 
-MessageSendResponse = Dict[str, Any]
 StreamEvent = Dict[str, Any]

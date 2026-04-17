@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional
 
-from .types import MessageSendResponse, Part, StreamEvent
+from .response import MessageResponse
+from .types import Part, StreamEvent
 
 if TYPE_CHECKING:
     from .client import CortiClient
@@ -63,9 +64,9 @@ class AgentContext:
             if cid:
                 self._context_id = cid
 
-    async def send_message(self, parts: List[Part]) -> MessageSendResponse:
+    async def send_message(self, parts: List[Part]) -> MessageResponse:
         """
-        Send a message and receive the full response.
+        Send a message and receive a :class:`MessageResponse`.
 
         On the first call the server creates a new thread and returns a
         ``contextId`` inside ``task``; subsequent calls automatically continue
@@ -77,9 +78,9 @@ class AgentContext:
             body={"message": self._build_message(parts)},
         )
         self._capture_context_id(response)
-        return response
+        return MessageResponse(response)
 
-    async def send_text(self, text: str) -> MessageSendResponse:
+    async def send_text(self, text: str) -> MessageResponse:
         """Convenience wrapper for sending a plain-text message."""
         return await self.send_message([{"kind": "text", "text": text}])
 
