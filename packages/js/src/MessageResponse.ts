@@ -8,12 +8,15 @@ import type { Corti } from "@corti/sdk";
 export class MessageResponse {
   constructor(private readonly _raw: Corti.AgentsMessageSendResponse) {}
 
+  private get _task() { return this._raw.task; }
+  private get _taskStatus() { return this._raw.task?.status; }
+
   /**
    * The task's terminal state.
    * e.g. `"completed"`, `"failed"`, `"input-required"`, `"working"`, …
    */
   get status(): Corti.AgentsTaskStatusState | undefined {
-    return this._raw.task?.status.state;
+    return this._taskStatus?.state;
   }
 
   /**
@@ -21,7 +24,7 @@ export class MessageResponse {
    * This is where the agent's answer lives.
    */
   get statusMessage(): Corti.AgentsMessage | undefined {
-    return this._raw.task?.status.message;
+    return this._taskStatus?.message;
   }
 
   /**
@@ -39,17 +42,17 @@ export class MessageResponse {
 
   /** Structured artifacts produced by the task (empty array if none). */
   get artifacts(): Corti.AgentsArtifact[] {
-    return this._raw.task?.artifacts ?? [];
+    return this._task?.artifacts ?? [];
   }
 
   /** The thread ID — same value the context tracks internally. */
   get contextId(): string | undefined {
-    return this._raw.task?.contextId;
+    return this._task?.contextId;
   }
 
   /** The task ID for this specific invocation. */
   get taskId(): string | undefined {
-    return this._raw.task?.id;
+    return this._task?.id;
   }
 
   /** The full, unmodified response from the API. */

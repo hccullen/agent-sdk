@@ -21,16 +21,22 @@ class MessageResponse:
         self._raw = raw
 
     @property
+    def _task(self) -> Dict[str, Any]:
+        return self._raw.get("task") or {}
+
+    @property
+    def _status(self) -> Dict[str, Any]:
+        return self._task.get("status") or {}
+
+    @property
     def status(self) -> Optional[str]:
         """The task's terminal state, e.g. ``"completed"``, ``"failed"``."""
-        task = self._raw.get("task") or {}
-        return (task.get("status") or {}).get("state")
+        return self._status.get("state")
 
     @property
     def status_message(self) -> Optional[Dict[str, Any]]:
         """The agent's reply message (``task.status.message``)."""
-        task = self._raw.get("task") or {}
-        return (task.get("status") or {}).get("message")
+        return self._status.get("message")
 
     @property
     def text(self) -> Optional[str]:
@@ -47,17 +53,17 @@ class MessageResponse:
     @property
     def artifacts(self) -> List[Any]:
         """Structured artifacts produced by the task (empty list if none)."""
-        return (self._raw.get("task") or {}).get("artifacts") or []
+        return self._task.get("artifacts") or []
 
     @property
     def context_id(self) -> Optional[str]:
         """The thread ID — same value the context tracks internally."""
-        return (self._raw.get("task") or {}).get("contextId")
+        return self._task.get("contextId")
 
     @property
     def task_id(self) -> Optional[str]:
         """The task ID for this specific invocation."""
-        return (self._raw.get("task") or {}).get("id")
+        return self._task.get("id")
 
     @property
     def raw(self) -> Dict[str, Any]:
