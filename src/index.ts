@@ -13,5 +13,7 @@ export type {
   MessageSendResponse,
   Part,
   RegistryConnector,
+  StreamEvent,
   TextPart,
+  UpdateAgentOptions,
 } from "./types";

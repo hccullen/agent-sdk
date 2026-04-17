@@ -49,6 +49,14 @@ export type ConnectorDef =
 
 // ── Agent creation options ───────────────────────────────────────────────────
 
+export interface UpdateAgentOptions {
+  name?: string;
+  description?: string;
+  systemPrompt?: string;
+  /** Replace the agent's connectors entirely. Omit to leave connectors unchanged. */
+  connectors?: ConnectorDef[];
+}
+
 export interface CreateAgentOptions {
   /** Slug-like name, unique within the tenant. */
   name: string;
@@ -68,3 +76,4 @@ export interface CreateAgentOptions {
 export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
 export type MessageSendResponse = Corti.AgentsMessageSendResponse;
+export type StreamEvent = Corti.AgentsMessageStreamResponse;

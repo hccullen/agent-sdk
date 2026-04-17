@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
-import type { MessageSendResponse, Part } from "./types";
+import type { MessageSendResponse, Part, StreamEvent } from "./types";
 
 /**
  * A stateful conversation context (thread) with a specific agent.
@@ -74,5 +74,57 @@ export class AgentContext {
   async sendText(text: string): Promise<MessageSendResponse> {
     const part: Corti.AgentsTextPart = { kind: "text", text };
     return this.sendMessage([part]);
+  }
+
+  /**
+   * Send a message and receive the agent's response as an async stream of events.
+   *
+   * Events are yielded incrementally as the agent produces them. Three event
+   * shapes arrive on the stream (all fields optional):
+   *  - `event.task`           – task state (includes `contextId` on first event)
+   *  - `event.statusUpdate`   – task status transitions (submitted → working → completed)
+   *  - `event.artifactUpdate` – structured output chunks
+   *  - `event.message`        – final assembled message
+   *
+   * The `contextId` is captured from the first `task` event so that subsequent
+   * `sendMessage` / `streamMessage` calls continue the same thread.
+   *
+   * @example
+   * ```ts
+   * const stream = await ctx.streamMessage([{ kind: "text", text: "Hello!" }]);
+   * for await (const event of stream) {
+   *   if (event.statusUpdate) console.log(event.statusUpdate.status.state);
+   *   if (event.message)      console.log(event.message.parts);
+   * }
+   * ```
+   */
+  async streamMessage(parts: Part[]): Promise<AsyncIterable<StreamEvent>> {
+    const stream = await (this.client.agents as unknown as {
+      messageStream(
+        id: string,
+        request: Corti.AgentsMessageSendParams
+      ): Promise<AsyncIterable<Corti.AgentsMessageStreamResponse>>;
+    }).messageStream(this.agentId, {
+      message: {
+        role: "user",
+        parts,
+        messageId: randomUUID(),
+        kind: "message",
+        ...(this._contextId !== undefined && { contextId: this._contextId }),
+      },
+    });
+
+    return this._wrapStream(stream);
+  }
+
+  private async *_wrapStream(
+    inner: AsyncIterable<Corti.AgentsMessageStreamResponse>
+  ): AsyncGenerator<StreamEvent> {
+    for await (const event of inner) {
+      if (this._contextId === undefined && event.task?.contextId) {
+        this._contextId = event.task.contextId;
+      }
+      yield event;
+    }
   }
 }

@@ -1,5 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
+import { connectorsToExperts } from "./connectors";
+import type { UpdateAgentOptions } from "./types";
 
 /**
  * A handle to a Corti agent that enriches the raw SDK agent with
@@ -50,6 +52,41 @@ export class AgentHandle {
    */
   createContext(): AgentContext {
     return new AgentContext(this._agent.id, this.client);
+  }
+
+  /**
+   * Partially update this agent and return a new handle reflecting the changes.
+   *
+   * Only the fields you provide are sent; everything else keeps its current value.
+   * Passing `connectors` **replaces** the full connector set for the agent.
+   *
+   * @example
+   * ```ts
+   * const updated = await agent.update({
+   *   systemPrompt: "You are now more concise.",
+   *   connectors: [{ type: "mcp", mcpUrl: "https://mcp.corti.ai" }],
+   * });
+   * ```
+   */
+  async update(opts: UpdateAgentOptions): Promise<AgentHandle> {
+    // The 0.3.0-agents SDK update() expects a full AgentsAgent object;
+    // we merge current state with the caller's partial overrides.
+    const experts =
+      opts.connectors !== undefined
+        ? // Cast: connectorsToExperts returns AgentsCreateAgentExpertsItem[] which
+          // the REST API accepts even though the TS type says AgentsAgentExpertsItem[]
+          (connectorsToExperts(opts.connectors) as unknown as Corti.AgentsAgentExpertsItem[])
+        : this._agent.experts;
+
+    const updated = await this.client.agents.update(this._agent.id, {
+      id: this._agent.id,
+      name: opts.name ?? this._agent.name,
+      description: opts.description ?? this._agent.description,
+      systemPrompt: opts.systemPrompt ?? this._agent.systemPrompt,
+      ...(experts !== undefined && { experts }),
+    });
+
+    return new AgentHandle(updated, this.client);
   }
 
   /**
