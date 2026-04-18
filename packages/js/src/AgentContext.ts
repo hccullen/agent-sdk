@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
 import { MessageResponse } from "./MessageResponse";
-import type { Part, StreamEvent } from "./types";
+import type { CredentialStore, Part, StreamEvent } from "./types";
 
 /**
  * A stateful conversation context (thread) with a specific agent.
@@ -12,25 +12,30 @@ import type { Part, StreamEvent } from "./types";
  * message and passes it in all subsequent calls so the agent maintains memory
  * of the conversation.
  *
+ * If `credentials` are supplied and the agent returns `auth-required`, the
+ * SDK automatically sends them as a follow-up DataPart and returns the final
+ * response — no extra code needed on the caller side.
+ *
  * @example
  * ```ts
- * const ctx = myAgent.createContext();
- * const r1 = await ctx.sendText("Hello!");
- * console.log(r1.text);          // agent reply as plain string
- * console.log(r1.status);        // "completed"
- * console.log(r1.artifacts);     // []
- * console.log(r1.raw);           // full AgentsMessageSendResponse
+ * const ctx = myAgent.createContext({ credentials: { "my-mcp": "tok_123" } });
+ * const r = await ctx.sendText("Hello!");
+ * console.log(r.text);     // agent reply
+ * console.log(r.status);   // "completed"
  * ```
  */
 export class AgentContext {
   private _contextId: string | undefined;
+  private readonly _credentials: CredentialStore | undefined;
 
   constructor(
     private readonly agentId: string,
     private readonly client: CortiClient,
-    initialContextId?: string
+    initialContextId?: string,
+    credentials?: CredentialStore
   ) {
     this._contextId = initialContextId;
+    this._credentials = credentials;
   }
 
   /** The context (thread) ID once the first message has been sent. */
@@ -38,13 +43,8 @@ export class AgentContext {
     return this._contextId;
   }
 
-  /**
-   * Send a message and receive a `MessageResponse`.
-   *
-   * On the first call the server creates a new context; subsequent calls
-   * automatically continue the same thread.
-   */
-  async sendMessage(parts: Part[]): Promise<MessageResponse> {
+  /** Send parts to the API and capture contextId from the response. */
+  private async _doSend(parts: Part[]): Promise<MessageResponse> {
     const response = await this.client.agents.messageSend(this.agentId, {
       message: {
         role: "user",
@@ -57,12 +57,34 @@ export class AgentContext {
 
     if (this._contextId === undefined) {
       const contextId = response?.task?.contextId;
-      if (contextId) {
-        this._contextId = contextId;
-      }
+      if (contextId) this._contextId = contextId;
     }
 
     return new MessageResponse(response);
+  }
+
+  /**
+   * Send a message and receive a `MessageResponse`.
+   *
+   * On the first call the server creates a new context; subsequent calls
+   * automatically continue the same thread.
+   *
+   * If the agent responds with `auth-required` and this context was created
+   * with credentials, those credentials are automatically forwarded as a
+   * DataPart follow-up — the caller receives the final response.
+   */
+  async sendMessage(parts: Part[]): Promise<MessageResponse> {
+    const result = await this._doSend(parts);
+
+    if (result.status === "auth-required" && this._credentials) {
+      const credPart: Corti.AgentsDataPart = {
+        kind: "data",
+        data: { credentials: this._credentials },
+      };
+      return this._doSend([credPart]);
+    }
+
+    return result;
   }
 
   /**
@@ -73,7 +95,6 @@ export class AgentContext {
    * const r = await ctx.sendText("What is the ICD-10 code for hypertension?");
    * console.log(r.text);     // "The ICD-10 code is I10."
    * console.log(r.status);   // "completed"
-   * console.log(r.raw);      // full response if you need it
    * ```
    */
   async sendText(text: string): Promise<MessageResponse> {
@@ -83,15 +104,6 @@ export class AgentContext {
 
   /**
    * Send a message and receive the agent's response as an async stream of events.
-   *
-   * Events are yielded incrementally as the agent produces them:
-   *  - `event.task`           – task state (includes `contextId` on first event)
-   *  - `event.statusUpdate`   – state transitions (submitted → working → completed)
-   *  - `event.artifactUpdate` – structured output chunks
-   *  - `event.message`        – final assembled message
-   *
-   * The `contextId` is captured from the first `task` event so that subsequent
-   * `sendMessage` / `streamMessage` calls continue the same thread.
    *
    * @example
    * ```ts

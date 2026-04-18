@@ -3,8 +3,8 @@ export { AgentContext } from "./AgentContext";
 export { AgentHandle } from "./AgentHandle";
 export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
-export { Workflow, workflow } from "./workflow";
-export type { WorkflowResult, WorkflowStep } from "./workflow";
+export { Parallel, Workflow, parallel, workflow } from "./workflow";
+export type { ParallelResult, ParallelStep, WorkflowResult, WorkflowStep } from "./workflow";
 
 export type {
   // connector / agent options
@@ -16,6 +16,8 @@ export type {
   McpConnector,
   RegistryConnector,
   UpdateAgentOptions,
+  // credentials
+  CredentialStore,
   // part types
   DataPart,
   FilePart,

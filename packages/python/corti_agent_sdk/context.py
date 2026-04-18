@@ -4,7 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional
 
 from .response import MessageResponse
-from .types import Part, StreamEvent
+from .types import CredentialStore, Part, StreamEvent
 
 if TYPE_CHECKING:
     from .client import CortiClient
@@ -20,16 +20,16 @@ class AgentContext:
     message and passes it in all subsequent calls, keeping the conversation
     in the same thread.
 
+    If ``credentials`` are supplied and the agent returns ``auth-required``,
+    the SDK automatically sends them as a DataPart follow-up — the caller
+    receives the final response with no extra code needed.
+
     Example::
 
-        ctx = agent.create_context()
-        r1 = await ctx.send_text("Hello!")
-        r2 = await ctx.send_text("Follow-up?")
-
-        # Or with streaming:
-        async for event in ctx.stream_message([{"kind": "text", "text": "Hello"}]):
-            if event.get("statusUpdate"):
-                print(event["statusUpdate"]["status"]["state"])
+        ctx = agent.create_context(credentials={"my-mcp": "tok_123"})
+        r = await ctx.send_text("Hello!")
+        print(r.text)    # agent reply
+        print(r.status)  # "completed"
     """
 
     def __init__(
@@ -37,10 +37,12 @@ class AgentContext:
         agent_id: str,
         client: "CortiClient",
         context_id: Optional[str] = None,
+        credentials: Optional[CredentialStore] = None,
     ) -> None:
         self._agent_id = agent_id
         self._client = client
         self._context_id = context_id
+        self._credentials = credentials
 
     @property
     def id(self) -> Optional[str]:
@@ -64,14 +66,8 @@ class AgentContext:
             if cid:
                 self._context_id = cid
 
-    async def send_message(self, parts: List[Part]) -> MessageResponse:
-        """
-        Send a message and receive a :class:`MessageResponse`.
-
-        On the first call the server creates a new thread and returns a
-        ``contextId`` inside ``task``; subsequent calls automatically continue
-        the same thread.
-        """
+    async def _do_send(self, parts: List[Part]) -> MessageResponse:
+        """Send parts to the API and capture contextId from the response."""
         response = await self._client.request(
             "POST",
             f"agents/{self._agent_id}/v1/message:send",
@@ -79,6 +75,28 @@ class AgentContext:
         )
         self._capture_context_id(response)
         return MessageResponse(response)
+
+    async def send_message(self, parts: List[Part]) -> MessageResponse:
+        """
+        Send a message and receive a :class:`MessageResponse`.
+
+        On the first call the server creates a new thread; subsequent calls
+        automatically continue the same thread.
+
+        If the agent responds with ``auth-required`` and this context was
+        created with credentials, those credentials are automatically forwarded
+        as a DataPart follow-up — the caller receives the final response.
+        """
+        result = await self._do_send(parts)
+
+        if result.status == "auth-required" and self._credentials:
+            cred_part: Part = {  # type: ignore[assignment]
+                "kind": "data",
+                "data": {"credentials": self._credentials},
+            }
+            result = await self._do_send([cred_part])
+
+        return result
 
     async def send_text(self, text: str) -> MessageResponse:
         """Convenience wrapper for sending a plain-text message."""
@@ -90,14 +108,10 @@ class AgentContext:
 
         Each yielded dict may contain any combination of:
 
-        - ``task``         – task object (includes ``contextId`` on first event)
-        - ``statusUpdate`` – state transitions (submitted → working → completed)
+        - ``task``           – task object (includes ``contextId`` on first event)
+        - ``statusUpdate``   – state transitions (submitted → working → completed)
         - ``artifactUpdate`` – structured output chunks
-        - ``message``      – final assembled message
-
-        The ``contextId`` is captured from the first ``task`` event so that
-        subsequent ``send_message`` / ``stream_message`` calls continue the
-        same thread.
+        - ``message``        – final assembled message
 
         Example::
 

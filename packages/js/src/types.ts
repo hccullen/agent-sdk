@@ -73,6 +73,7 @@ export interface CreateAgentOptions {
 
 // ── Re-exports of SDK types used at the boundary ────────────────────────────
 
+export type CredentialStore = Record<string, string>;
 export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
 export type FilePart = Corti.AgentsFilePart;

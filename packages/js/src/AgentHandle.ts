@@ -2,7 +2,7 @@ import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
 import { MessageResponse } from "./MessageResponse";
 import { connectorsToExperts } from "./connectors";
-import type { Part, UpdateAgentOptions } from "./types";
+import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 
 /**
  * A handle to a Corti agent that enriches the raw SDK agent with
@@ -51,24 +51,38 @@ export class AgentHandle {
    * const r2 = await ctx.sendMessage([{ kind: "text", text: "And now?" }]);
    * ```
    */
-  createContext(): AgentContext {
-    return new AgentContext(this._agent.id, this.client);
+  /**
+   * Create a new conversation context with this agent.
+   *
+   * @param opts.credentials  Service credentials forwarded automatically if the
+   *   agent returns `auth-required`.
+   */
+  createContext(opts?: { credentials?: CredentialStore }): AgentContext {
+    return new AgentContext(this._agent.id, this.client, undefined, opts?.credentials);
   }
 
   /**
    * One-shot invoke: create a fresh context, send the message, return the response.
    *
-   * Equivalent to `createContext().sendText(input)` for the common case, but
-   * also accepts `Part[]` and an optional `contextId` to continue an existing thread.
-   *
    * @example
    * ```ts
    * const r1 = await agentA.run("Classify this note.");
    * const r2 = await agentB.run(r1.text ?? "");
+   *
+   * // With credentials:
+   * const r = await agent.run("Query", { credentials: { "my-mcp": "tok_123" } });
    * ```
    */
-  async run(input: string | Part[], contextId?: string): Promise<MessageResponse> {
-    const ctx = new AgentContext(this._agent.id, this.client, contextId);
+  async run(
+    input: string | Part[],
+    opts?: { contextId?: string; credentials?: CredentialStore }
+  ): Promise<MessageResponse> {
+    const ctx = new AgentContext(
+      this._agent.id,
+      this.client,
+      opts?.contextId,
+      opts?.credentials
+    );
     return typeof input === "string" ? ctx.sendText(input) : ctx.sendMessage(input);
   }
 

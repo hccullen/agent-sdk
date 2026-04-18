@@ -45,8 +45,10 @@ class A2aConnector(TypedDict):
 ConnectorDef = Union[McpConnector, RegistryConnector, CortiAgentConnector, A2aConnector]
 
 
-# ── Agent creation / update ──────────────────────────────────────────────────
+CredentialStore = Dict[str, str]
 
+
+# ── Agent creation / update ──────────────────────────────────────────────────
 class _CreateRequired(TypedDict):
     name: str
     description: str

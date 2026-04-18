@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, List, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from .response import MessageResponse
 from .types import Part
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     from .handle import AgentHandle
 
 
-# ── Public types ──────────────────────────────────────────────────────────────
+# ── Workflow ──────────────────────────────────────────────────────────────────
 
 class _WorkflowStepBase(TypedDict):
     agent: "AgentHandle"
@@ -20,16 +21,17 @@ class WorkflowStep(_WorkflowStepBase, total=False):
     """
     A fully-specified workflow step.
 
-    ``agent`` is required. ``when`` and ``transform`` are optional and only
-    apply to steps that are not the first in the pipeline.
+    ``agent`` is required. All other keys are optional.
 
     Users can pass a plain dict literal::
 
-        {"agent": my_agent, "when": lambda r: "yes" in (r.text or "")}
+        {"agent": my_agent, "when": lambda r: "yes" in (r.text or ""), "retries": 2}
     """
 
     when: Callable[[MessageResponse], bool]
     transform: Callable[[MessageResponse], Union[str, List[Part]]]
+    retries: int        # additional attempts on failure (default 0)
+    retry_delay: float  # seconds between retries (default 1.0)
 
 
 @dataclass
@@ -43,55 +45,44 @@ class WorkflowResult:
     """Responses from every executed step. Skipped steps are excluded."""
 
     stopped_early: bool = field(default=False)
-    """``True`` when execution stopped because a step returned ``status == "failed"``."""
+    """``True`` when a step failed and stopped execution early."""
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
-def _normalise(step: Union["AgentHandle", WorkflowStep]) -> WorkflowStep:
+def _normalise_workflow(step: Union["AgentHandle", WorkflowStep]) -> WorkflowStep:
     from .handle import AgentHandle as _AgentHandle
     if isinstance(step, _AgentHandle):
         return WorkflowStep(agent=step)
     return step
 
 
-# ── Workflow ──────────────────────────────────────────────────────────────────
-
 class Workflow:
     """
     A deterministic, code-first pipeline of agent invocations.
-
-    Steps are executed in order. Each step can be guarded by a ``when``
-    predicate and/or use a ``transform`` function to remap the previous
-    output before it is passed as input to the next agent.
 
     Example::
 
         result = await workflow([
             agent_a,
-            WorkflowStep(agent=agent_b, when=lambda r: "urgent" in (r.text or "")),
+            WorkflowStep(
+                agent=agent_b,
+                when=lambda r: "urgent" in (r.text or ""),
+                retries=2,
+            ),
             WorkflowStep(agent=agent_c, transform=lambda r: f"Summarise: {r.text}"),
         ]).run("Start")
 
         print(result.output.text)
-        print(len(result.steps))    # skipped steps are excluded
+        print(len(result.steps))
         print(result.stopped_early)
     """
 
     def __init__(self, steps: List[Union["AgentHandle", WorkflowStep]]) -> None:
         if not steps:
             raise ValueError("[AgentSDK] Workflow must have at least one step.")
-        self._steps: List[WorkflowStep] = [_normalise(s) for s in steps]
+        self._steps: List[WorkflowStep] = [_normalise_workflow(s) for s in steps]
 
     async def run(self, input: Union[str, List[Part]]) -> WorkflowResult:
-        """
-        Execute the workflow from the given initial input.
-
-        Parameters
-        ----------
-        input:
-            Initial text string or list of Parts fed to the first step.
-        """
+        """Execute the workflow from the given initial input."""
         executed: List[MessageResponse] = []
         current: Union[str, List[Part]] = input
         stopped_early = False
@@ -99,19 +90,28 @@ class Workflow:
         for i, step in enumerate(self._steps):
             is_first = i == 0
 
-            # when() only applies once there is a previous response
             if not is_first and "when" in step:
-                prev = executed[-1]
-                if not step["when"](prev):
-                    continue  # skip; current is unchanged
+                if not step["when"](executed[-1]):
+                    continue
 
-            # Resolve this step's input
-            if not is_first and "transform" in step:
-                step_input: Union[str, List[Part]] = step["transform"](executed[-1])
-            else:
-                step_input = current
+            step_input: Union[str, List[Part]] = (
+                step["transform"](executed[-1])
+                if not is_first and "transform" in step
+                else current
+            )
 
-            response = await step["agent"].run(step_input)
+            max_attempts = 1 + int(step.get("retries", 0))  # type: ignore[call-overload]
+            retry_delay = float(step.get("retry_delay", 1.0))  # type: ignore[call-overload]
+            response: Optional[MessageResponse] = None
+
+            for attempt in range(max_attempts):
+                response = await step["agent"].run(step_input)
+                if response.status != "failed" or attempt + 1 >= max_attempts:
+                    break
+                if retry_delay > 0:
+                    await asyncio.sleep(retry_delay)
+
+            assert response is not None
             executed.append(response)
             current = response.text or ""
 
@@ -119,27 +119,99 @@ class Workflow:
                 stopped_early = True
                 break
 
-        return WorkflowResult(
-            output=executed[-1],
-            steps=executed,
-            stopped_early=stopped_early,
-        )
+        return WorkflowResult(output=executed[-1], steps=executed, stopped_early=stopped_early)
 
-
-# ── Factory ───────────────────────────────────────────────────────────────────
 
 def workflow(steps: List[Union["AgentHandle", WorkflowStep]]) -> Workflow:
     """
     Create a :class:`Workflow` from an ordered list of steps.
 
-    Each element can be either a bare ``AgentHandle`` (always runs, passes
-    ``prev.text`` to the next step) or a :class:`WorkflowStep` dict with
-    optional ``when`` and ``transform`` keys.
+    Each element can be a bare ``AgentHandle`` or a :class:`WorkflowStep` dict.
+    """
+    return Workflow(steps)
+
+
+# ── Parallel ──────────────────────────────────────────────────────────────────
+
+class _ParallelStepBase(TypedDict):
+    agent: "AgentHandle"
+
+
+class ParallelStep(_ParallelStepBase, total=False):
+    """
+    A parallel step. Provide ``input`` to override the shared input for this
+    specific agent; omit to use whatever was passed to ``Parallel.run()``.
+    """
+
+    input: Union[str, List[Part]]
+
+
+@dataclass
+class ParallelResult:
+    """Returned by ``Parallel.run()``."""
+
+    results: List[Dict[str, Any]]
+    """One entry per step: ``{"status": "fulfilled", "value": …}`` or ``{"status": "rejected", "reason": …}``."""
+
+    fulfilled: List[MessageResponse]
+    """Responses from steps that completed without raising."""
+
+    rejected: List[Any]
+    """Exceptions from steps that raised."""
+
+
+class Parallel:
+    """
+    Run multiple agents concurrently on the same input.
 
     Example::
 
-        w = workflow([agent_a, agent_b, agent_c])
-        result = await w.run("initial prompt")
-        print(result.output.text)
+        result = await parallel([agent_a, agent_b, agent_c]).run("prompt")
+        for r in result.fulfilled:
+            print(r.text)
+
+        # Per-step input override:
+        result = await parallel([
+            ParallelStep(agent=coder,    input="Write a Python function…"),
+            ParallelStep(agent=reviewer, input="Review this spec…"),
+        ]).run("")
     """
-    return Workflow(steps)
+
+    def __init__(self, steps: List[Union["AgentHandle", ParallelStep]]) -> None:
+        if not steps:
+            raise ValueError("[AgentSDK] Parallel must have at least one step.")
+        self._steps = steps
+
+    async def run(self, input: Union[str, List[Part]]) -> ParallelResult:
+        """Run all steps concurrently and return a :class:`ParallelResult`."""
+        from .handle import AgentHandle as _AgentHandle
+
+        async def _run(step: Union[AgentHandle, ParallelStep]) -> MessageResponse:
+            agent = step if isinstance(step, _AgentHandle) else step["agent"]
+            step_input: Union[str, List[Part]] = (
+                step.get("input", input)  # type: ignore[union-attr]
+                if not isinstance(step, _AgentHandle)
+                else input
+            )
+            return await agent.run(step_input)
+
+        raw = await asyncio.gather(*[_run(s) for s in self._steps], return_exceptions=True)
+
+        results: List[Dict[str, Any]] = []
+        fulfilled: List[MessageResponse] = []
+        rejected: List[Any] = []
+
+        for r in raw:
+            if isinstance(r, BaseException):
+                results.append({"status": "rejected", "reason": r})
+                rejected.append(r)
+            else:
+                results.append({"status": "fulfilled", "value": r})
+                fulfilled.append(r)
+
+        return ParallelResult(results=results, fulfilled=fulfilled, rejected=rejected)
+
+
+def parallel(steps: List[Union["AgentHandle", ParallelStep]]) -> Parallel:
+    """Run multiple agents concurrently on the same input."""
+    return Parallel(steps)

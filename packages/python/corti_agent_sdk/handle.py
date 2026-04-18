@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 from .connectors import connectors_to_experts
 from .context import AgentContext
 from .response import MessageResponse
-from .types import ConnectorDef, Part
+from .types import ConnectorDef, CredentialStore, Part
 
 if TYPE_CHECKING:
     from .client import CortiClient
