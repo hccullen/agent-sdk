@@ -14,14 +14,17 @@ if TYPE_CHECKING:
 # ── Workflow ──────────────────────────────────────────────────────────────────
 
 class _WorkflowStepBase(TypedDict):
-    agent: "AgentHandle"
+    # Any Runnable: AgentHandle, Parallel (auto-wrapped), or custom object with run()
+    agent: Any
 
 
 class WorkflowStep(_WorkflowStepBase, total=False):
     """
     A fully-specified workflow step.
 
-    ``agent`` is required. All other keys are optional.
+    ``agent`` accepts any object with an async ``run(input)`` method —
+    an ``AgentHandle``, a ``Parallel`` group (auto-wrapped to merge results),
+    or a custom runnable.
 
     Users can pass a plain dict literal::
 
@@ -48,10 +51,29 @@ class WorkflowResult:
     """``True`` when a step failed and stopped execution early."""
 
 
-def _normalise_workflow(step: Union["AgentHandle", WorkflowStep]) -> WorkflowStep:
+class _ParallelAdapter:
+    """Wraps a Parallel so it can be used as a Workflow step."""
+
+    def __init__(self, parallel: "Parallel") -> None:
+        self._parallel = parallel
+
+    async def run(self, input: Union[str, List[Part]], **_: Any) -> MessageResponse:
+        result = await self._parallel.run(input)
+        if not result.fulfilled:
+            raise ValueError("[AgentSDK] All parallel steps failed — no output to merge.")
+        return MessageResponse.from_text(
+            "\n\n".join(r.text or "" for r in result.fulfilled)
+        )
+
+
+def _normalise_workflow(
+    step: Union["AgentHandle", "Parallel", WorkflowStep],
+) -> WorkflowStep:
     from .handle import AgentHandle as _AgentHandle
     if isinstance(step, _AgentHandle):
         return WorkflowStep(agent=step)
+    if isinstance(step, Parallel):
+        return WorkflowStep(agent=_ParallelAdapter(step))
     return step
 
 
@@ -59,24 +81,28 @@ class Workflow:
     """
     A deterministic, code-first pipeline of agent invocations.
 
+    Steps can be ``AgentHandle`` instances, ``Parallel`` groups, or
+    ``WorkflowStep`` dicts with optional ``when`` / ``transform`` / ``retries``.
+
     Example::
 
         result = await workflow([
             agent_a,
+            parallel([agent_b, agent_c]),           # fan-out as a single step
             WorkflowStep(
-                agent=agent_b,
-                when=lambda r: "urgent" in (r.text or ""),
+                agent=agent_d,
+                when=lambda r: "yes" in (r.text or ""),
                 retries=2,
             ),
-            WorkflowStep(agent=agent_c, transform=lambda r: f"Summarise: {r.text}"),
         ]).run("Start")
 
         print(result.output.text)
-        print(len(result.steps))
-        print(result.stopped_early)
     """
 
-    def __init__(self, steps: List[Union["AgentHandle", WorkflowStep]]) -> None:
+    def __init__(
+        self,
+        steps: List[Union["AgentHandle", "Parallel", WorkflowStep]],
+    ) -> None:
         if not steps:
             raise ValueError("[AgentSDK] Workflow must have at least one step.")
         self._steps: List[WorkflowStep] = [_normalise_workflow(s) for s in steps]
@@ -122,11 +148,15 @@ class Workflow:
         return WorkflowResult(output=executed[-1], steps=executed, stopped_early=stopped_early)
 
 
-def workflow(steps: List[Union["AgentHandle", WorkflowStep]]) -> Workflow:
+def workflow(
+    steps: List[Union["AgentHandle", "Parallel", WorkflowStep]],
+) -> Workflow:
     """
     Create a :class:`Workflow` from an ordered list of steps.
 
-    Each element can be a bare ``AgentHandle`` or a :class:`WorkflowStep` dict.
+    Each element can be a bare ``AgentHandle``, a ``Parallel`` group
+    (fulfilled results are text-joined for the next step), or a
+    :class:`WorkflowStep` dict.
     """
     return Workflow(steps)
 
@@ -164,17 +194,19 @@ class Parallel:
     """
     Run multiple agents concurrently on the same input.
 
+    Can be used standalone (``run()`` → :class:`ParallelResult`) or dropped
+    directly into a :func:`workflow` step list, where fulfilled results are
+    text-joined into a single response for the next step.
+
     Example::
 
-        result = await parallel([agent_a, agent_b, agent_c]).run("prompt")
+        # Standalone
+        result = await parallel([agent_a, agent_b]).run("prompt")
         for r in result.fulfilled:
             print(r.text)
 
-        # Per-step input override:
-        result = await parallel([
-            ParallelStep(agent=coder,    input="Write a Python function…"),
-            ParallelStep(agent=reviewer, input="Review this spec…"),
-        ]).run("")
+        # Inside a workflow
+        await workflow([agent_a, parallel([agent_b, agent_c]), agent_d]).run("prompt")
     """
 
     def __init__(self, steps: List[Union["AgentHandle", ParallelStep]]) -> None:

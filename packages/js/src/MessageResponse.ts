@@ -8,6 +8,29 @@ import type { Corti } from "@corti/sdk";
 export class MessageResponse {
   constructor(private readonly _raw: Corti.AgentsMessageSendResponse) {}
 
+  /**
+   * Synthesise a completed `MessageResponse` from a plain string.
+   * Used internally when merging parallel results into a single response.
+   */
+  static fromText(text: string): MessageResponse {
+    return new MessageResponse({
+      task: {
+        id: "",
+        contextId: "",
+        kind: "task",
+        status: {
+          state: "completed",
+          message: {
+            role: "agent",
+            parts: [{ kind: "text", text }],
+            messageId: "",
+            kind: "message",
+          },
+        },
+      },
+    } as Corti.AgentsMessageSendResponse);
+  }
+
   private get _node() { return this._raw.task; }
   private get _nodeStatus() { return this._raw.task?.status; }
 

@@ -2,26 +2,31 @@ import { AgentHandle } from "./AgentHandle";
 import { MessageResponse } from "./MessageResponse";
 import type { Part } from "./types";
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// ── Runnable ──────────────────────────────────────────────────────────────────
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Anything that can act as a workflow step: an `AgentHandle`, a `Parallel`
+ * group, or any custom object with a `run()` method.
+ */
+export interface Runnable {
+  run(input: string | Part[]): Promise<MessageResponse>;
+}
 
 // ── Workflow ──────────────────────────────────────────────────────────────────
 
 /**
  * A fully-specified workflow step.
  *
- * Use a bare `AgentHandle` when you always want the step to run and the
- * default input mapping (previous `text`) is fine.
+ * `agent` accepts any `Runnable` — an `AgentHandle`, a `Parallel` group
+ * (auto-wrapped to merge fulfilled results), or a custom object.
  */
 export interface WorkflowStep {
-  agent: AgentHandle;
+  agent: Runnable;
   /** Return `false` to skip this step; the previous response passes forward unchanged. */
   when?: (prev: MessageResponse) => boolean;
   /** Map the previous response to this step's input. Default: `prev.text ?? ""` */
   transform?: (prev: MessageResponse) => string | Part[];
-  /** Number of additional attempts if the step returns `status === "failed"`. Default: 0. */
+  /** Additional attempts if the step returns `status === "failed"`. Default: 0. */
   retries?: number;
   /** Milliseconds between retry attempts. Default: 1000. */
   retryDelay?: number;
@@ -37,26 +42,43 @@ export interface WorkflowResult {
   stoppedEarly: boolean;
 }
 
-type WorkflowStepDef = AgentHandle | WorkflowStep;
+type WorkflowStepDef = AgentHandle | Parallel | WorkflowStep;
 
 function normaliseWorkflow(step: WorkflowStepDef): WorkflowStep {
-  return step instanceof AgentHandle ? { agent: step } : step;
+  if (step instanceof AgentHandle) return { agent: step };
+  if (step instanceof Parallel) {
+    return {
+      agent: {
+        run: async (input: string | Part[]) => {
+          const { fulfilled } = await step.run(input);
+          if (fulfilled.length === 0) {
+            throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
+          }
+          return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
+        },
+      },
+    };
+  }
+  return step;
 }
+
+const _delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
  * A deterministic, code-first pipeline of agent invocations.
+ *
+ * Steps can be `AgentHandle` instances, `Parallel` groups, or `WorkflowStep`
+ * objects with optional `when` / `transform` / `retries` controls.
  *
  * @example
  * ```ts
  * const result = await workflow([
  *   agentA,
- *   { agent: agentB, when: (r) => (r.text ?? "").includes("urgent"), retries: 2 },
- *   { agent: agentC, transform: (r) => `Summarise: ${r.text}` },
+ *   parallel([agentB, agentC]),          // fan-out as a single step
+ *   { agent: agentD, when: (r) => (r.text ?? "").includes("yes"), retries: 2 },
  * ]).run("Start");
  *
  * console.log(result.output.text);
- * console.log(result.steps.length);
- * console.log(result.stoppedEarly);
  * ```
  */
 export class Workflow {
@@ -92,7 +114,7 @@ export class Workflow {
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         response = await step.agent.run(stepInput);
         if (response.status !== "failed" || attempt + 1 >= maxAttempts) break;
-        if (retryMs > 0) await delay(retryMs);
+        if (retryMs > 0) await _delay(retryMs);
       }
 
       executed.push(response);
@@ -134,16 +156,17 @@ export interface ParallelResult {
 /**
  * Run multiple agents concurrently on the same input and collect all responses.
  *
+ * Can be used standalone (`.run()` → `ParallelResult`) or dropped directly
+ * into a `workflow()` step list, where fulfilled results are text-joined into
+ * a single `MessageResponse` for the next step.
+ *
  * @example
  * ```ts
- * const { fulfilled } = await parallel([agentA, agentB, agentC]).run("prompt");
- * console.log(fulfilled.map((r) => r.text));
+ * // Standalone
+ * const { fulfilled } = await parallel([agentA, agentB]).run("prompt");
  *
- * // Per-step input override:
- * const { fulfilled: [r1, r2] } = await parallel([
- *   { agent: coder,    input: "Write a Python function that…" },
- *   { agent: reviewer, input: "Review this specification…" },
- * ]).run("ignored");
+ * // Inside a workflow
+ * workflow([agentA, parallel([agentB, agentC]), agentD]).run("prompt");
  * ```
  */
 export class Parallel {

@@ -24,6 +24,29 @@ class MessageResponse:
     def __init__(self, raw: Dict[str, Any]) -> None:
         self._raw = raw
 
+    @classmethod
+    def from_text(cls, text: str) -> "MessageResponse":
+        """
+        Synthesise a completed ``MessageResponse`` from a plain string.
+        Used internally when merging parallel results into a single response.
+        """
+        return cls({
+            "task": {
+                "id": "",
+                "contextId": "",
+                "kind": "task",
+                "status": {
+                    "state": "completed",
+                    "message": {
+                        "role": "agent",
+                        "parts": [{"kind": "text", "text": text}],
+                        "messageId": "",
+                        "kind": "message",
+                    },
+                },
+            }
+        })
+
     # ── private helpers ───────────────────────────────────────────────────────
 
     @property

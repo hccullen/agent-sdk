@@ -4,7 +4,7 @@ export { AgentHandle } from "./AgentHandle";
 export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
 export { Parallel, Workflow, parallel, workflow } from "./workflow";
-export type { ParallelResult, ParallelStep, WorkflowResult, WorkflowStep } from "./workflow";
+export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow";
 
 export type {
   // connector / agent options
