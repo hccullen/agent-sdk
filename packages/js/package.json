@@ -1,0 +1,29 @@
+{
+  "name": "@corti/agent-sdk",
+  "version": "0.1.0-alpha.0",
+  "description": "Developer-friendly wrapper for building agents with the Corti SDK",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "keywords": [
+    "corti",
+    "agents",
+    "ai",
+    "sdk"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@corti/sdk": "^0.3.0-agents"
+  },
+  "devDependencies": {
+    "@corti/sdk": "^0.3.0-agents",
+    "@types/node": "^18.0.0",
+    "typescript": "~5.7.2"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@corti/agent-sdk-examples-ts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runnable TypeScript examples for @corti/agent-sdk.",
+  "type": "commonjs",
+  "scripts": {
+    "hello": "tsx 01-hello-agent.ts",
+    "connectors": "tsx 02-connectors.ts",
+    "workflow": "tsx 03-workflow.ts",
+    "parallel": "tsx 04-parallel.ts",
+    "streaming": "tsx 05-streaming.ts",
+    "credentials": "tsx 06-credentials.ts"
+  },
+  "dependencies": {
+    "@corti/agent-sdk": "*",
+    "@corti/sdk": "^0.3.0-agents",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2"
+  }
+}
