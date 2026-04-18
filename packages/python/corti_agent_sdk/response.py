@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 
@@ -52,8 +53,15 @@ class MessageResponse:
 
     @property
     def artifacts(self) -> List[Any]:
-        """Structured artifacts produced by the task (empty list if none)."""
-        return self._task.get("artifacts") or []
+        """Structured artifacts produced by the task, deduplicated by parts content."""
+        seen: set[str] = set()
+        result: List[Any] = []
+        for a in self._task.get("artifacts") or []:
+            key = json.dumps(a.get("parts"), sort_keys=True)
+            if key not in seen:
+                seen.add(key)
+                result.append(a)
+        return result
 
     @property
     def context_id(self) -> Optional[str]:

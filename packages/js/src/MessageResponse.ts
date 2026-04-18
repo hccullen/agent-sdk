@@ -40,9 +40,16 @@ export class MessageResponse {
     return joined || undefined;
   }
 
-  /** Structured artifacts produced by the task (empty array if none). */
+  /** Structured artifacts produced by the task, deduplicated by parts content. */
   get artifacts(): Corti.AgentsArtifact[] {
-    return this._task?.artifacts ?? [];
+    const all = this._task?.artifacts ?? [];
+    const seen = new Set<string>();
+    return all.filter((a) => {
+      const key = JSON.stringify(a.parts);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   /** The thread ID — same value the context tracks internally. */
