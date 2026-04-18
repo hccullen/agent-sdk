@@ -65,15 +65,91 @@ class UpdateAgentOptions(TypedDict, total=False):
     connectors: List[ConnectorDef]
 
 
-# ── Message parts ────────────────────────────────────────────────────────────
+# ── A2A v1 part types ────────────────────────────────────────────────────────
 
 class TextPart(TypedDict):
     kind: Literal["text"]
     text: str
 
 
-Part = Union[TextPart, Dict[str, Any]]
+class _FilePartBase(TypedDict):
+    kind: Literal["file"]
 
-# ── Response types ───────────────────────────────────────────────────────────
+
+class FilePart(_FilePartBase, total=False):
+    file: Dict[str, Any]   # FileWithUri | FileWithBytes
+    metadata: Dict[str, Any]
+
+
+class _DataPartBase(TypedDict):
+    kind: Literal["data"]
+    data: Dict[str, Any]
+
+
+class DataPart(_DataPartBase, total=False):
+    metadata: Dict[str, Any]
+
+
+Part = Union[TextPart, FilePart, DataPart]
+
+
+# ── A2A v1 task / message / artifact types ────────────────────────────────────
+
+TaskState = Literal[
+    "submitted", "working", "input-required", "completed",
+    "canceled", "failed", "rejected", "auth-required", "unknown",
+]
+
+
+class _MessageBase(TypedDict):
+    kind: Literal["message"]
+    messageId: str
+    role: Literal["user", "agent"]
+    parts: List[Part]
+
+
+class Message(_MessageBase, total=False):
+    contextId: str
+    taskId: str
+    referenceTaskIds: List[str]
+    extensions: List[str]
+    metadata: Dict[str, Any]
+
+
+class _TaskStatusBase(TypedDict):
+    state: TaskState
+
+
+class TaskStatus(_TaskStatusBase, total=False):
+    message: Message
+    timestamp: str
+
+
+class _ArtifactBase(TypedDict):
+    artifactId: str
+    parts: List[Part]
+
+
+class Artifact(_ArtifactBase, total=False):
+    name: str
+    description: str
+    metadata: Dict[str, Any]
+    extensions: List[str]
+
+
+class _TaskBase(TypedDict):
+    id: str
+    contextId: str
+    status: TaskStatus
+
+
+class Task(_TaskBase, total=False):
+    kind: Literal["task"]
+    history: List[Message]
+    artifacts: List[Artifact]
+    metadata: Dict[str, Any]
+
+
+# ── Streaming ─────────────────────────────────────────────────────────────────
 
 StreamEvent = Dict[str, Any]

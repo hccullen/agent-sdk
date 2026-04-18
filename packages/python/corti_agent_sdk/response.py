@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from .types import Artifact, Message, Task
+
 
 class MessageResponse:
     """
@@ -15,29 +17,41 @@ class MessageResponse:
         r = await ctx.send_text("What is the ICD-10 code for hypertension?")
         print(r.text)      # "The ICD-10 code is I10."
         print(r.status)    # "completed"
-        print(r.raw)       # full dict if you need it
+        print(r.task)      # full A2A v1 Task dict
+        print(r.raw)       # full API response dict
     """
 
     def __init__(self, raw: Dict[str, Any]) -> None:
         self._raw = raw
 
+    # ── private helpers ───────────────────────────────────────────────────────
+
     @property
-    def _task(self) -> Dict[str, Any]:
+    def _node(self) -> Dict[str, Any]:
         return self._raw.get("task") or {}
 
     @property
-    def _status(self) -> Dict[str, Any]:
-        return self._task.get("status") or {}
+    def _node_status(self) -> Dict[str, Any]:
+        return self._node.get("status") or {}
+
+    # ── A2A v1 task ───────────────────────────────────────────────────────────
+
+    @property
+    def task(self) -> Optional[Task]:
+        """The full A2A v1 Task object."""
+        return self._raw.get("task")  # type: ignore[return-value]
+
+    # ── promoted fields ───────────────────────────────────────────────────────
 
     @property
     def status(self) -> Optional[str]:
         """The task's terminal state, e.g. ``"completed"``, ``"failed"``."""
-        return self._status.get("state")
+        return self._node_status.get("state")
 
     @property
-    def status_message(self) -> Optional[Dict[str, Any]]:
+    def status_message(self) -> Optional[Message]:
         """The agent's reply message (``task.status.message``)."""
-        return self._status.get("message")
+        return self._node_status.get("message")  # type: ignore[return-value]
 
     @property
     def text(self) -> Optional[str]:
@@ -45,18 +59,18 @@ class MessageResponse:
         msg = self.status_message
         if not msg:
             return None
-        parts = msg.get("parts") or []
+        parts = msg.get("parts") or []  # type: ignore[union-attr]
         joined = "".join(
             p["text"] for p in parts if p.get("kind") == "text" and "text" in p
         )
         return joined or None
 
     @property
-    def artifacts(self) -> List[Any]:
+    def artifacts(self) -> List[Artifact]:
         """Structured artifacts produced by the task, deduplicated by parts content."""
         seen: set[str] = set()
-        result: List[Any] = []
-        for a in self._task.get("artifacts") or []:
+        result: List[Artifact] = []
+        for a in self._node.get("artifacts") or []:
             key = json.dumps(a.get("parts"), sort_keys=True)
             if key not in seen:
                 seen.add(key)
@@ -66,12 +80,12 @@ class MessageResponse:
     @property
     def context_id(self) -> Optional[str]:
         """The thread ID — same value the context tracks internally."""
-        return self._task.get("contextId")
+        return self._node.get("contextId")
 
     @property
     def task_id(self) -> Optional[str]:
         """The task ID for this specific invocation."""
-        return self._task.get("id")
+        return self._node.get("id")
 
     @property
     def raw(self) -> Dict[str, Any]:

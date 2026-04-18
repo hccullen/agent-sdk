@@ -8,15 +8,20 @@ import type { Corti } from "@corti/sdk";
 export class MessageResponse {
   constructor(private readonly _raw: Corti.AgentsMessageSendResponse) {}
 
-  private get _task() { return this._raw.task; }
-  private get _taskStatus() { return this._raw.task?.status; }
+  private get _node() { return this._raw.task; }
+  private get _nodeStatus() { return this._raw.task?.status; }
+
+  /** The full A2A v1 Task object. */
+  get task(): Corti.AgentsTask | undefined {
+    return this._node;
+  }
 
   /**
    * The task's terminal state.
    * e.g. `"completed"`, `"failed"`, `"input-required"`, `"working"`, …
    */
   get status(): Corti.AgentsTaskStatusState | undefined {
-    return this._taskStatus?.state;
+    return this._nodeStatus?.state;
   }
 
   /**
@@ -24,7 +29,7 @@ export class MessageResponse {
    * This is where the agent's answer lives.
    */
   get statusMessage(): Corti.AgentsMessage | undefined {
-    return this._taskStatus?.message;
+    return this._nodeStatus?.message;
   }
 
   /**
@@ -42,7 +47,7 @@ export class MessageResponse {
 
   /** Structured artifacts produced by the task, deduplicated by parts content. */
   get artifacts(): Corti.AgentsArtifact[] {
-    const all = this._task?.artifacts ?? [];
+    const all = this._node?.artifacts ?? [];
     const seen = new Set<string>();
     return all.filter((a) => {
       const key = JSON.stringify(a.parts);
@@ -54,12 +59,12 @@ export class MessageResponse {
 
   /** The thread ID — same value the context tracks internally. */
   get contextId(): string | undefined {
-    return this._task?.contextId;
+    return this._node?.contextId;
   }
 
   /** The task ID for this specific invocation. */
   get taskId(): string | undefined {
-    return this._task?.id;
+    return this._node?.id;
   }
 
   /** The full, unmodified response from the API. */

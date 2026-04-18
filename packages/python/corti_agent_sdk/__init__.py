@@ -41,17 +41,28 @@ from .context import AgentContext
 from .handle import AgentHandle
 from .response import MessageResponse
 from .types import (
+    # connector / agent options
     A2aConnector,
     ConnectorDef,
     CortiAgentConnector,
     CreateAgentOptions,
     Lifecycle,
     McpConnector,
-    Part,
     RegistryConnector,
-    StreamEvent,
-    TextPart,
     UpdateAgentOptions,
+    # part types
+    DataPart,
+    FilePart,
+    Part,
+    TextPart,
+    # A2A v1 output types
+    Artifact,
+    Message,
+    Task,
+    TaskState,
+    TaskStatus,
+    # streaming
+    StreamEvent,
 )
 
 __all__ = [
@@ -61,16 +72,26 @@ __all__ = [
     "CortiClient",
     "MessageResponse",
     "connectors",
-    # types
+    # connector / agent options
     "A2aConnector",
     "ConnectorDef",
     "CortiAgentConnector",
     "CreateAgentOptions",
     "Lifecycle",
     "McpConnector",
-    "Part",
     "RegistryConnector",
-    "StreamEvent",
-    "TextPart",
     "UpdateAgentOptions",
+    # part types
+    "DataPart",
+    "FilePart",
+    "Part",
+    "TextPart",
+    # A2A v1 output types
+    "Artifact",
+    "Message",
+    "Task",
+    "TaskState",
+    "TaskStatus",
+    # streaming
+    "StreamEvent",
 ]

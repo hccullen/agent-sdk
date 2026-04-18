@@ -5,15 +5,26 @@ export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
 
 export type {
+  // connector / agent options
   A2aConnector,
   ConnectorDef,
   CortiAgentConnector,
   CreateAgentOptions,
   Lifecycle,
   McpConnector,
-  Part,
   RegistryConnector,
-  StreamEvent,
-  TextPart,
   UpdateAgentOptions,
+  // part types
+  DataPart,
+  FilePart,
+  Part,
+  TextPart,
+  // A2A v1 output types
+  Artifact,
+  Message,
+  Task,
+  TaskState,
+  TaskStatus,
+  // streaming
+  StreamEvent,
 } from "./types";

@@ -75,4 +75,14 @@ export interface CreateAgentOptions {
 
 export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
+export type FilePart = Corti.AgentsFilePart;
+export type DataPart = Corti.AgentsDataPart;
 export type StreamEvent = Corti.AgentsMessageStreamResponse;
+
+// ── A2A v1 output types ───────────────────────────────────────────────────────
+
+export type Task       = Corti.AgentsTask;
+export type Artifact   = Corti.AgentsArtifact;
+export type Message    = Corti.AgentsMessage;
+export type TaskStatus = Corti.AgentsTaskStatus;
+export type TaskState  = Corti.AgentsTaskStatusState;
