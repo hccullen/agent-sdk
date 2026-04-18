@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from .response import MessageResponse
-from .types import Part
+from .types import CredentialStore, Part
 
 if TYPE_CHECKING:
     from .handle import AgentHandle
@@ -137,7 +137,8 @@ class Workflow:
                 if retry_delay > 0:
                     await asyncio.sleep(retry_delay)
 
-            assert response is not None
+            if response is None:
+                raise RuntimeError("[AgentSDK] Internal error: workflow step produced no response.")
             executed.append(response)
             current = response.text or ""
 
@@ -145,6 +146,8 @@ class Workflow:
                 stopped_early = True
                 break
 
+        if not executed:
+            raise ValueError("[AgentSDK] All workflow steps were skipped — no output produced.")
         return WorkflowResult(output=executed[-1], steps=executed, stopped_early=stopped_early)
 
 
@@ -171,9 +174,11 @@ class ParallelStep(_ParallelStepBase, total=False):
     """
     A parallel step. Provide ``input`` to override the shared input for this
     specific agent; omit to use whatever was passed to ``Parallel.run()``.
+    Provide ``credentials`` to forward auth credentials for this specific agent.
     """
 
     input: Union[str, List[Part]]
+    credentials: "CredentialStore"
 
 
 @dataclass
@@ -225,7 +230,12 @@ class Parallel:
                 if not isinstance(step, _AgentHandle)
                 else input
             )
-            return await agent.run(step_input)
+            creds = (
+                step.get("credentials")  # type: ignore[union-attr]
+                if not isinstance(step, _AgentHandle)
+                else None
+            )
+            return await agent.run(step_input, credentials=creds)
 
         raw = await asyncio.gather(*[_run(s) for s in self._steps], return_exceptions=True)
 

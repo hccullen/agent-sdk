@@ -1,6 +1,6 @@
 import { AgentHandle } from "./AgentHandle";
 import { MessageResponse } from "./MessageResponse";
-import type { Part } from "./types";
+import type { CredentialStore, Part } from "./types";
 
 // ── Runnable ──────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,9 @@ export class Workflow {
       }
     }
 
+    if (executed.length === 0) {
+      throw new Error("[AgentSDK] All workflow steps were skipped — no output produced.");
+    }
     return { output: executed[executed.length - 1], steps: executed, stoppedEarly };
   }
 }
@@ -140,8 +143,9 @@ export function workflow(steps: WorkflowStepDef[]): Workflow {
 /**
  * A parallel step. Provide `input` to override the shared input for this
  * specific agent; omit to use whatever was passed to `Parallel.run()`.
+ * Provide `credentials` to forward auth credentials for this specific agent.
  */
-export type ParallelStep = AgentHandle | { agent: AgentHandle; input?: string | Part[] };
+export type ParallelStep = AgentHandle | { agent: AgentHandle; input?: string | Part[]; credentials?: CredentialStore };
 
 /** Returned by `Parallel.run()`. Mirrors `Promise.allSettled` shape. */
 export interface ParallelResult {
@@ -182,7 +186,8 @@ export class Parallel {
       const agent = step instanceof AgentHandle ? step : step.agent;
       const stepInput =
         !(step instanceof AgentHandle) && step.input !== undefined ? step.input : input;
-      return agent.run(stepInput);
+      const credentials = !(step instanceof AgentHandle) ? step.credentials : undefined;
+      return agent.run(stepInput, credentials !== undefined ? { credentials } : undefined);
     });
 
     const results = await Promise.allSettled(promises);

@@ -51,6 +51,7 @@ class AgentHandle:
         input: Union[str, List[Part]],
         *,
         context_id: Optional[str] = None,
+        credentials: Optional[CredentialStore] = None,
     ) -> MessageResponse:
         """
         One-shot invoke: create a fresh context, send the message, return the response.
@@ -61,18 +62,25 @@ class AgentHandle:
             Plain text string or a list of message Parts.
         context_id:
             Optional thread ID to continue an existing conversation.
+        credentials:
+            Service credentials forwarded automatically if the agent returns
+            ``auth-required``.
 
         Example::
 
             r1 = await agent_a.run("Classify this note.")
             r2 = await agent_b.run(r1.text or "")
         """
-        ctx = AgentContext(self._agent["id"], self._client, context_id)
+        ctx = AgentContext(self._agent["id"], self._client, context_id, credentials)
         if isinstance(input, str):
             return await ctx.send_text(input)
         return await ctx.send_message(input)
 
-    def create_context(self) -> AgentContext:
+    def create_context(
+        self,
+        *,
+        credentials: Optional[CredentialStore] = None,
+    ) -> AgentContext:
         """
         Create a new conversation context (thread) with this agent.
 
@@ -80,13 +88,19 @@ class AgentHandle:
         ``send_message()`` call, at which point the server creates the thread
         and returns a ``contextId`` that is transparently managed for you.
 
+        Parameters
+        ----------
+        credentials:
+            Service credentials forwarded automatically if the agent returns
+            ``auth-required``.
+
         Example::
 
-            ctx = agent.create_context()
+            ctx = agent.create_context(credentials={"my-mcp": "tok_123"})
             r1 = await ctx.send_text("Hello")
             r2 = await ctx.send_text("Follow-up?")
         """
-        return AgentContext(self._agent["id"], self._client)
+        return AgentContext(self._agent["id"], self._client, credentials=credentials)
 
     async def update(
         self,
