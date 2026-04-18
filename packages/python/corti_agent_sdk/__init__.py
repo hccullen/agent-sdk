@@ -40,6 +40,7 @@ from .connectors import connectors
 from .context import AgentContext
 from .handle import AgentHandle
 from .response import MessageResponse
+from .workflow import Workflow, WorkflowResult, WorkflowStep, workflow
 from .types import (
     # connector / agent options
     A2aConnector,
@@ -71,7 +72,11 @@ __all__ = [
     "AgentsClient",
     "CortiClient",
     "MessageResponse",
+    "Workflow",
+    "WorkflowResult",
+    "WorkflowStep",
     "connectors",
+    "workflow",
     # connector / agent options
     "A2aConnector",
     "ConnectorDef",

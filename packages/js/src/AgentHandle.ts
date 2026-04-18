@@ -1,7 +1,8 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
+import { MessageResponse } from "./MessageResponse";
 import { connectorsToExperts } from "./connectors";
-import type { UpdateAgentOptions } from "./types";
+import type { Part, UpdateAgentOptions } from "./types";
 
 /**
  * A handle to a Corti agent that enriches the raw SDK agent with
@@ -52,6 +53,23 @@ export class AgentHandle {
    */
   createContext(): AgentContext {
     return new AgentContext(this._agent.id, this.client);
+  }
+
+  /**
+   * One-shot invoke: create a fresh context, send the message, return the response.
+   *
+   * Equivalent to `createContext().sendText(input)` for the common case, but
+   * also accepts `Part[]` and an optional `contextId` to continue an existing thread.
+   *
+   * @example
+   * ```ts
+   * const r1 = await agentA.run("Classify this note.");
+   * const r2 = await agentB.run(r1.text ?? "");
+   * ```
+   */
+  async run(input: string | Part[], contextId?: string): Promise<MessageResponse> {
+    const ctx = new AgentContext(this._agent.id, this.client, contextId);
+    return typeof input === "string" ? ctx.sendText(input) : ctx.sendMessage(input);
   }
 
   /**

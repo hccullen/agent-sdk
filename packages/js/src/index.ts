@@ -3,6 +3,8 @@ export { AgentContext } from "./AgentContext";
 export { AgentHandle } from "./AgentHandle";
 export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
+export { Workflow, workflow } from "./workflow";
+export type { WorkflowResult, WorkflowStep } from "./workflow";
 
 export type {
   // connector / agent options

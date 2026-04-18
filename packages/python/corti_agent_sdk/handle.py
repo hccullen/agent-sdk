@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from .connectors import connectors_to_experts
 from .context import AgentContext
-from .types import ConnectorDef
+from .response import MessageResponse
+from .types import ConnectorDef, Part
 
 if TYPE_CHECKING:
     from .client import CortiClient
@@ -44,6 +45,32 @@ class AgentHandle:
     def raw(self) -> Dict[str, Any]:
         """The underlying raw agent dict from the API."""
         return self._agent
+
+    async def run(
+        self,
+        input: Union[str, List[Part]],
+        *,
+        context_id: Optional[str] = None,
+    ) -> MessageResponse:
+        """
+        One-shot invoke: create a fresh context, send the message, return the response.
+
+        Parameters
+        ----------
+        input:
+            Plain text string or a list of message Parts.
+        context_id:
+            Optional thread ID to continue an existing conversation.
+
+        Example::
+
+            r1 = await agent_a.run("Classify this note.")
+            r2 = await agent_b.run(r1.text or "")
+        """
+        ctx = AgentContext(self._agent["id"], self._client, context_id)
+        if isinstance(input, str):
+            return await ctx.send_text(input)
+        return await ctx.send_message(input)
 
     def create_context(self) -> AgentContext:
         """
