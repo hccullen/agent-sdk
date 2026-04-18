@@ -17,7 +17,10 @@ export type {
   RegistryConnector,
   UpdateAgentOptions,
   // credentials
+  Credential,
   CredentialStore,
+  OAuth2Credential,
+  TokenCredential,
   // part types
   DataPart,
   FilePart,

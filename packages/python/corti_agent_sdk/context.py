@@ -4,7 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional
 
 from .response import MessageResponse
-from .types import CredentialStore, Part, StreamEvent
+from .types import Credential, CredentialStore, Part, StreamEvent
 
 if TYPE_CHECKING:
     from .client import CortiClient
@@ -66,6 +66,24 @@ class AgentContext:
             if cid:
                 self._context_id = cid
 
+    def _build_auth_part(self, mcp_name: str, cred: Credential) -> Part:
+        if cred["type"] == "token":
+            return {"kind": "data", "data": {"type": "token", "mcp_name": mcp_name, "token": cred["token"]}}  # type: ignore[return-value]
+        return {  # type: ignore[return-value]
+            "kind": "data",
+            "data": {
+                "type": "credentials",
+                "mcp_name": mcp_name,
+                "client_id": cred["client_id"],  # type: ignore[typeddict-item]
+                "client_secret": cred["client_secret"],  # type: ignore[typeddict-item]
+            },
+        }
+
+    def _build_auth_parts(self) -> List[Part]:
+        if not self._credentials:
+            return []
+        return [self._build_auth_part(name, cred) for name, cred in self._credentials.items()]
+
     async def _do_send(self, parts: List[Part]) -> MessageResponse:
         """Send parts to the API and capture contextId from the response."""
         response = await self._client.request(
@@ -83,18 +101,17 @@ class AgentContext:
         On the first call the server creates a new thread; subsequent calls
         automatically continue the same thread.
 
-        If the agent responds with ``auth-required`` and this context was
-        created with credentials, those credentials are automatically forwarded
-        as a DataPart follow-up — the caller receives the final response.
+        If credentials were supplied, they are included as DataParts on the
+        first message of a new context. If the agent still responds with
+        ``auth-required``, credentials are sent again as a follow-up.
         """
-        result = await self._do_send(parts)
+        is_new_context = self._context_id is None
+        all_parts = self._build_auth_parts() + parts if is_new_context and self._credentials else parts
+
+        result = await self._do_send(all_parts)
 
         if result.status == "auth-required" and self._credentials:
-            cred_part: Part = {  # type: ignore[assignment]
-                "kind": "data",
-                "data": {"credentials": self._credentials},
-            }
-            result = await self._do_send([cred_part])
+            result = await self._do_send(self._build_auth_parts())
 
         return result
 

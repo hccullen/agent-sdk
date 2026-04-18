@@ -45,7 +45,26 @@ class A2aConnector(TypedDict):
 ConnectorDef = Union[McpConnector, RegistryConnector, CortiAgentConnector, A2aConnector]
 
 
-CredentialStore = Dict[str, str]
+class TokenCredential(TypedDict):
+    """Bearer-token credential for one MCP server (auth type "bearer")."""
+    type: Literal["token"]
+    token: str
+
+
+class OAuth2Credential(TypedDict):
+    """OAuth 2.0 client-credentials for one MCP server (auth type "oauth2.0")."""
+    type: Literal["credentials"]
+    client_id: str
+    client_secret: str
+
+
+Credential = Union[TokenCredential, OAuth2Credential]
+
+CredentialStore = Dict[str, Credential]
+"""Map of MCP server name → credential.
+Pass to ``create_context()`` or ``run()`` to authenticate MCP tool calls.
+Credentials are forwarded as DataParts on the first message of each context.
+"""
 
 
 # ── Agent creation / update ──────────────────────────────────────────────────

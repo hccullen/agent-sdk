@@ -52,7 +52,10 @@ from .workflow import (
 )
 from .types import (
     # credentials
+    Credential,
     CredentialStore,
+    OAuth2Credential,
+    TokenCredential,
     # connector / agent options
     A2aConnector,
     ConnectorDef,
@@ -93,7 +96,10 @@ __all__ = [
     "parallel",
     "workflow",
     # credentials
+    "Credential",
     "CredentialStore",
+    "OAuth2Credential",
+    "TokenCredential",
     # connector / agent options
     "A2aConnector",
     "ConnectorDef",

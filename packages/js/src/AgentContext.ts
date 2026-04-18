@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
 import { MessageResponse } from "./MessageResponse";
-import type { CredentialStore, Part, StreamEvent } from "./types";
+import type { Credential, CredentialStore, Part, StreamEvent } from "./types";
 
 /**
  * A stateful conversation context (thread) with a specific agent.
@@ -43,6 +43,21 @@ export class AgentContext {
     return this._contextId;
   }
 
+  private _buildAuthPart(mcpName: string, cred: Credential): Corti.AgentsDataPart {
+    if (cred.type === "token") {
+      return { kind: "data", data: { type: "token", mcp_name: mcpName, token: cred.token } };
+    }
+    return {
+      kind: "data",
+      data: { type: "credentials", mcp_name: mcpName, client_id: cred.clientId, client_secret: cred.clientSecret },
+    };
+  }
+
+  private _buildAuthParts(): Corti.AgentsDataPart[] {
+    if (!this._credentials) return [];
+    return Object.entries(this._credentials).map(([name, cred]) => this._buildAuthPart(name, cred));
+  }
+
   /** Send parts to the API and capture contextId from the response. */
   private async _doSend(parts: Part[]): Promise<MessageResponse> {
     const response = await this.client.agents.messageSend(this.agentId, {
@@ -74,14 +89,17 @@ export class AgentContext {
    * DataPart follow-up — the caller receives the final response.
    */
   async sendMessage(parts: Part[]): Promise<MessageResponse> {
-    const result = await this._doSend(parts);
+    // Proactively include auth DataParts on the first message of a new context.
+    const isNewContext = this._contextId === undefined;
+    const allParts: Part[] = isNewContext && this._credentials
+      ? [...this._buildAuthParts(), ...parts]
+      : parts;
 
+    const result = await this._doSend(allParts);
+
+    // If the agent still signals auth-required, send credentials as a follow-up.
     if (result.status === "auth-required" && this._credentials) {
-      const credPart: Corti.AgentsDataPart = {
-        kind: "data",
-        data: { credentials: this._credentials },
-      };
-      return this._doSend([credPart]);
+      return this._doSend(this._buildAuthParts());
     }
 
     return result;

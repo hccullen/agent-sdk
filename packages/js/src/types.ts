@@ -71,9 +71,31 @@ export interface CreateAgentOptions {
   connectors?: ConnectorDef[];
 }
 
-// ── Re-exports of SDK types used at the boundary ────────────────────────────
+// ── Credentials ──────────────────────────────────────────────────────────────
 
-export type CredentialStore = Record<string, string>;
+/** Bearer-token credential for one MCP server (auth type "bearer"). */
+export interface TokenCredential {
+  type: "token";
+  token: string;
+}
+
+/** OAuth 2.0 client-credentials for one MCP server (auth type "oauth2.0"). */
+export interface OAuth2Credential {
+  type: "credentials";
+  clientId: string;
+  clientSecret: string;
+}
+
+export type Credential = TokenCredential | OAuth2Credential;
+
+/**
+ * Map of MCP server name → credential.
+ * Pass to `createContext()` or `run()` to authenticate MCP tool calls.
+ * Credentials are forwarded as DataParts on the first message of each context.
+ */
+export type CredentialStore = Record<string, Credential>;
+
+// ── Re-exports of SDK types used at the boundary ────────────────────────────
 export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
 export type FilePart = Corti.AgentsFilePart;
