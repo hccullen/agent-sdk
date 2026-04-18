@@ -74,6 +74,9 @@ def _normalise_workflow(
         return WorkflowStep(agent=step)
     if isinstance(step, Parallel):
         return WorkflowStep(agent=_ParallelAdapter(step))
+    # WorkflowStep dict whose agent is a Parallel — wrap the agent in place.
+    if isinstance(step.get("agent"), Parallel):  # type: ignore[union-attr]
+        return WorkflowStep({**step, "agent": _ParallelAdapter(step["agent"])})  # type: ignore[arg-type]
     return step
 
 

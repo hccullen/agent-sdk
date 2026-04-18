@@ -66,6 +66,8 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
 export class AgentsClient {
   private readonly client: CortiClient;
 
+  private static readonly _PATCH_KEY = "__corti_agent_sdk_patched__";
+
   constructor(client: CortiClient) {
     this.client = client;
     this._patchClientAgents();
@@ -77,18 +79,20 @@ export class AgentsClient {
    *     addition to the raw `AgentsCreateAgent` shape.
    *  2. It always returns an `AgentHandle` at runtime.
    *
-   * TypeScript types on `client.agents.create` remain unchanged; use
-   * `agentClient.create()` when you need the typed `AgentHandle` return.
+   * Guard prevents double-wrapping when multiple `AgentsClient` instances
+   * share the same `CortiClient`.
    */
   private _patchClientAgents(): void {
-    const agents = this.client.agents;
-    const originalCreate = agents.create.bind(agents);
+    const agents = this.client.agents as unknown as Record<string, unknown>;
+    if (agents[AgentsClient._PATCH_KEY]) return;
+    agents[AgentsClient._PATCH_KEY] = true;
+
+    const originalCreate = (this.client.agents.create as Function).bind(this.client.agents);
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
 
-    // Cast to any to allow return-type widening.
-    (agents as unknown as Record<string, unknown>)["create"] = async (
+    agents["create"] = async (
       request: CreateAgentOptions | Corti.AgentsCreateAgent,
       options?: unknown
     ): Promise<AgentHandle> => {

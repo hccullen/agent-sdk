@@ -44,21 +44,23 @@ export interface WorkflowResult {
 
 type WorkflowStepDef = AgentHandle | Parallel | WorkflowStep;
 
+function parallelToRunnable(p: Parallel): Runnable {
+  return {
+    run: async (input: string | Part[]) => {
+      const { fulfilled } = await p.run(input);
+      if (fulfilled.length === 0) {
+        throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
+      }
+      return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
+    },
+  };
+}
+
 function normaliseWorkflow(step: WorkflowStepDef): WorkflowStep {
   if (step instanceof AgentHandle) return { agent: step };
-  if (step instanceof Parallel) {
-    return {
-      agent: {
-        run: async (input: string | Part[]) => {
-          const { fulfilled } = await step.run(input);
-          if (fulfilled.length === 0) {
-            throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
-          }
-          return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
-        },
-      },
-    };
-  }
+  if (step instanceof Parallel) return { agent: parallelToRunnable(step) };
+  // WorkflowStep dict whose agent is a Parallel — wrap the agent in place.
+  if (step.agent instanceof Parallel) return { ...step, agent: parallelToRunnable(step.agent) };
   return step;
 }
 

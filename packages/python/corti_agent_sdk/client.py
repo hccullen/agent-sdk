@@ -65,13 +65,13 @@ class CortiClient:
 
         if isinstance(environment, str):
             env = ENVIRONMENTS.get(environment)
-            if env is not None:
-                self._agents_url = env["agents"].rstrip("/")
-                self._login_url: Optional[str] = env["login"].rstrip("/")
-            else:
-                # Treat the string as a direct agents base URL.
-                self._agents_url = environment.rstrip("/")
-                self._login_url = None
+            if env is None:
+                raise ValueError(
+                    f"Unknown environment {environment!r}. "
+                    "Use 'eu' or 'us', or pass a dict with 'agents' and 'login' keys."
+                )
+            self._agents_url = env["agents"].rstrip("/")
+            self._login_url: Optional[str] = env["login"].rstrip("/")
         else:
             self._agents_url = environment["agents"].rstrip("/")
             self._login_url = environment.get("login", "").rstrip("/") or None
