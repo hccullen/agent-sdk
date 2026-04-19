@@ -43,6 +43,7 @@
         <p class="nav-group">Composition</p>
         <a href="#workflows">Workflows</a>
         <a href="#parallel">Parallel fan-out</a>
+        <a href="#state-graph">State graph</a>
         <a href="#streaming">Streaming</a>
         <a href="#credentials">Credentials</a>
 
@@ -298,6 +299,117 @@ await workflow([
 </code></pre>
       </section>
 
+      <section id="state-graph">
+        <h2>State graph</h2>
+        <p>
+          A <code>StateGraph</code> is a routing graph that carries a typed
+          shared-state object across nodes. Unlike the linear
+          <code>workflow()</code>, edges can be routing functions that inspect
+          the accumulated state and return the next node name — or
+          <code>END</code> to terminate. Cycles are supported and bounded by
+          <code>maxIterations</code> (default&nbsp;25).
+        </p>
+
+        <h3>Concepts</h3>
+        <ul>
+          <li>
+            <strong>State</strong> — a plain typed object that accumulates
+            across every node execution. Each node returns a
+            <code>Partial&lt;S&gt;</code> that is shallow-merged in.
+          </li>
+          <li>
+            <strong>Nodes</strong> — async functions
+            <code>(state: S) =&gt; Promise&lt;Partial&lt;S&gt;&gt;</code>.
+            Use <code>agentNode()</code> to wrap an <code>AgentHandle</code>.
+          </li>
+          <li>
+            <strong>Edges</strong> — a static node name, <code>END</code>, or
+            a routing function <code>(state: S) =&gt; string | END</code>
+            that runs <em>after</em> the node updates the state.
+          </li>
+          <li>
+            <strong><code>END</code></strong> — sentinel that stops execution.
+            A node with no registered edge also terminates the run.
+          </li>
+        </ul>
+
+        <h3>Minimal example</h3>
+<pre><code class="language-typescript">import { stateGraph, agentNode, END } from "@corti/agent-sdk";
+
+interface TriageState {
+  note: string;
+  severity: string;
+  codes: string;
+  approved: boolean;
+}
+
+const graph = stateGraph&lt;TriageState&gt;()
+  .addNode("triage",
+    agentNode(triageAgent,  s =&gt; s.note,  (r, s) =&gt; ({ ...s, severity: r.text ?? "" })))
+  .addNode("coder",
+    agentNode(coderAgent,   s =&gt; s.note,  (r, s) =&gt; ({ ...s, codes: r.text ?? "" })))
+  .addNode("reviewer",
+    agentNode(reviewerAgent, s =&gt; `Note: ${s.note}\nCodes: ${s.codes}`,
+      (r, s) =&gt; ({ ...s, approved: (r.text ?? "").startsWith("approved") })))
+  // Route: only code urgent cases.
+  .addEdge("triage",   s =&gt; s.severity.includes("urgent") ? "coder" : END)
+  .addEdge("coder",    "reviewer")
+  // Loop back to coder if reviewer rejects — maxIterations prevents runaway.
+  .addEdge("reviewer", s =&gt; s.approved ? END : "coder");
+
+const { state, steps, terminatedBy } = await graph.run(
+  "triage",
+  { note: "Chest pain...", severity: "", codes: "", approved: false },
+  { maxIterations: 10 },
+);
+
+console.log(state.codes);      // "I20.9, R07.9"
+console.log(steps.length);     // number of nodes that ran
+console.log(terminatedBy);     // "end" | "maxIterations" | "noEdge"
+</code></pre>
+
+        <h3><code>agentNode()</code></h3>
+        <p>
+          Wraps an <code>AgentHandle</code> as a node function. Provide two
+          callbacks: one to extract the agent's input from state, and one to
+          merge the response back.
+        </p>
+<pre><code class="language-typescript">agentNode(
+  myAgent,
+  (state) =&gt; state.input,                     // extract input
+  (response, state) =&gt; ({ ...state,
+    output: response.text ?? "" }),            // merge response
+)
+</code></pre>
+
+        <h3>Result shape</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>state</code></td><td><code>S</code></td><td>Final accumulated state after all nodes ran.</td></tr>
+              <tr><td><code>steps</code></td><td><code>StateGraphStep&lt;S&gt;[]</code></td><td>Per-node history: <code>node</code>, <code>delta</code>, post-delta <code>state</code>.</td></tr>
+              <tr><td><code>iterations</code></td><td><code>number</code></td><td>Total node executions (including repeated nodes in cycles).</td></tr>
+              <tr><td><code>terminatedBy</code></td><td><code>"end" | "maxIterations" | "noEdge"</code></td><td>Why the graph stopped.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Choosing between <code>workflow</code> and <code>stateGraph</code></h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th></th><th><code>workflow()</code></th><th><code>stateGraph()</code></th></tr></thead>
+            <tbody>
+              <tr><td>Shape</td><td>Linear list of steps</td><td>Named nodes with explicit edges</td></tr>
+              <tr><td>Shared state</td><td>Previous response text only</td><td>Typed object, accumulated</td></tr>
+              <tr><td>Branching</td><td><code>when</code> predicate (skip or run)</td><td>Routing function (pick any node)</td></tr>
+              <tr><td>Cycles</td><td>None</td><td>Supported, bounded by <code>maxIterations</code></td></tr>
+              <tr><td>Best for</td><td>Known fixed pipelines</td><td>Conditional flows, review loops, dynamic routing</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="streaming">
         <h2>Streaming</h2>
 <pre><code class="language-typescript">const stream = await ctx.streamMessage([{ kind: "text", text: "Hello" }]);
@@ -388,8 +500,11 @@ for await (const event of stream) {
           <table>
             <thead><tr><th>Export</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>workflow(steps)</code> / <code>Workflow</code></td><td>Deterministic pipeline.</td></tr>
+              <tr><td><code>workflow(steps)</code> / <code>Workflow</code></td><td>Deterministic linear pipeline.</td></tr>
               <tr><td><code>parallel(steps)</code> / <code>Parallel</code></td><td>Concurrent fan-out.</td></tr>
+              <tr><td><code>stateGraph()</code> / <code>StateGraph</code></td><td>Typed stateful routing graph with conditional edges and cycles.</td></tr>
+              <tr><td><code>agentNode(agent, getInput, merge)</code></td><td>Wrap an <code>AgentHandle</code> as a <code>StateGraph</code> node function.</td></tr>
+              <tr><td><code>END</code></td><td>Sentinel returned by edge routers to terminate a <code>StateGraph</code> run.</td></tr>
               <tr><td><code>connectors</code></td><td>Typed connector factories.</td></tr>
               <tr><td><code>MessageResponse</code></td><td>Response wrapper.</td></tr>
             </tbody>
@@ -415,6 +530,7 @@ for await (const event of stream) {
               <tr><td><code>npm run parallel</code></td><td><code>04-parallel.ts</code></td><td>Fan-out standalone and inside a workflow.</td></tr>
               <tr><td><code>npm run streaming</code></td><td><code>05-streaming.ts</code></td><td>Consuming <code>streamMessage()</code>.</td></tr>
               <tr><td><code>npm run credentials</code></td><td><code>06-credentials.ts</code></td><td>MCP credential forwarding.</td></tr>
+              <tr><td><code>npm run state-graph</code></td><td><code>07-state-graph.ts</code></td><td>Clinical triage pipeline with conditional routing and a reviewer loop.</td></tr>
             </tbody>
           </table>
         </div>

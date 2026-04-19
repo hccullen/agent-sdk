@@ -30,13 +30,15 @@ export const connectors = {
   mcp: (opts: {
     mcpUrl: string;
     name?: string;
-    transport?: "sse" | "streamable_http";
+    transport?: "sse" | "streamable_http" | "stdio";
+    authType?: "none" | "bearer" | "inherit" | "oauth2.0";
     token?: string;
   }): McpConnector => ({
     type: "mcp",
     mcpUrl: opts.mcpUrl,
     ...(opts.name !== undefined && { name: opts.name }),
     ...(opts.transport !== undefined && { transport: opts.transport }),
+    ...(opts.authType !== undefined && { authType: opts.authType }),
     ...(opts.token !== undefined && { token: opts.token }),
   }),
 
@@ -74,6 +76,8 @@ export function connectorsToExperts(
     switch (conn.type) {
       case "mcp": {
         const name = conn.name ?? mcpUrlToName(conn.mcpUrl);
+        const authorizationType =
+          conn.authType ?? (conn.token ? "bearer" : "none");
         return {
           type: "new",
           name,
@@ -82,7 +86,7 @@ export function connectorsToExperts(
             {
               name,
               transportType: conn.transport ?? "sse",
-              authorizationType: conn.token ? "bearer" : "inherit",
+              authorizationType,
               url: conn.mcpUrl,
               ...(conn.token !== undefined && { token: conn.token }),
             },

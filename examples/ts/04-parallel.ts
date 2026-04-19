@@ -13,48 +13,48 @@ import { makeClient } from "./_client";
 async function main() {
   const agents = new AgentsClient(makeClient());
 
-  const [emoji, haiku, slogan, merger] = await Promise.all([
+  const [differential, redFlags, workup, synthesizer] = await Promise.all([
     agents.create({
-      name: "p-emoji",
-      description: "Replies only with emojis.",
-      systemPrompt: "Respond using only emoji characters.",
-    }),
-    agents.create({
-      name: "p-haiku",
-      description: "Writes haikus.",
-      systemPrompt: "Respond with a single haiku (5-7-5).",
-    }),
-    agents.create({
-      name: "p-slogan",
-      description: "Writes marketing slogans.",
-      systemPrompt: "Respond with one punchy marketing slogan.",
-    }),
-    agents.create({
-      name: "p-merger",
-      description: "Picks the best of several drafts.",
+      name: "p-differential",
+      description: "Lists a differential diagnosis.",
       systemPrompt:
-        "You will receive multiple drafts joined by newlines. Pick the best and return only that one.",
+        "List the top 3 differential diagnoses for the presentation, most likely first. One line each.",
+    }),
+    agents.create({
+      name: "p-redflags",
+      description: "Flags symptoms warranting urgent evaluation.",
+      systemPrompt:
+        "List any red-flag features from the presentation that warrant urgent evaluation. One line each.",
+    }),
+    agents.create({
+      name: "p-workup",
+      description: "Suggests initial diagnostic workup.",
+      systemPrompt:
+        "Suggest an initial diagnostic workup (labs, imaging, bedside exam). One line each.",
+    }),
+    agents.create({
+      name: "p-synthesizer",
+      description: "Combines clinical perspectives into a single assessment.",
+      systemPrompt:
+        "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
     }),
   ]);
 
-  try {
-    // (a) Standalone: collect every result with Promise.allSettled-like output.
-    const fanout = await parallel([emoji, haiku, slogan]).run(
-      "Topic: a mountain cabin in winter."
-    );
-    console.log("— Fan-out (standalone) —");
-    fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
-    if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);
+  const presentation =
+    "54-year-old male with 2 hours of crushing substernal chest pain, diaphoresis, and dyspnea; history of hypertension and smoking.";
 
-    // (b) Inside a workflow: fulfilled results are joined and fed into `merger`.
-    const { output } = await workflow([
-      parallel([emoji, haiku, slogan]),
-      merger,
-    ]).run("Topic: a mountain cabin in winter.");
-    console.log("\n— Best draft —\n" + output.text);
-  } finally {
-    await Promise.all([emoji.delete(), haiku.delete(), slogan.delete(), merger.delete()]);
-  }
+  // (a) Standalone: collect every result with Promise.allSettled-like output.
+  const fanout = await parallel([differential, redFlags, workup]).run(presentation);
+  console.log("— Fan-out (standalone) —");
+  fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
+  if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);
+
+  // (b) Inside a workflow: fulfilled results are joined and fed into `synthesizer`.
+  const { output } = await workflow([
+    parallel([differential, redFlags, workup]),
+    synthesizer,
+  ]).run(presentation);
+  console.log("\n— Assessment and plan —\n" + output.text);
 }
 
 main().catch((err) => {

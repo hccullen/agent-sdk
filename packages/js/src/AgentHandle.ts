@@ -75,7 +75,7 @@ export class AgentHandle {
    */
   async run(
     input: string | Part[],
-    opts?: { contextId?: string; credentials?: CredentialStore }
+    opts?: { contextId?: string; credentials?: CredentialStore; timeoutInSeconds?: number }
   ): Promise<MessageResponse> {
     const ctx = new AgentContext(
       this._agent.id,
@@ -83,7 +83,11 @@ export class AgentHandle {
       opts?.contextId,
       opts?.credentials
     );
-    return typeof input === "string" ? ctx.sendText(input) : ctx.sendMessage(input);
+    const sendOpts =
+      opts?.timeoutInSeconds !== undefined
+        ? { timeoutInSeconds: opts.timeoutInSeconds }
+        : undefined;
+    return typeof input === "string" ? ctx.sendText(input, sendOpts) : ctx.sendMessage(input, sendOpts);
   }
 
   /**

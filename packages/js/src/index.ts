@@ -5,6 +5,8 @@ export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
 export { Parallel, Workflow, parallel, workflow } from "./workflow";
 export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow";
+export { END, StateGraph, agentNode, stateGraph } from "./stateGraph";
+export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph";
 
 export type {
   // connector / agent options

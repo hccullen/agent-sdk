@@ -59,16 +59,25 @@ export class AgentContext {
   }
 
   /** Send parts to the API and capture contextId from the response. */
-  private async _doSend(parts: Part[]): Promise<MessageResponse> {
-    const response = await this.client.agents.messageSend(this.agentId, {
-      message: {
-        role: "user",
-        parts,
-        messageId: randomUUID(),
-        kind: "message",
-        ...(this._contextId !== undefined && { contextId: this._contextId }),
+  private async _doSend(
+    parts: Part[],
+    opts?: { timeoutInSeconds?: number }
+  ): Promise<MessageResponse> {
+    const response = await this.client.agents.messageSend(
+      this.agentId,
+      {
+        message: {
+          role: "user",
+          parts,
+          messageId: randomUUID(),
+          kind: "message",
+          ...(this._contextId !== undefined && { contextId: this._contextId }),
+        },
       },
-    });
+      opts?.timeoutInSeconds !== undefined
+        ? { timeoutInSeconds: opts.timeoutInSeconds }
+        : undefined
+    );
 
     if (this._contextId === undefined) {
       const contextId = response?.task?.contextId;
@@ -88,18 +97,21 @@ export class AgentContext {
    * with credentials, those credentials are automatically forwarded as a
    * DataPart follow-up — the caller receives the final response.
    */
-  async sendMessage(parts: Part[]): Promise<MessageResponse> {
+  async sendMessage(
+    parts: Part[],
+    opts?: { timeoutInSeconds?: number }
+  ): Promise<MessageResponse> {
     // Proactively include auth DataParts on the first message of a new context.
     const isNewContext = this._contextId === undefined;
     const allParts: Part[] = isNewContext && this._credentials
       ? [...this._buildAuthParts(), ...parts]
       : parts;
 
-    const result = await this._doSend(allParts);
+    const result = await this._doSend(allParts, opts);
 
     // If the agent still signals auth-required, send credentials as a follow-up.
     if (result.status === "auth-required" && this._credentials) {
-      return this._doSend(this._buildAuthParts());
+      return this._doSend(this._buildAuthParts(), opts);
     }
 
     return result;
@@ -115,9 +127,12 @@ export class AgentContext {
    * console.log(r.status);   // "completed"
    * ```
    */
-  async sendText(text: string): Promise<MessageResponse> {
+  async sendText(
+    text: string,
+    opts?: { timeoutInSeconds?: number }
+  ): Promise<MessageResponse> {
     const part: Corti.AgentsTextPart = { kind: "text", text };
-    return this.sendMessage([part]);
+    return this.sendMessage([part], opts);
   }
 
   /**

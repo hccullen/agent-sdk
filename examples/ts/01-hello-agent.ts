@@ -2,7 +2,9 @@
  * 01 — Hello, agent.
  *
  * The minimum viable example: create an agent, start a conversation,
- * read the reply, clean up.
+ * read the reply. Ephemeral agents are GC'd server-side — no explicit
+ * cleanup is needed. Pass `lifecycle: "persistent"` if you want the
+ * agent to outlive the process.
  *
  * Run: `npm run hello`
  */
@@ -18,20 +20,16 @@ async function main() {
     systemPrompt: "You are a friendly assistant. Keep replies to one sentence.",
   });
 
-  try {
-    const ctx = agent.createContext();
+  const ctx = agent.createContext();
 
-    const reply = await ctx.sendText("Say hello and tell me one fun fact.");
-    console.log("Agent:", reply.text);
-    console.log("Status:", reply.status);
-    console.log("Context ID:", ctx.id);
+  const reply = await ctx.sendText("Say hello and tell me one fun fact.");
+  console.log("Agent:", reply.text);
+  console.log("Status:", reply.status);
+  console.log("Context ID:", ctx.id);
 
-    // The context persists across calls — the agent remembers the thread.
-    const followUp = await ctx.sendText("Tell me another one.");
-    console.log("Agent:", followUp.text);
-  } finally {
-    await agent.delete();
-  }
+  // The context persists across calls — the agent remembers the thread.
+  const followUp = await ctx.sendText("Tell me another one.");
+  console.log("Agent:", followUp.text);
 }
 
 main().catch((err) => {
