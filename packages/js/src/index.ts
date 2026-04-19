@@ -7,6 +7,27 @@ export { Parallel, Workflow, parallel, workflow } from "./workflow";
 export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow";
 export { END, StateGraph, agentNode, stateGraph } from "./stateGraph";
 export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph";
+export { JSON_END, stateGraphFromDef, workflowFromDef, toReactFlow } from "./graphUtils";
+export type {
+  GraphDef,
+  JsonEnd,
+  NodeIOMapping,
+  ReactFlowEdge,
+  ReactFlowGraph,
+  ReactFlowNode,
+  ReactFlowNodeData,
+  AgentRegistry,
+  StateConditionRegistry,
+  StateGraphDef,
+  StateGraphEdgeDef,
+  StateGraphFromDefOptions,
+  StateGraphNodeDef,
+  WorkflowConditionRegistry,
+  WorkflowDef,
+  WorkflowParallelStepDef,
+  WorkflowAgentStepDef,
+  WorkflowStepDef,
+} from "./graphUtils";
 
 export type {
   // connector / agent options
