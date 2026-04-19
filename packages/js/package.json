@@ -9,7 +9,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch"
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "corti",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@corti/sdk": "^0.3.0-agents",
     "@types/node": "^18.0.0",
-    "typescript": "~5.7.2"
+    "typescript": "~5.7.2",
+    "vitest": "^3.0.0"
   }
 }
