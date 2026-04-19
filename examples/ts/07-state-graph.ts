@@ -45,75 +45,66 @@ async function main() {
     name: "sg-reviewer",
     description: "Reviews proposed ICD-10 codes.",
     systemPrompt:
-      'Review the proposed ICD-10 codes for the clinical note. Reply with "approved: <codes>" if correct, or "rejected: <reason>" if not.',
+      'Review the proposed ICD-10 codes for the clinical note. Your reply MUST begin with exactly "approved:" or "rejected:" (lowercase, followed by a colon). No preamble, no other leading text. After the colon include the codes (if approved) or a brief reason (if rejected).',
   });
 
-  try {
-    const graph = stateGraph<TriageState>()
-      .addNode(
-        "triage",
-        agentNode(
-          triageAgent,
-          (s) => s.note,
-          (r, s) => ({ ...s, severity: r.text ?? "" }),
-        ),
-      )
-      .addNode(
-        "coder",
-        agentNode(
-          coderAgent,
-          (s) => s.note,
-          (r, s) => ({ ...s, codes: r.text ?? "" }),
-        ),
-      )
-      .addNode(
-        "reviewer",
-        agentNode(
-          reviewerAgent,
-          (s) => `Note: ${s.note}\n\nProposed codes: ${s.codes}`,
-          (r, s) => ({
-            ...s,
-            reviewerFeedback: r.text ?? "",
-            approved: (r.text ?? "").toLowerCase().startsWith("approved"),
-          }),
-        ),
-      )
-      // Only code urgent cases; discharge routine ones immediately.
-      .addEdge("triage", (s) =>
-        s.severity.toLowerCase().includes("urgent") ? "coder" : END,
-      )
-      .addEdge("coder", "reviewer")
-      // Loop back to coder if reviewer rejects; maxIterations acts as the safety net.
-      .addEdge("reviewer", (s) => (s.approved ? END : "coder"));
+  const graph = stateGraph<TriageState>()
+    .addNode(
+      "triage",
+      agentNode(
+        triageAgent,
+        (s) => s.note,
+        (r) => ({ severity: r.text ?? "" }),
+      ),
+    )
+    .addNode(
+      "coder",
+      agentNode(
+        coderAgent,
+        (s) => s.note,
+        (r) => ({ codes: r.text ?? "" }),
+      ),
+    )
+    .addNode(
+      "reviewer",
+      agentNode(
+        reviewerAgent,
+        (s) => `Note: ${s.note}\n\nProposed codes: ${s.codes}`,
+        (r) => ({
+          reviewerFeedback: r.text ?? "",
+          approved: (r.text ?? "").trim().toLowerCase().startsWith("approved"),
+        }),
+      ),
+    )
+    // Only code urgent cases; discharge routine ones immediately.
+    .addEdge("triage", (s) =>
+      s.severity.toLowerCase().includes("urgent") ? "coder" : END,
+    )
+    .addEdge("coder", "reviewer")
+    // Loop back to coder if reviewer rejects; maxIterations acts as the safety net.
+    .addEdge("reviewer", (s) => (s.approved ? END : "coder"));
 
-    const initialState: TriageState = {
-      note: "Patient presents with sudden onset chest pain radiating to the left arm, diaphoresis, and shortness of breath for 45 minutes.",
-      severity: "",
-      codes: "",
-      reviewerFeedback: "",
-      approved: false,
-    };
+  const initialState: TriageState = {
+    note: "Patient presents with sudden onset chest pain radiating to the left arm, diaphoresis, and shortness of breath for 45 minutes.",
+    severity: "",
+    codes: "",
+    reviewerFeedback: "",
+    approved: false,
+  };
 
-    const result = await graph.run("triage", initialState, { maxIterations: 10 });
+  const result = await graph.run("triage", initialState, { maxIterations: 10 });
 
-    console.log("Final state:");
-    console.log("  Severity:         ", result.state.severity);
-    console.log("  ICD-10 codes:     ", result.state.codes);
-    console.log("  Reviewer feedback:", result.state.reviewerFeedback);
-    console.log("  Approved:         ", result.state.approved);
-    console.log("\nExecution trace:");
-    for (const step of result.steps) {
-      console.log(`  [${step.node}]`, Object.keys(step.delta).join(", "));
-    }
-    console.log("\nIterations:", result.iterations);
-    console.log("Terminated by:", result.terminatedBy);
-  } finally {
-    await Promise.all([
-      triageAgent.delete(),
-      coderAgent.delete(),
-      reviewerAgent.delete(),
-    ]);
+  console.log("Final state:");
+  console.log("  Severity:         ", result.state.severity);
+  console.log("  ICD-10 codes:     ", result.state.codes);
+  console.log("  Reviewer feedback:", result.state.reviewerFeedback);
+  console.log("  Approved:         ", result.state.approved);
+  console.log("\nExecution trace:");
+  for (const step of result.steps) {
+    console.log(`  [${step.node}]`, Object.keys(step.delta).join(", "));
   }
+  console.log("\nIterations:", result.iterations);
+  console.log("Terminated by:", result.terminatedBy);
 }
 
 main().catch((err) => {

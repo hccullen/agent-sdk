@@ -31,31 +31,27 @@ async function main() {
     systemPrompt: "Draft a one-line escalation to the on-call physician.",
   });
 
-  try {
-    const note =
-      "Patient reports chest pain radiating to left arm, onset 30 minutes ago.";
+  const note =
+    "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago.";
 
-    // Pipeline: summarise → classify → escalate (only when classifier says urgent).
-    const result = await workflow([
-      summarizer,                                  // step 1: summarise the note
-      classifier,                                  // step 2: classify the summary
-      {                                            // step 3: conditional escalate
-        agent: escalator,
-        when: (prev) => (prev.text ?? "").toLowerCase().includes("urgent"),
-        // Skip escalation input is just the word "urgent"; give escalator the
-        // original note so it has something to escalate.
-        transform: () => note,
-        retries: 2,
-        retryDelay: 500,
-      },
-    ]).run(note);
+  // Pipeline: summarise → classify → escalate (only when classifier says urgent).
+  const result = await workflow([
+    summarizer,                                  // step 1: summarise the note
+    classifier,                                  // step 2: classify the summary
+    {                                            // step 3: conditional escalate
+      agent: escalator,
+      when: (prev) => (prev.text ?? "").toLowerCase().includes("urgent"),
+      // Skip escalation input is just the word "urgent"; give escalator the
+      // original note so it has something to escalate.
+      transform: () => note,
+      retries: 2,
+      retryDelay: 500,
+    },
+  ]).run(note);
 
-    console.log("Final output:", result.output.text);
-    console.log("Steps executed:", result.steps.length);
-    console.log("Stopped early:", result.stoppedEarly);
-  } finally {
-    await Promise.all([summarizer.delete(), classifier.delete(), escalator.delete()]);
-  }
+  console.log("Final output:", result.output.text);
+  console.log("Steps executed:", result.steps.length);
+  console.log("Stopped early:", result.stoppedEarly);
 }
 
 main().catch((err) => {

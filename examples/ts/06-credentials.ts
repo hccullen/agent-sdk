@@ -27,22 +27,18 @@ async function main() {
   const agent = await agents.create({
     name: "auth-demo",
     description: "Calls an auth-protected MCP server.",
-    connectors: [connectors.mcp({ mcpUrl, name: "my-mcp" })],
+    connectors: [connectors.mcp({ mcpUrl, name: "my-mcp", authType: "bearer" })],
   });
 
-  try {
-    const ctx = agent.createContext({
-      credentials: {
-        "my-mcp": { type: "token", token: mcpToken },
-      },
-    });
+  const ctx = agent.createContext({
+    credentials: {
+      "my-mcp": { type: "token", token: mcpToken },
+    },
+  });
 
-    const reply = await ctx.sendText("List the tools you have access to.");
-    console.log("Status:", reply.status);   // expect "completed"
-    console.log("Reply:", reply.text);
-  } finally {
-    await agent.delete();
-  }
+  const reply = await ctx.sendText("List the tools you have access to.");
+  console.log("Status:", reply.status);   // expect "completed"
+  console.log("Reply:", reply.text);
 }
 
 main().catch((err) => {

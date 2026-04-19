@@ -15,8 +15,20 @@ export interface McpConnector {
   /** Human-readable name; auto-derived from the URL if omitted. */
   name?: string;
   /** Transport protocol. Defaults to "sse". */
-  transport?: "sse" | "streamable_http";
-  /** Bearer token for "bearer" auth. Omit to inherit the agent's credentials. */
+  transport?: "sse" | "streamable_http" | "stdio";
+  /**
+   * Authentication scheme the MCP server expects. Defaults to "none".
+   * - "none":     server is unauthenticated.
+   * - "bearer":   static bearer token — either baked in via `token`, or
+   *               forwarded at runtime through the context's `credentials` map.
+   * - "inherit":  reuses the Corti Agent API bearer token (the one used by
+   *               `CortiClient`) on outgoing MCP calls.
+   * - "oauth2.0": OAuth 2.0 client credentials (streamable_http only); the
+   *               clientId/clientSecret are passed via the `credentials` map.
+   * See https://docs.corti.ai/agentic/mcp-authentication
+   */
+  authType?: "none" | "bearer" | "inherit" | "oauth2.0";
+  /** Bearer token baked into the agent. Implies `authType: "bearer"` when set. */
   token?: string;
 }
 
