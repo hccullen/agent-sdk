@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
 import { MessageResponse } from "./MessageResponse";
+import { rpcCall, rpcStream } from "./rpcTransport";
 import type { Credential, CredentialStore, Part, StreamEvent } from "./types";
 
 /**
@@ -58,13 +59,15 @@ export class AgentContext {
     return Object.entries(this._credentials).map(([name, cred]) => this._buildAuthPart(name, cred));
   }
 
-  /** Send parts to the API and capture contextId from the response. */
+  /** Send parts to the API via A2A JSON-RPC and capture contextId. */
   private async _doSend(
     parts: Part[],
     opts?: { timeoutInSeconds?: number }
   ): Promise<MessageResponse> {
-    const response = await this.client.agents.messageSend(
+    const task = await rpcCall<Corti.AgentsTask>(
+      this.client,
       this.agentId,
+      "message/send",
       {
         message: {
           role: "user",
@@ -79,12 +82,11 @@ export class AgentContext {
         : undefined
     );
 
-    if (this._contextId === undefined) {
-      const contextId = response?.task?.contextId;
-      if (contextId) this._contextId = contextId;
+    if (this._contextId === undefined && task?.contextId) {
+      this._contextId = task.contextId;
     }
 
-    return new MessageResponse(response);
+    return new MessageResponse(task);
   }
 
   /**
@@ -148,32 +150,58 @@ export class AgentContext {
    * ```
    */
   async streamMessage(parts: Part[]): Promise<AsyncIterable<StreamEvent>> {
-    const stream = await (this.client.agents as unknown as {
-      messageStream(
-        id: string,
-        request: Corti.AgentsMessageSendParams
-      ): Promise<AsyncIterable<Corti.AgentsMessageStreamResponse>>;
-    }).messageStream(this.agentId, {
-      message: {
-        role: "user",
-        parts,
-        messageId: randomUUID(),
-        kind: "message",
-        ...(this._contextId !== undefined && { contextId: this._contextId }),
-      },
-    });
+    const stream = rpcStream<StreamEvent>(
+      this.client,
+      this.agentId,
+      "message/stream",
+      {
+        message: {
+          role: "user",
+          parts,
+          messageId: randomUUID(),
+          kind: "message",
+          ...(this._contextId !== undefined && { contextId: this._contextId }),
+        },
+      }
+    );
 
     return this._wrapStream(stream);
   }
 
   private async *_wrapStream(
-    inner: AsyncIterable<Corti.AgentsMessageStreamResponse>
+    inner: AsyncIterable<unknown>
   ): AsyncGenerator<StreamEvent> {
-    for await (const event of inner) {
-      if (this._contextId === undefined && event.task?.contextId) {
-        this._contextId = event.task.contextId;
+    for await (const rawEvent of inner) {
+      const event = normalizeStreamEvent(rawEvent);
+      if (this._contextId === undefined) {
+        const cid =
+          event.task?.contextId ??
+          event.statusUpdate?.contextId ??
+          event.artifactUpdate?.contextId ??
+          event.message?.contextId;
+        if (cid) this._contextId = cid;
       }
       yield event;
     }
+  }
+}
+
+/**
+ * Translate A2A flat events (`{kind: "status-update", ...}`) into the wrapped
+ * shape `{statusUpdate?, message?, task?, artifactUpdate?}` the SDK exposes.
+ * Passes through already-wrapped events unchanged.
+ */
+function normalizeStreamEvent(raw: unknown): StreamEvent {
+  if (!raw || typeof raw !== "object") return raw as StreamEvent;
+  const obj = raw as Record<string, unknown> & { kind?: string };
+  if (obj.statusUpdate || obj.artifactUpdate || obj.message || obj.task) {
+    return obj as StreamEvent;
+  }
+  switch (obj.kind) {
+    case "task":            return { task: obj as unknown as Corti.AgentsTask };
+    case "status-update":   return { statusUpdate: obj as unknown as Corti.AgentsTaskStatusUpdateEvent };
+    case "artifact-update": return { artifactUpdate: obj as unknown as Corti.AgentsTaskArtifactUpdateEvent };
+    case "message":         return { message: obj as unknown as Corti.AgentsMessage };
+    default:                return obj as StreamEvent;
   }
 }

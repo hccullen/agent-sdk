@@ -8,9 +8,9 @@ from .types import Artifact, Message, Task
 
 class MessageResponse:
     """
-    Wraps the raw ``message:send`` API response and promotes the fields you
-    almost always need to the top level, while keeping the full response
-    accessible via ``.raw``.
+    Wraps the Task returned by an A2A ``message/send`` JSON-RPC call and
+    promotes the fields you almost always need to the top level, while
+    keeping the full Task accessible via ``.raw``.
 
     Example::
 
@@ -18,11 +18,11 @@ class MessageResponse:
         print(r.text)      # "The ICD-10 code is I10."
         print(r.status)    # "completed"
         print(r.task)      # full A2A v1 Task dict
-        print(r.raw)       # full API response dict
+        print(r.raw)       # full A2A v1 Task dict (same as .task)
     """
 
     def __init__(self, raw: Dict[str, Any]) -> None:
-        self._raw = raw
+        self._raw = raw or {}
 
     @classmethod
     def from_text(cls, text: str) -> "MessageResponse":
@@ -31,27 +31,25 @@ class MessageResponse:
         Used internally when merging parallel results into a single response.
         """
         return cls({
-            "task": {
-                "id": "",
-                "contextId": "",
-                "kind": "task",
-                "status": {
-                    "state": "completed",
-                    "message": {
-                        "role": "agent",
-                        "parts": [{"kind": "text", "text": text}],
-                        "messageId": "",
-                        "kind": "message",
-                    },
+            "id": "",
+            "contextId": "",
+            "kind": "task",
+            "status": {
+                "state": "completed",
+                "message": {
+                    "role": "agent",
+                    "parts": [{"kind": "text", "text": text}],
+                    "messageId": "",
+                    "kind": "message",
                 },
-            }
+            },
         })
 
     # ── private helpers ───────────────────────────────────────────────────────
 
     @property
     def _node(self) -> Dict[str, Any]:
-        return self._raw.get("task") or {}
+        return self._raw
 
     @property
     def _node_status(self) -> Dict[str, Any]:
@@ -62,7 +60,7 @@ class MessageResponse:
     @property
     def task(self) -> Optional[Task]:
         """The full A2A v1 Task object."""
-        return self._raw.get("task")  # type: ignore[return-value]
+        return self._raw or None  # type: ignore[return-value]
 
     # ── promoted fields ───────────────────────────────────────────────────────
 
