@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>04 — Parallel fan-out · @corti/agent-sdk</title>
+  <meta name="description" content="Run multiple agents concurrently on the same input, standalone or as a step inside a workflow." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#standalone">Standalone fan-out</a>
+        <a href="#in-workflow">Inside a workflow</a>
+        <a href="#per-step">Per-step overrides</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="04-parallel.html" class="active">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>04 — Parallel fan-out</strong></p>
+        <h1>04 — Parallel fan-out</h1>
+        <p class="lede">
+          <code>parallel()</code> sends the same prompt to multiple agents at the same time and collects the results. Use it standalone for <code>Promise.allSettled</code>-style output, or drop it directly into a <code>workflow()</code> step list to merge the fulfilled results for a downstream synthesiser.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>parallel(steps)</strong>Creates a <code>Parallel</code> group. Call <code>.run(input)</code> to execute all agents concurrently.</div>
+          <div><strong>fulfilled / rejected</strong>Standalone result shape. <code>fulfilled</code> is an array of <code>MessageResponse</code>; <code>rejected</code> has <code>reason</code> strings.</div>
+          <div><strong>Inline in workflow()</strong>Drop <code>parallel([...])</code> anywhere in the step list. Fulfilled results are text-joined (one per line) and passed to the next step.</div>
+          <div><strong>Per-step overrides</strong>Each agent in the group can have its own <code>input</code>, <code>credentials</code>, or other step-level options.</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run parallel</code></pre>
+
+        <p>
+          The example runs in two parts. First a standalone fan-out that logs each agent's reply independently, then a workflow that feeds the merged results into a synthesiser agent.
+        </p>
+      </section>
+
+      <section id="standalone">
+        <h2>Standalone fan-out</h2>
+        <p>
+          Call <code>parallel([...]).run(input)</code> to get the raw settled results:
+        </p>
+<pre><code class="language-typescript">const fanout = await parallel([differential, redFlags, workup]).run(presentation);
+
+// fulfilled: MessageResponse[]
+fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
+
+// rejected: Array of { reason: unknown }
+if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);</code></pre>
+
+        <p>
+          This behaves like <code>Promise.allSettled</code> — a single agent failure does not abort the group. You get all results regardless.
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>fulfilled</code></td>
+                <td><code>MessageResponse[]</code></td>
+                <td>Responses from agents that completed successfully. Order matches the input array (minus rejected entries).</td>
+              </tr>
+              <tr>
+                <td><code>rejected</code></td>
+                <td><code>{ reason: unknown }[]</code></td>
+                <td>Failure details for agents that threw or returned a non-success status.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="in-workflow">
+        <h2>Inside a workflow</h2>
+        <p>
+          A <code>Parallel</code> group is a valid workflow step. The SDK text-joins all <code>fulfilled</code> results (separated by newlines) and passes the combined string as input to the next step. Rejected results are silently discarded.
+        </p>
+<pre><code class="language-typescript">const { output } = await workflow([
+  parallel([differential, redFlags, workup]),   // fan-out step
+  synthesizer,                                  // receives joined text
+]).run(presentation);</code></pre>
+
+        <p>
+          This is the most common pattern — fan out to several specialist agents, then use one more agent to synthesise their outputs into a cohesive result.
+        </p>
+
+        <div class="callout">
+          <strong>What the synthesiser receives</strong> is the text-joined output of all fulfilled parallel agents, one per line. Write the synthesiser's system prompt to expect a structured multi-section input.
+        </div>
+
+        <h3>Building the agents concurrently</h3>
+        <p>
+          Since the four agents are independent, they can be created in parallel too — using plain <code>Promise.all</code> at the TypeScript level, not the SDK's <code>parallel()</code>:
+        </p>
+<pre><code class="language-typescript">const [differential, redFlags, workup, synthesizer] = await Promise.all([
+  agents.create({ name: "p-differential", systemPrompt: "List the top 3 differentials..." }),
+  agents.create({ name: "p-redflags",     systemPrompt: "List red-flag features..." }),
+  agents.create({ name: "p-workup",       systemPrompt: "Suggest initial workup..." }),
+  agents.create({ name: "p-synthesizer",  systemPrompt: "Combine the three perspectives..." }),
+]);</code></pre>
+        <p>
+          This cuts agent registration latency from 4× to ~1×. Use this pattern whenever agents don't depend on each other's IDs.
+        </p>
+      </section>
+
+      <section id="per-step">
+        <h2>Per-step overrides</h2>
+        <p>
+          When branches need different inputs or credentials, use the expanded step format inside <code>parallel()</code>:
+        </p>
+<pre><code class="language-typescript">parallel([
+  { agent: a, input: "Analyse from a cardiology perspective." },
+  { agent: b, credentials: { "mcp-x": { type: "token", token: "..." } } },
+  c,   // bare handle — uses the shared input passed to .run()
+])</code></pre>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Option</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>input</code></td><td>Override the shared input for this branch. Accepts a string or message parts array.</td></tr>
+              <tr><td><code>credentials</code></td><td>Per-branch credential store for MCP auth (see <a href="06-credentials.html">example 06</a>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/04-parallel.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 04 — Parallel fan-out.
+ *
+ * Run multiple agents concurrently on the same input. Use `parallel()`
+ * standalone, or drop it directly into a `workflow()` step list to merge
+ * the fulfilled results into the next step.
+ *
+ * Run: `npm run parallel`
+ */
+import { AgentsClient, parallel, workflow } from "@corti/agent-sdk";
+import { makeClient } from "./_client";
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  const [differential, redFlags, workup, synthesizer] = await Promise.all([
+    agents.create({
+      name: "p-differential",
+      description: "Lists a differential diagnosis.",
+      systemPrompt:
+        "List the top 3 differential diagnoses for the presentation, most likely first. One line each.",
+    }),
+    agents.create({
+      name: "p-redflags",
+      description: "Flags symptoms warranting urgent evaluation.",
+      systemPrompt:
+        "List any red-flag features from the presentation that warrant urgent evaluation. One line each.",
+    }),
+    agents.create({
+      name: "p-workup",
+      description: "Suggests initial diagnostic workup.",
+      systemPrompt:
+        "Suggest an initial diagnostic workup (labs, imaging, bedside exam). One line each.",
+    }),
+    agents.create({
+      name: "p-synthesizer",
+      description: "Combines clinical perspectives into a single assessment.",
+      systemPrompt:
+        "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
+    }),
+  ]);
+
+  const presentation =
+    "54-year-old male with 2 hours of crushing substernal chest pain, diaphoresis, and dyspnea; history of hypertension and smoking.";
+
+  // (a) Standalone: collect every result with Promise.allSettled-like output.
+  const fanout = await parallel([differential, redFlags, workup]).run(presentation);
+  console.log("— Fan-out (standalone) —");
+  fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
+  if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);
+
+  // (b) Inside a workflow: fulfilled results are joined and fed into `synthesizer`.
+  const { output } = await workflow([
+    parallel([differential, redFlags, workup]),
+    synthesizer,
+  ]).run(presentation);
+  console.log("\n— Assessment and plan —\n" + output.text);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="dim">— Fan-out (standalone) —</span>
+<span class="accent">#1:</span> 1. STEMI / ACS
+     2. Unstable angina
+     3. Aortic dissection
+<span class="accent">#2:</span> - Crushing chest pain with radiation
+     - Diaphoresis and dyspnea
+     - Risk factors: hypertension, smoking
+<span class="accent">#3:</span> - 12-lead ECG (immediate)
+     - Troponin I/T, BNP, CBC, BMP
+     - Portable CXR, bedside echo if available
+
+<span class="dim">— Assessment and plan —</span>
+This 54-year-old male presents with a high-probability picture for STEMI. Immediate
+ECG and troponin are mandatory. Activate the cath lab if ST-elevation is confirmed.
+Differential includes type A dissection — obtain CXR to rule out widened mediastinum.
+Start ASA 325 mg, heparin, and supplemental O2 while awaiting results.</div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="03-workflow.html">
+            03 · Workflow
+            <span>Add conditional steps and retries to a pipeline.</span>
+          </a>
+          <a href="07-state-graph.html">
+            07 · State graph
+            <span>Dynamic routing and cycles for more complex flows.</span>
+          </a>
+          <a href="index.html#parallel">
+            Parallel concept docs
+            <span>Full API reference for parallel().</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

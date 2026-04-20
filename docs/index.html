@@ -518,19 +518,48 @@ for await (const event of stream) {
           Every pattern on this page has a runnable counterpart under
           <code>examples/ts/</code>. They use the published
           <code>@corti/sdk</code> and the local <code>@corti/agent-sdk</code>,
-          and clean up the agents they create.
+          and clean up the agents they create. Click any row for a deep-dive
+          walkthrough with annotated code.
         </p>
         <div class="table-wrapper">
           <table>
-            <thead><tr><th>Script</th><th>File</th><th>Shows</th></tr></thead>
+            <thead><tr><th>Script</th><th>Deep dive</th><th>Shows</th></tr></thead>
             <tbody>
-              <tr><td><code>npm run hello</code></td><td><code>01-hello-agent.ts</code></td><td>Create agent, send two messages, cleanup.</td></tr>
-              <tr><td><code>npm run connectors</code></td><td><code>02-connectors.ts</code></td><td>MCP, registry, and sub-agent connectors.</td></tr>
-              <tr><td><code>npm run workflow</code></td><td><code>03-workflow.ts</code></td><td><code>when</code>, <code>transform</code>, retries.</td></tr>
-              <tr><td><code>npm run parallel</code></td><td><code>04-parallel.ts</code></td><td>Fan-out standalone and inside a workflow.</td></tr>
-              <tr><td><code>npm run streaming</code></td><td><code>05-streaming.ts</code></td><td>Consuming <code>streamMessage()</code>.</td></tr>
-              <tr><td><code>npm run credentials</code></td><td><code>06-credentials.ts</code></td><td>MCP credential forwarding.</td></tr>
-              <tr><td><code>npm run state-graph</code></td><td><code>07-state-graph.ts</code></td><td>Clinical triage pipeline with conditional routing and a reviewer loop.</td></tr>
+              <tr>
+                <td><code>npm run hello</code></td>
+                <td><a href="01-hello-agent.html">01 — Hello, agent</a></td>
+                <td>Create agent, send two messages, conversation threads.</td>
+              </tr>
+              <tr>
+                <td><code>npm run connectors</code></td>
+                <td><a href="02-connectors.html">02 — Connectors</a></td>
+                <td>MCP, registry, and sub-agent connectors; timeout tuning.</td>
+              </tr>
+              <tr>
+                <td><code>npm run workflow</code></td>
+                <td><a href="03-workflow.html">03 — Workflow</a></td>
+                <td><code>when</code>, <code>transform</code>, retries, result shape.</td>
+              </tr>
+              <tr>
+                <td><code>npm run parallel</code></td>
+                <td><a href="04-parallel.html">04 — Parallel fan-out</a></td>
+                <td>Concurrent fan-out standalone and inside a workflow.</td>
+              </tr>
+              <tr>
+                <td><code>npm run streaming</code></td>
+                <td><a href="05-streaming.html">05 — Streaming</a></td>
+                <td>Async iteration over <code>streamMessage()</code> events.</td>
+              </tr>
+              <tr>
+                <td><code>npm run credentials</code></td>
+                <td><a href="06-credentials.html">06 — Credentials</a></td>
+                <td>Transparent MCP bearer-token forwarding.</td>
+              </tr>
+              <tr>
+                <td><code>npm run state-graph</code></td>
+                <td><a href="07-state-graph.html">07 — State graph</a></td>
+                <td>Typed state, routing functions, reviewer loop, <code>agentNode()</code>.</td>
+              </tr>
             </tbody>
           </table>
         </div>
