@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>02 — Connectors · @corti/agent-sdk</title>
+  <meta name="description" content="Wire up MCP servers, registry experts, and sub-agents using typed connector helpers." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#connector-types">Connector types</a>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html" class="active">02 · Connectors</a>
+        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>02 — Connectors</strong></p>
+        <h1>02 — Connectors</h1>
+        <p class="lede">
+          Real agents need tools. The <code>connectors</code> helper turns common expert types into the raw <code>experts</code> shape the API expects — fully typed. This example builds a two-agent system: a focused symptom-extractor sub-agent wired into an orchestrating triage agent.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>connectors.fromAgent</strong>Delegates to another <code>AgentHandle</code> as a callable tool. The orchestrator can invoke it by name.</div>
+          <div><strong>connectors.registry</strong>Attaches a named Corti expert from the registry (e.g. <code>web-search-expert</code> or <code>@corti/medical-coding</code>).</div>
+          <div><strong>connectors.mcp</strong>Attaches an external MCP server by URL. Supports optional authentication via <code>authType: "bearer"</code>.</div>
+          <div><strong>timeoutInSeconds</strong>Raise this beyond the 60 s default for orchestrated agents — sub-agent round-trips add latency.</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash"># Minimum — uses sub-agent connector only
+npm run connectors
+
+# With the web-search registry expert
+USE_WEB_SEARCH=1 npm run connectors
+
+# With your own MCP server
+MCP_URL=https://my-mcp.example.com MCP_TOKEN=sk-... npm run connectors</code></pre>
+
+        <div class="callout">
+          <strong>No external services needed by default.</strong> The example only requires the <code>fromAgent</code> connector (another Corti agent you create yourself). The registry expert and MCP server are opt-in via environment variables.
+        </div>
+      </section>
+
+      <section id="connector-types">
+        <h2>Connector types</h2>
+        <p>
+          All connectors are created with the <code>connectors</code> helper exported from <code>@corti/agent-sdk</code>. Pass the result array to <code>agents.create({ connectors: [...] })</code> or <code>agent.update({ connectors: [...] })</code>.
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Factory</th><th>Underlying type</th><th>Required fields</th><th>Optional fields</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>connectors.fromAgent()</code></td>
+                <td><code>cortiAgent</code></td>
+                <td><code>agentId</code></td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>connectors.registry()</code></td>
+                <td><code>registryExpert</code></td>
+                <td><code>name</code></td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>connectors.mcp()</code></td>
+                <td><code>mcp</code></td>
+                <td><code>mcpUrl</code></td>
+                <td><code>name</code>, <code>authType</code>, <code>token</code></td>
+              </tr>
+              <tr>
+                <td><code>connectors.a2a()</code></td>
+                <td><code>a2a</code></td>
+                <td>—</td>
+                <td>Reserved for A2A protocol.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <strong>Updating connectors</strong> — when you call <code>agent.update({ connectors: [...] })</code>, the new array <em>replaces</em> the full connector set. There is no merge — if you want to add one connector, pass all existing connectors plus the new one.
+        </div>
+      </section>
+
+      <section id="walkthrough">
+        <h2>Walkthrough</h2>
+
+        <h3>1 · Create the sub-agent</h3>
+        <p>
+          The <code>symptom-extractor</code> is a focused, narrow-purpose agent. Its system prompt is written to ensure deterministic output — always a comma-separated list, never a question, never prose.
+        </p>
+<pre><code class="language-typescript">const symptomExtractor = await agents.create({
+  name: "symptom-extractor",
+  description: "Extracts chief complaint and key symptoms from a clinical note.",
+  systemPrompt:
+    "You are a symptom extractor. Given a clinical description, respond with " +
+    "ONLY a comma-separated list of the patient's chief complaint and key symptoms " +
+    "(e.g. `severe headache, photophobia, neck stiffness`). Never ask for clarification.",
+});</code></pre>
+        <p>
+          This agent has no connectors — it relies only on its training. The narrower the system prompt, the more predictably it behaves when called as a tool.
+        </p>
+
+        <h3>2 · Wire it as a connector</h3>
+<pre><code class="language-typescript">connectors.fromAgent({ agentId: symptomExtractor.id })</code></pre>
+        <p>
+          This produces a <code>cortiAgent</code> expert binding. When the orchestrator decides to use this tool, the platform routes the call to <code>symptomExtractor</code> and returns its response. The orchestrator never sees the sub-agent's raw API calls — it only sees the reply text.
+        </p>
+
+        <h3>3 · Build the orchestrator</h3>
+<pre><code class="language-typescript">const orchestrator = await agents.create({
+  name: "triage-orchestrator",
+  description: "Triages a clinical note using the symptom extractor.",
+  systemPrompt:
+    "You are a clinical triage assistant. Pass the full clinical note to the " +
+    "`symptom-extractor` connector to get a symptom list, then write a brief " +
+    "one-paragraph triage recommendation.",
+  connectors: [
+    connectors.fromAgent({ agentId: symptomExtractor.id }),
+    // Opt-in extras:
+    ...(process.env.USE_WEB_SEARCH === "1"
+      ? [connectors.registry({ name: "web-search-expert" })]
+      : []),
+    ...(process.env.MCP_URL
+      ? [connectors.mcp({ mcpUrl: process.env.MCP_URL })]
+      : []),
+  ],
+});</code></pre>
+        <p>
+          The system prompt references the connector by its <code>description</code> — the orchestrator knows it should delegate symptom extraction. The platform presents available connectors to the orchestrator as tools it can call.
+        </p>
+
+        <h3>4 · Run with a raised timeout</h3>
+<pre><code class="language-typescript">const reply = await orchestrator.run(
+  "62-year-old presents with sudden severe headache, photophobia, and neck stiffness.",
+  { timeoutInSeconds: 180 },
+);</code></pre>
+        <p>
+          The default timeout is 60 seconds — sufficient for a single-agent call. Orchestrated calls fan out to sub-agents internally, which can take longer. Passing <code>timeoutInSeconds: 180</code> gives the orchestrator enough headroom.
+        </p>
+        <p>
+          Note that <code>agent.run()</code> is a one-shot convenience wrapper. The same options are available on <code>ctx.sendMessage()</code> and <code>ctx.sendText()</code>.
+        </p>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/02-connectors.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 02 — Connectors.
+ *
+ * Attach MCP servers, registry experts, and other Corti agents to an agent
+ * via the typed `connectors` helpers.
+ *
+ * By default this example wires a sub-agent (`connectors.fromAgent`) in —
+ * always available, no external services. Set `USE_WEB_SEARCH=1` to also
+ * attach the registry `web-search-expert`, or `MCP_URL` to attach your own
+ * MCP server.
+ *
+ * Run: `npm run connectors`
+ */
+import { AgentsClient, connectors } from "@corti/agent-sdk";
+import { makeClient } from "./_client";
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  // A small sub-agent we will wire into the main agent as a "cortiAgent" connector.
+  const symptomExtractor = await agents.create({
+    name: "symptom-extractor",
+    description: "Extracts chief complaint and key symptoms from a clinical note.",
+    systemPrompt:
+      "You are a symptom extractor. Given a clinical description, respond with ONLY a comma-separated list of the patient's chief complaint and key symptoms (e.g. `severe headache, photophobia, neck stiffness`). Never ask for clarification. Never add prose. If the input is sparse, extract whatever symptoms are mentioned.",
+  });
+
+  // The orchestrator composes connectors. The sub-agent is the default path;
+  // the registry expert and MCP server are opt-in.
+  const orchestrator = await agents.create({
+    name: "triage-orchestrator",
+    description: "Triages a clinical note using the symptom extractor.",
+    systemPrompt:
+      "You are a clinical triage assistant. Pass the full clinical note to the `symptom-extractor` connector to get a symptom list, then write a brief one-paragraph triage recommendation (urgency, likely differentials, immediate actions). Never ask the user for clarification — work with whatever is provided.",
+    connectors: [
+      connectors.fromAgent({ agentId: symptomExtractor.id }),
+      ...(process.env.USE_WEB_SEARCH === "1"
+        ? [connectors.registry({ name: "web-search-expert" })]
+        : []),
+      ...(process.env.MCP_URL
+        ? [
+            connectors.mcp({
+              mcpUrl: process.env.MCP_URL,
+              ...(process.env.MCP_TOKEN ? { token: process.env.MCP_TOKEN } : {}),
+            }),
+          ]
+        : []),
+    ],
+  });
+
+  // Orchestrated calls fan out to sub-agents / experts, so raise the per-call
+  // timeout beyond the SDK's 60s default.
+  const reply = await orchestrator.run(
+    "62-year-old presents with sudden severe headache, photophobia, and neck stiffness for the past hour.",
+    { timeoutInSeconds: 180 },
+  );
+  console.log("Status:    ", reply.status);
+  console.log("Reply:     ", reply.text);
+  console.log("Artifacts: ", reply.artifacts.length);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="accent">Status:</span>     completed
+<span class="accent">Reply:</span>      This presentation is highly concerning for bacterial meningitis.
+             Key symptoms extracted: sudden severe headache, photophobia, neck stiffness.
+             Urgency: IMMEDIATE. Differentials include bacterial meningitis, subarachnoid
+             haemorrhage, viral meningitis. Immediate actions: IV access, blood cultures,
+             LP if no contraindications, empirical antibiotics (ceftriaxone + ampicillin).
+<span class="accent">Artifacts:</span>  0</div>
+
+        <div class="callout">
+          <strong>Artifacts</strong> are structured outputs (e.g. JSON data parts) attached to the response. Most text-only agents return 0 artifacts. Coding agents or tool-use agents may return more.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="06-credentials.html">
+            06 · Credentials
+            <span>Pass auth tokens to MCP servers automatically.</span>
+          </a>
+          <a href="03-workflow.html">
+            03 · Workflow
+            <span>Chain multiple agents into a deterministic pipeline.</span>
+          </a>
+          <a href="07-state-graph.html">
+            07 · State graph
+            <span>Build the sub-agent pattern into a routing graph.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>05 — Streaming · @corti/agent-sdk</title>
+  <meta name="description" content="Consume agent replies token-by-token using server-sent events and async iteration." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#event-types">Event types</a>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#context-tracking">Context tracking</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html" class="active">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>05 — Streaming</strong></p>
+        <h1>05 — Streaming</h1>
+        <p class="lede">
+          <code>streamMessage()</code> returns an <code>AsyncIterable&lt;StreamEvent&gt;</code> that yields events as the agent generates its reply — status updates first, then partial or complete message chunks as tokens arrive.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>streamMessage(parts)</strong>Sends a message and returns a promise that resolves to an async iterable. <code>await</code> it first, then <code>for await...of</code> the events.</div>
+          <div><strong>statusUpdate</strong>Signals a task state change: <code>working</code> → <code>completed</code> or <code>failed</code>. Useful for progress indicators.</div>
+          <div><strong>message</strong>Carries one or more message parts. Filter to <code>kind === "text"</code> to extract the generated tokens.</div>
+          <div><strong>Context tracking</strong>The stream tracks the same <code>contextId</code> as <code>sendMessage()</code>. Mix the two freely on one context.</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run streaming</code></pre>
+        <p>
+          You'll see status tokens (<code>[working]</code>, <code>[completed]</code>) interspersed with the generated text written to stdout in real time.
+        </p>
+      </section>
+
+      <section id="event-types">
+        <h2>Event types</h2>
+        <p>
+          Each yielded value is a <code>StreamEvent</code>. The two fields are mutually exclusive — each event has one or the other, never both.
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>When it fires</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>event.statusUpdate</code></td>
+                <td><code>{ status: { state: TaskState } }</code></td>
+                <td>When the task state transitions: typically <code>"working"</code> at the start and <code>"completed"</code> or <code>"failed"</code> at the end.</td>
+              </tr>
+              <tr>
+                <td><code>event.message</code></td>
+                <td><code>{ parts: MessagePart[] }</code></td>
+                <td>When the agent produces output. May fire multiple times with partial content before a final message event.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          A <code>MessagePart</code> has a <code>kind</code> discriminant:
+        </p>
+<pre><code class="language-typescript">// Text part — the generated tokens
+{ kind: "text"; text: string }
+
+// Data part — structured JSON output
+{ kind: "data"; data: unknown }
+
+// File part — binary attachment
+{ kind: "file"; file: { name: string; mimeType: string; bytes: string } }</code></pre>
+        <p>
+          For text streaming, filter to <code>kind === "text"</code> and write <code>part.text</code> to your output.
+        </p>
+      </section>
+
+      <section id="walkthrough">
+        <h2>Walkthrough</h2>
+
+        <h3>1 · Call streamMessage()</h3>
+<pre><code class="language-typescript">const ctx = agent.createContext();
+
+// streamMessage returns Promise&lt;AsyncIterable&lt;StreamEvent&gt;&gt;
+const stream = await ctx.streamMessage([
+  { kind: "text", text: "Describe how photosynthesis works." },
+]);</code></pre>
+        <p>
+          Pass an array of <code>MessagePart</code>s — the same shape as <code>sendMessage()</code>. <code>await</code> the call to get the iterable; the network request starts here.
+        </p>
+
+        <h3>2 · Iterate events</h3>
+<pre><code class="language-typescript">for await (const event of stream) {
+  if (event.statusUpdate) {
+    process.stdout.write(`[${event.statusUpdate.status.state}] `);
+  }
+
+  if (event.message) {
+    const texts = event.message.parts
+      .filter((p): p is { kind: "text"; text: string } => p.kind === "text")
+      .map((p) => p.text);
+    if (texts.length) process.stdout.write(texts.join(""));
+  }
+}
+process.stdout.write("\n");</code></pre>
+
+        <ol class="step-list">
+          <li>The first event is typically a <code>statusUpdate</code> with state <code>"working"</code>.</li>
+          <li>One or more <code>message</code> events follow, each carrying partial text. Write them to stdout without a newline to see the streaming effect.</li>
+          <li>A final <code>statusUpdate</code> with state <code>"completed"</code> (or <code>"failed"</code>) signals the end of the stream.</li>
+          <li>The <code>for await...of</code> loop exits when the iterable is exhausted — no manual cleanup needed.</li>
+        </ol>
+
+        <h3>3 · Type-safe part filtering</h3>
+<pre><code class="language-typescript">// The type predicate narrows the part type so TypeScript knows p.text exists
+.filter((p): p is { kind: "text"; text: string } => p.kind === "text")</code></pre>
+        <p>
+          Without the predicate, <code>p.text</code> would be a type error because <code>MessagePart</code> is a discriminated union. The predicate narrows it to the text variant.
+        </p>
+      </section>
+
+      <section id="context-tracking">
+        <h2>Context tracking</h2>
+        <p>
+          <code>streamMessage()</code> and <code>sendMessage()</code> share the same <code>contextId</code> bookkeeping. You can freely interleave them on a single context:
+        </p>
+<pre><code class="language-typescript">const ctx = agent.createContext();
+
+// First turn — streaming
+const stream = await ctx.streamMessage([{ kind: "text", text: "Explain mitosis." }]);
+for await (const event of stream) { /* ... */ }
+
+// ctx.id is now populated
+console.log(ctx.id);   // "ctx_abc123"
+
+// Second turn — non-streaming, same thread
+const reply = await ctx.sendText("And meiosis?");
+console.log(reply.text);   // agent remembers the prior exchange</code></pre>
+
+        <div class="callout">
+          The <code>contextId</code> is extracted from the first streamed event. By the time the <code>for await</code> loop exits, <code>ctx.id</code> is populated and subsequent calls on the same context will continue the conversation thread.
+        </div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/05-streaming.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 05 — Streaming responses.
+ *
+ * Use `ctx.streamMessage()` to receive the agent's reply as a stream of
+ * `StreamEvent` objects. The same `contextId` bookkeeping applies: the
+ * first event carries the context ID, and it is tracked automatically for
+ * subsequent calls on this context.
+ *
+ * Run: `npm run streaming`
+ */
+import { AgentsClient } from "@corti/agent-sdk";
+import { makeClient } from "./_client";
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  const agent = await agents.create({
+    name: "stream-demo",
+    description: "Demonstrates streaming replies.",
+    systemPrompt: "Reply in 4–6 sentences so the user can see streaming in action.",
+  });
+
+  const ctx = agent.createContext();
+  const stream = await ctx.streamMessage([
+    { kind: "text", text: "Describe how photosynthesis works." },
+  ]);
+
+  for await (const event of stream) {
+    // Intermediate status updates (working → completed/failed).
+    if (event.statusUpdate) {
+      process.stdout.write(`[${event.statusUpdate.status.state}] `);
+    }
+
+    // Final or intermediate message with text parts from the agent.
+    if (event.message) {
+      const texts = event.message.parts
+        .filter((p): p is { kind: "text"; text: string } => p.kind === "text")
+        .map((p) => p.text);
+      if (texts.length) process.stdout.write(texts.join(""));
+    }
+  }
+  process.stdout.write("\n");
+  console.log("Context ID:", ctx.id);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="dim">[working] </span>Photosynthesis is the process by which plants, algae, and some
+bacteria convert light energy into chemical energy stored as glucose.
+It occurs in two main stages: the light-dependent reactions in the
+thylakoid membranes, where water is split and ATP is generated, and
+the Calvin cycle in the stroma, where CO₂ is fixed into sugars.
+Oxygen is released as a by-product of the water-splitting step.
+Without photosynthesis, virtually all life on Earth would cease to exist.<span class="dim"> [completed]</span>
+<span class="accent">Context ID:</span> ctx_01abc123def456</div>
+
+        <div class="callout">
+          The tokens appear incrementally as they are generated — in a terminal you'll see the text build character by character rather than appearing all at once.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="01-hello-agent.html">
+            01 · Hello, agent
+            <span>The non-streaming equivalent using sendText().</span>
+          </a>
+          <a href="06-credentials.html">
+            06 · Credentials
+            <span>Combine streaming with auth-protected MCP servers.</span>
+          </a>
+          <a href="index.html#streaming">
+            Streaming concept docs
+            <span>Full API reference for streamMessage().</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

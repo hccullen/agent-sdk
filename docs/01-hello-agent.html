@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>01 — Hello, agent · @corti/agent-sdk</title>
+  <meta name="description" content="Minimum viable example: create an agent, open a conversation, read the reply." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html" class="active">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>01 — Hello, agent</strong></p>
+        <h1>01 — Hello, agent</h1>
+        <p class="lede">
+          The minimum viable example. Create an agent, open a conversation context, send two messages, and read the replies. Everything else in the SDK builds on these three primitives.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>AgentsClient</strong>The entry point for all agent operations — create, fetch, list, wrap.</div>
+          <div><strong>AgentHandle</strong>A typed reference to a registered agent. Holds its ID, name, system prompt, and lets you create contexts or run one-shot invocations.</div>
+          <div><strong>AgentContext</strong>A lazy conversation thread. No network call happens until the first message. Tracks <code>contextId</code> automatically.</div>
+          <div><strong>MessageResponse</strong>Wraps the raw API response. Key getters: <code>text</code>, <code>status</code>, <code>contextId</code>.</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+        <pre><code class="language-bash"># From the repo root — build the SDK once
+cd packages/js && npm install && npm run build
+
+# Install example deps and configure credentials
+cd ../../examples/ts
+npm install
+cp .env.example .env   # fill in CORTI_TENANT_NAME, CORTI_CLIENT_ID, CORTI_CLIENT_SECRET
+
+# Run
+npm run hello</code></pre>
+
+        <div class="callout">
+          <strong>Ephemeral agents</strong> — this example uses the default <code>lifecycle: "ephemeral"</code>. The platform garbage-collects them automatically, so no explicit cleanup call is needed. Pass <code>lifecycle: "persistent"</code> if you want the agent to survive the process.
+        </div>
+      </section>
+
+      <section id="walkthrough">
+        <h2>Walkthrough</h2>
+
+        <h3>1 · Build the client</h3>
+        <p>
+          <code>makeClient()</code> is a shared helper in <code>_client.ts</code> that reads three environment variables and returns a <code>CortiClient</code>:
+        </p>
+<pre><code class="language-typescript">import { CortiClient } from "@corti/sdk";
+
+export function makeClient(): CortiClient {
+  return new CortiClient({
+    tenantName: process.env.CORTI_TENANT_NAME!,
+    environment: (process.env.CORTI_ENVIRONMENT ?? "eu") as "eu" | "us",
+    auth: {
+      clientId:     process.env.CORTI_CLIENT_ID!,
+      clientSecret: process.env.CORTI_CLIENT_SECRET!,
+    },
+  });
+}</code></pre>
+        <p>
+          Every example starts with <code>new AgentsClient(makeClient())</code> — <code>AgentsClient</code> wraps the raw client and exposes the agent-specific operations.
+        </p>
+
+        <h3>2 · Create an agent</h3>
+<pre><code class="language-typescript">const agent = await agents.create({
+  name: "hello-agent",
+  description: "A minimal greeting agent.",
+  systemPrompt: "You are a friendly assistant. Keep replies to one sentence.",
+});</code></pre>
+        <p>
+          <code>agents.create()</code> registers the agent on the Corti platform and returns an <code>AgentHandle</code>. The <code>name</code> field is a slug and must be unique per tenant. Because no <code>lifecycle</code> is specified, it defaults to <code>"ephemeral"</code>.
+        </p>
+        <p>
+          The returned handle gives you <code>agent.id</code>, <code>agent.name</code>, <code>agent.systemPrompt</code>, and methods like <code>createContext()</code>, <code>run()</code>, <code>update()</code>, and <code>delete()</code>.
+        </p>
+
+        <h3>3 · Open a context (lazy)</h3>
+<pre><code class="language-typescript">const ctx = agent.createContext();</code></pre>
+        <p>
+          <code>createContext()</code> is synchronous and makes <em>no</em> network call. The context is lazy — it initialises on the first message. At this point <code>ctx.id</code> is <code>undefined</code>.
+        </p>
+
+        <h3>4 · First message</h3>
+<pre><code class="language-typescript">const reply = await ctx.sendText("Say hello and tell me one fun fact.");
+console.log("Agent:", reply.text);
+console.log("Status:", reply.status);
+console.log("Context ID:", ctx.id);</code></pre>
+        <p>
+          <code>sendText()</code> is a shorthand for <code>sendMessage([{ kind: "text", text: "..." }])</code>. The response carries:
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Getter</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>reply.text</code></td><td><code>string?</code></td><td>All text parts joined into one string.</td></tr>
+              <tr><td><code>reply.status</code></td><td><code>TaskState?</code></td><td><code>"completed"</code>, <code>"failed"</code>, <code>"input-required"</code>, …</td></tr>
+              <tr><td><code>reply.contextId</code></td><td><code>string?</code></td><td>The thread ID — the context stores this automatically.</td></tr>
+              <tr><td><code>reply.taskId</code></td><td><code>string?</code></td><td>This specific invocation's ID.</td></tr>
+              <tr><td><code>reply.artifacts</code></td><td><code>Artifact[]</code></td><td>Structured outputs attached to the response.</td></tr>
+              <tr><td><code>reply.raw</code></td><td><code>AgentsMessageSendResponse</code></td><td>The full unprocessed API response.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          After the first message completes, <code>ctx.id</code> is populated with the <code>contextId</code> that the context extracted from the response.
+        </p>
+
+        <h3>5 · Second message (same thread)</h3>
+<pre><code class="language-typescript">const followUp = await ctx.sendText("Tell me another one.");
+console.log("Agent:", followUp.text);</code></pre>
+        <p>
+          The context automatically passes the stored <code>contextId</code> back to the API. The agent sees the full prior conversation — it remembers what it said in the previous turn.
+        </p>
+        <p>
+          You never manage <code>contextId</code> manually. The context object handles it entirely.
+        </p>
+
+        <h3>One-shot alternative</h3>
+        <p>
+          For single-turn invocations where you don't need conversation history, skip the context:
+        </p>
+<pre><code class="language-typescript">const r = await agent.run("What is the ICD-10 code for asthma?");
+console.log(r.text);   // no context created or tracked</code></pre>
+        <p>
+          <code>agent.run()</code> internally creates a throwaway context. Use it when you don't need to continue the thread.
+        </p>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/01-hello-agent.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 01 — Hello, agent.
+ *
+ * The minimum viable example: create an agent, start a conversation,
+ * read the reply. Ephemeral agents are GC'd server-side — no explicit
+ * cleanup is needed. Pass `lifecycle: "persistent"` if you want the
+ * agent to outlive the process.
+ *
+ * Run: `npm run hello`
+ */
+import { AgentsClient } from "@corti/agent-sdk";
+import { makeClient } from "./_client";
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  const agent = await agents.create({
+    name: "hello-agent",
+    description: "A minimal greeting agent.",
+    systemPrompt: "You are a friendly assistant. Keep replies to one sentence.",
+  });
+
+  const ctx = agent.createContext();
+
+  const reply = await ctx.sendText("Say hello and tell me one fun fact.");
+  console.log("Agent:", reply.text);
+  console.log("Status:", reply.status);
+  console.log("Context ID:", ctx.id);
+
+  // The context persists across calls — the agent remembers the thread.
+  const followUp = await ctx.sendText("Tell me another one.");
+  console.log("Agent:", followUp.text);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <p>Actual text varies by model, but the structure is consistent:</p>
+        <div class="output-block"><span class="accent">Agent:</span>  Hello! Here's a fun fact: the human body contains about 37 trillion cells.
+<span class="accent">Status:</span> completed
+<span class="accent">Context ID:</span> ctx_01abc123def456
+<span class="accent">Agent:</span>  Sure! Did you know that honey never spoils — archaeologists have found 3,000-year-old honey in Egyptian tombs that was still perfectly edible.</div>
+
+        <div class="callout">
+          The second reply references the conversation thread naturally — the agent knows it already told you one fact, so "another one" makes sense.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="02-connectors.html">
+            02 · Connectors
+            <span>Wire up MCP servers, registry experts, and sub-agents.</span>
+          </a>
+          <a href="03-workflow.html">
+            03 · Workflow
+            <span>Chain agents into a deterministic pipeline.</span>
+          </a>
+          <a href="05-streaming.html">
+            05 · Streaming
+            <span>Receive tokens as they're generated.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

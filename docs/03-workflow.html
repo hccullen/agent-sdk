@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>03 — Workflow · @corti/agent-sdk</title>
+  <meta name="description" content="Chain agents into a deterministic pipeline with conditional steps, input transforms, and automatic retries." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#step-config">Step configuration</a>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#result-shape">Result shape</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-workflow.html" class="active">03 · Workflow</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>03 — Workflow</strong></p>
+        <h1>03 — Workflow</h1>
+        <p class="lede">
+          <code>workflow()</code> builds a deterministic chain of agent steps. Each step's output feeds the next. Steps can be bare <code>AgentHandle</code>s or configuration objects with conditional logic, input transforms, and retry behaviour.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>workflow(steps)</strong>Takes an array of steps and returns a <code>Workflow</code> with a <code>.run(input)</code> method.</div>
+          <div><strong>when</strong>A predicate on the previous response. Returns <code>false</code> → skip the step, pass the previous output forward unchanged.</div>
+          <div><strong>transform</strong>Maps the previous response to this step's input. Default: <code>prev.text</code>.</div>
+          <div><strong>retries</strong>Additional attempts when a step returns <code>status: "failed"</code>. Combined with <code>retryDelay</code> (ms).</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run workflow</code></pre>
+
+        <div class="callout">
+          This example models a clinical note processing pipeline: <strong>summarise → classify → conditionally escalate</strong>. The escalation step only fires when the classifier returns <code>"urgent"</code>.
+        </div>
+      </section>
+
+      <section id="step-config">
+        <h2>Step configuration</h2>
+        <p>
+          Each element in the step array is either a bare <code>AgentHandle</code> (shorthand for <code>{ agent: handle }</code>) or a full step configuration object:
+        </p>
+<pre><code class="language-typescript">{
+  agent:      AgentHandle;         // required
+
+  when?:      (prev: MessageResponse) => boolean;
+  // If false, skip this step and pass prev forward unchanged.
+
+  transform?: (prev: MessageResponse) => string | MessagePart[];
+  // Returns the input for this step. Default: prev.text ?? "".
+
+  retries?:   number;              // default 0 — no retries
+  retryDelay?: number;             // ms between retries, default 0
+
+  credentials?: CredentialStore;  // per-step credential override
+}</code></pre>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Option</th><th>Default</th><th>Behaviour</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>when</code></td>
+                <td>always run</td>
+                <td>Receives the previous <code>MessageResponse</code>. Return <code>false</code> to skip this step entirely — the previous response is passed forward as-is.</td>
+              </tr>
+              <tr>
+                <td><code>transform</code></td>
+                <td><code>prev.text</code></td>
+                <td>Called only when the step <em>will</em> run (after <code>when</code> passes). Return a string or an array of message parts.</td>
+              </tr>
+              <tr>
+                <td><code>retries</code></td>
+                <td><code>0</code></td>
+                <td>Number of <em>additional</em> attempts on failure. Total attempts = <code>retries + 1</code>.</td>
+              </tr>
+              <tr>
+                <td><code>retryDelay</code></td>
+                <td><code>0</code></td>
+                <td>Milliseconds to wait between retry attempts.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="walkthrough">
+        <h2>Walkthrough</h2>
+
+        <h3>1 · Create three focused agents</h3>
+<pre><code class="language-typescript">const summarizer = await agents.create({
+  name: "wf-summarizer",
+  description: "Summarises a clinical note in one sentence.",
+  systemPrompt: "Summarise the note in a single sentence.",
+});
+
+const classifier = await agents.create({
+  name: "wf-classifier",
+  description: "Classifies a summary as 'urgent' or 'routine'.",
+  systemPrompt: "Reply with exactly one word: 'urgent' or 'routine'. No punctuation.",
+});
+
+const escalator = await agents.create({
+  name: "wf-escalator",
+  description: "Drafts an escalation for urgent cases.",
+  systemPrompt: "Draft a one-line escalation to the on-call physician.",
+});</code></pre>
+        <p>
+          Each agent is given a hyper-focused system prompt. The classifier's prompt is constrained to exactly one word — this makes the <code>when</code> predicate reliable.
+        </p>
+
+        <h3>2 · Define the pipeline</h3>
+<pre><code class="language-typescript">const note = "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago.";
+
+const result = await workflow([
+  summarizer,    // step 1: bare handle — no conditions
+
+  classifier,    // step 2: bare handle — receives summarizer's text as input
+
+  {              // step 3: conditional escalation
+    agent: escalator,
+    when:      (prev) => (prev.text ?? "").toLowerCase().includes("urgent"),
+    transform: () => note,     // give escalator the original note, not "urgent"
+    retries:   2,
+    retryDelay: 500,
+  },
+]).run(note);</code></pre>
+
+        <h3>3 · How data flows</h3>
+        <p>The flow for a chest-pain note:</p>
+        <ol class="step-list">
+          <li><strong>Input →</strong> <code>summarizer</code> receives the raw <code>note</code> string. Returns: <em>"Patient has severe chest pain radiating to the left arm starting 30 minutes ago."</em></li>
+          <li><strong>Step 2 →</strong> <code>classifier</code> receives the summarizer's text. Returns: <em>"urgent"</em></li>
+          <li><strong>Step 3 <code>when</code> check →</strong> <code>"urgent".includes("urgent")</code> → <code>true</code>, so the step runs.</li>
+          <li><strong>Step 3 <code>transform</code> →</strong> Instead of feeding <code>"urgent"</code> to the escalator, <code>transform: () =&gt; note</code> sends the original clinical note — giving the escalator something meaningful to work with.</li>
+          <li><strong>Step 3 →</strong> <code>escalator</code> returns: <em>"Escalate immediately: patient presenting with acute STEMI symptoms."</em></li>
+        </ol>
+
+        <h3>When a step is skipped</h3>
+        <p>
+          If the note were <em>"Patient has a mild sore throat."</em>, the classifier would return <code>"routine"</code>. The <code>when</code> check fails, the escalator step is skipped, and <code>result.output</code> would be the classifier's response (<code>"routine"</code>).
+        </p>
+
+        <h3>Retry behaviour</h3>
+<pre><code class="language-typescript">{
+  agent: escalator,
+  retries: 2,       // try up to 3 times total
+  retryDelay: 500,  // wait 500 ms between attempts
+}</code></pre>
+        <p>
+          Retries fire only when a step returns <code>status: "failed"</code> — not on <code>"input-required"</code> or <code>"auth-required"</code>. If all attempts fail, the workflow sets <code>stoppedEarly: true</code> and returns the last failed response as <code>output</code>.
+        </p>
+      </section>
+
+      <section id="result-shape">
+        <h2>Result shape</h2>
+        <p>
+          <code>workflow(...).run(input)</code> returns a <code>WorkflowResult</code>:
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>output</code></td><td><code>MessageResponse</code></td><td>Response from the last step that actually ran.</td></tr>
+              <tr><td><code>steps</code></td><td><code>MessageResponse[]</code></td><td>One entry per step that ran (skipped steps are absent).</td></tr>
+              <tr><td><code>stoppedEarly</code></td><td><code>boolean</code></td><td><code>true</code> if a step exhausted its retries and the workflow halted.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/03-workflow.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 03 — Deterministic workflows.
+ *
+ * Chain agents into a deterministic pipeline. Each step transforms the
+ * previous response, may be conditionally skipped, and may retry on failure.
+ *
+ * Run: `npm run workflow`
+ */
+import { AgentsClient, workflow } from "@corti/agent-sdk";
+import { makeClient } from "./_client";
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  const summarizer = await agents.create({
+    name: "wf-summarizer",
+    description: "Summarises a clinical note in one sentence.",
+    systemPrompt: "Summarise the note in a single sentence.",
+  });
+
+  const classifier = await agents.create({
+    name: "wf-classifier",
+    description: "Classifies a summary as 'urgent' or 'routine'.",
+    systemPrompt:
+      "Reply with exactly one word: 'urgent' or 'routine'. No punctuation.",
+  });
+
+  const escalator = await agents.create({
+    name: "wf-escalator",
+    description: "Drafts an escalation for urgent cases.",
+    systemPrompt: "Draft a one-line escalation to the on-call physician.",
+  });
+
+  const note =
+    "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago.";
+
+  // Pipeline: summarise → classify → escalate (only when classifier says urgent).
+  const result = await workflow([
+    summarizer,                                  // step 1: summarise the note
+    classifier,                                  // step 2: classify the summary
+    {                                            // step 3: conditional escalate
+      agent: escalator,
+      when: (prev) => (prev.text ?? "").toLowerCase().includes("urgent"),
+      // Skip escalation input is just the word "urgent"; give escalator the
+      // original note so it has something to escalate.
+      transform: () => note,
+      retries: 2,
+      retryDelay: 500,
+    },
+  ]).run(note);
+
+  console.log("Final output:", result.output.text);
+  console.log("Steps executed:", result.steps.length);
+  console.log("Stopped early:", result.stoppedEarly);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="dim"># Urgent case (chest pain note)</span>
+<span class="accent">Final output:</span>  Escalate immediately: patient presenting with acute STEMI symptoms
+                — on-call cardiologist should be paged now.
+<span class="accent">Steps executed:</span> 3
+<span class="accent">Stopped early:</span>  false
+
+<span class="dim"># Routine case (mild sore throat note)</span>
+<span class="accent">Final output:</span>  routine
+<span class="accent">Steps executed:</span> 2
+<span class="accent">Stopped early:</span>  false</div>
+
+        <div class="callout">
+          When <code>when</code> returns <code>false</code>, the step is skipped — it doesn't appear in <code>steps</code> and the previous response becomes the final <code>output</code>. That's why <code>steps.length</code> is 2, not 3, for routine cases.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="04-parallel.html">
+            04 · Parallel fan-out
+            <span>Run multiple agents on the same input concurrently.</span>
+          </a>
+          <a href="07-state-graph.html">
+            07 · State graph
+            <span>Add cycles and dynamic routing for complex flows.</span>
+          </a>
+          <a href="index.html#workflows">
+            Workflow concept docs
+            <span>Full API reference for workflow().</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
