@@ -11,6 +11,6 @@
     "build": "npm run build --workspace @corti/agent-sdk"
   },
   "overrides": {
-    "@corti/sdk": "0.3.0-agents"
+    "@corti/sdk": "^1.0.0"
   }
 }

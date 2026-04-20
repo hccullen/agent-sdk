@@ -112,7 +112,6 @@ export type Part = Corti.AgentsPart;
 export type TextPart = Corti.AgentsTextPart;
 export type FilePart = Corti.AgentsFilePart;
 export type DataPart = Corti.AgentsDataPart;
-export type StreamEvent = Corti.AgentsMessageStreamResponse;
 
 // ── A2A v1 output types ───────────────────────────────────────────────────────
 
@@ -121,3 +120,34 @@ export type Artifact   = Corti.AgentsArtifact;
 export type Message    = Corti.AgentsMessage;
 export type TaskStatus = Corti.AgentsTaskStatus;
 export type TaskState  = Corti.AgentsTaskStatusState;
+
+// ── A2A streaming event types ────────────────────────────────────────────────
+// Defined locally (not in the SDK ≥1.0.0) to describe the wire shape of
+// `message/stream` JSON-RPC events.
+
+export interface TaskStatusUpdateEvent {
+  taskId: string;
+  contextId: string;
+  kind: "status-update";
+  status: Corti.AgentsTaskStatus;
+  final: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TaskArtifactUpdateEvent {
+  taskId: string;
+  contextId: string;
+  kind: "artifact-update";
+  artifact: Corti.AgentsArtifact;
+  append?: boolean;
+  lastChunk?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/** Wrapped event shape yielded by `AgentContext.streamMessage()`. */
+export interface StreamEvent {
+  message?: Corti.AgentsMessage;
+  task?: Corti.AgentsTask;
+  statusUpdate?: TaskStatusUpdateEvent;
+  artifactUpdate?: TaskArtifactUpdateEvent;
+}

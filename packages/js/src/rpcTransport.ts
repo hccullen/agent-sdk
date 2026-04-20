@@ -4,8 +4,9 @@ import type { CortiClient } from "@corti/sdk";
 /**
  * JSON-RPC 2.0 transport for the A2A endpoint at `/agents/{id}/v1`.
  *
- * Reaches into the `CortiClient` to reuse its resolved base URL and OAuth
- * bearer token, so the caller doesn't need to duplicate auth config.
+ * Reuses the `CortiClient`'s resolved base URL and OAuth bearer token via
+ * its public `getAuthHeaders()` helper, so the caller doesn't need to
+ * duplicate auth config.
  */
 
 type Supplier<T> = T | Promise<T> | (() => T | Promise<T>);
@@ -28,18 +29,6 @@ async function resolveAgentsBaseUrl(client: CortiClient): Promise<string> {
   const env = await resolveSupplier(opts.environment);
   const agents = typeof env === "string" ? env : env.agents;
   return agents.replace(/\/+$/, "");
-}
-
-async function getAuthHeader(client: CortiClient): Promise<string> {
-  return (client.agents as unknown as {
-    _getAuthorizationHeader(): Promise<string>;
-  })._getAuthorizationHeader();
-}
-
-async function getTenantHeader(client: CortiClient): Promise<string | undefined> {
-  const opts = (client as unknown as { _options: { tenantName?: Supplier<string> } })._options;
-  if (!opts.tenantName) return undefined;
-  return resolveSupplier(opts.tenantName);
 }
 
 interface RpcEnvelope {
@@ -76,10 +65,11 @@ async function buildHeaders(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: accept,
-    Authorization: await getAuthHeader(client),
   };
-  const tenant = await getTenantHeader(client);
-  if (tenant) headers["Tenant-Name"] = tenant;
+  const authHeaders = await client.getAuthHeaders();
+  authHeaders.forEach((value, key) => {
+    headers[key] = value;
+  });
   return headers;
 }
 

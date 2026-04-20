@@ -2,7 +2,14 @@ import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
 import { MessageResponse } from "./MessageResponse";
 import { rpcCall, rpcStream } from "./rpcTransport";
-import type { Credential, CredentialStore, Part, StreamEvent } from "./types";
+import type {
+  Credential,
+  CredentialStore,
+  Part,
+  StreamEvent,
+  TaskArtifactUpdateEvent,
+  TaskStatusUpdateEvent,
+} from "./types";
 
 /**
  * A stateful conversation context (thread) with a specific agent.
@@ -199,8 +206,8 @@ function normalizeStreamEvent(raw: unknown): StreamEvent {
   }
   switch (obj.kind) {
     case "task":            return { task: obj as unknown as Corti.AgentsTask };
-    case "status-update":   return { statusUpdate: obj as unknown as Corti.AgentsTaskStatusUpdateEvent };
-    case "artifact-update": return { artifactUpdate: obj as unknown as Corti.AgentsTaskArtifactUpdateEvent };
+    case "status-update":   return { statusUpdate: obj as unknown as TaskStatusUpdateEvent };
+    case "artifact-update": return { artifactUpdate: obj as unknown as TaskArtifactUpdateEvent };
     case "message":         return { message: obj as unknown as Corti.AgentsMessage };
     default:                return obj as StreamEvent;
   }
