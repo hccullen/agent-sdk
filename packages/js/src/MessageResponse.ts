@@ -63,15 +63,17 @@ export class MessageResponse {
 
   /**
    * Convenience: all text parts from `statusMessage` joined into a single
-   * string. Returns `undefined` when there is no text content.
+   * string. Returns `null` when there is no text content, or when the
+   * status message is the echoed user turn rather than an agent reply.
    */
-  get text(): string | undefined {
-    const parts = this.statusMessage?.parts ?? [];
-    const joined = parts
+  get text(): string | null {
+    const msg = this.statusMessage;
+    if (!msg || msg.role === "user") return null;
+    const joined = (msg.parts ?? [])
       .filter((p): p is Corti.AgentsTextPart => p.kind === "text")
       .map((p) => p.text)
       .join("");
-    return joined || undefined;
+    return joined === "" ? null : joined;
   }
 
   /** Structured artifacts produced by the task, deduplicated by parts content. */

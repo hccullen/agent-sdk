@@ -56,7 +56,7 @@ export const connectors = {
   }),
 };
 
-// ── Internal: map ConnectorDef[] → AgentsCreateAgentExpertsItem[] ────────────
+// ── Internal: partition ConnectorDef[] into request fields ───────────────────
 
 function mcpUrlToName(url: string): string {
   const match = url.match(/^https?:\/\/([^/?#]+)/);
@@ -69,41 +69,50 @@ function mcpUrlToName(url: string): string {
   );
 }
 
-export function connectorsToExperts(
+export interface ConnectorRequestFields {
+  experts?: Corti.AgentsCreateAgentExpertsItem[];
+  mcpServers?: Corti.AgentsCreateMcpServer[];
+}
+
+/**
+ * Split connector definitions into the two fields the API expects:
+ * - `mcpServers`: MCP connectors are attached at the top level of the agent.
+ * - `experts`:    registry / cortiAgent connectors stay as experts.
+ */
+export function connectorsToRequestFields(
   defs: ConnectorDef[]
-): Corti.AgentsCreateAgentExpertsItem[] {
-  return defs.map((conn): Corti.AgentsCreateAgentExpertsItem => {
+): ConnectorRequestFields {
+  const experts: Corti.AgentsCreateAgentExpertsItem[] = [];
+  const mcpServers: Corti.AgentsCreateMcpServer[] = [];
+
+  for (const conn of defs) {
     switch (conn.type) {
       case "mcp": {
         const name = conn.name ?? mcpUrlToName(conn.mcpUrl);
         const authorizationType =
           conn.authType ?? (conn.token ? "bearer" : "none");
-        return {
-          type: "new",
+        mcpServers.push({
           name,
-          description: `MCP server at ${conn.mcpUrl}`,
-          mcpServers: [
-            {
-              name,
-              transportType: conn.transport ?? "sse",
-              authorizationType,
-              url: conn.mcpUrl,
-              ...(conn.token !== undefined && { token: conn.token }),
-            },
-          ],
-        };
+          transportType: conn.transport ?? "sse",
+          authorizationType,
+          url: conn.mcpUrl,
+          ...(conn.token !== undefined && { token: conn.token }),
+        });
+        break;
       }
       case "registry":
-        return {
+        experts.push({
           type: "reference",
           name: conn.name,
           ...(conn.systemPrompt !== undefined && { systemPrompt: conn.systemPrompt }),
-        };
+        });
+        break;
       case "cortiAgent":
-        return {
+        experts.push({
           type: "reference",
           id: conn.agentId,
-        };
+        });
+        break;
       case "a2a":
         throw new Error(
           `[AgentSDK] A2A connectors are not yet supported (url: ${conn.a2aUrl}). ` +
@@ -114,5 +123,10 @@ export function connectorsToExperts(
         throw new Error(`[AgentSDK] Unknown connector type: ${(exhaustive as ConnectorDef).type}`);
       }
     }
-  });
+  }
+
+  const out: ConnectorRequestFields = {};
+  if (experts.length) out.experts = experts;
+  if (mcpServers.length) out.mcpServers = mcpServers;
+  return out;
 }

@@ -1,5 +1,8 @@
-import { randomUUID } from "crypto";
 import type { Corti, CortiClient } from "@corti/sdk";
+
+const randomUUID = (): string =>
+  (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID();
+
 import { MessageResponse } from "./MessageResponse";
 import { rpcCall, rpcStream } from "./rpcTransport";
 import type {
