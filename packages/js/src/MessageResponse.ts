@@ -9,7 +9,12 @@ export class MessageResponse {
   private readonly _raw: Corti.AgentsTask;
 
   constructor(raw: Corti.AgentsTask | undefined) {
-    this._raw = (raw ?? ({} as Corti.AgentsTask));
+    if (!raw) {
+      throw new Error(
+        "MessageResponse: missing task — JSON-RPC response had no `result`"
+      );
+    }
+    this._raw = raw;
   }
 
   /**

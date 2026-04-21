@@ -19,16 +19,25 @@ async function resolveSupplier<T>(s: Supplier<T>): Promise<T> {
 async function resolveAgentsBaseUrl(client: CortiClient): Promise<string> {
   const opts = (client as unknown as { _options: {
     baseUrl?: Supplier<string>;
-    environment: Supplier<{ agents: string } | string>;
+    environment: Supplier<{ agents: string }>;
   } })._options;
 
+  let resolved: string | undefined;
   if (opts.baseUrl) {
     const base = await resolveSupplier(opts.baseUrl);
-    if (base) return base.replace(/\/+$/, "");
+    if (base) resolved = base;
   }
-  const env = await resolveSupplier(opts.environment);
-  const agents = typeof env === "string" ? env : env.agents;
-  return agents.replace(/\/+$/, "");
+  if (!resolved) {
+    const env = await resolveSupplier(opts.environment);
+    resolved = env?.agents;
+  }
+  if (!resolved || !/^https?:\/\//i.test(resolved)) {
+    throw new Error(
+      `Could not resolve agents base URL from CortiClient options (got ${JSON.stringify(resolved)}). ` +
+      `Pass a CortiClient configured with \`baseUrl\` or \`environment: CortiEnvironment.Eu | CortiEnvironment.Us\`.`
+    );
+  }
+  return resolved.replace(/\/+$/, "");
 }
 
 interface RpcEnvelope {
@@ -78,6 +87,22 @@ export interface RpcCallOptions {
   abortSignal?: AbortSignal;
 }
 
+function makeAbortController(opts?: RpcCallOptions): {
+  controller: AbortController;
+  timer: ReturnType<typeof setTimeout> | undefined;
+} {
+  const controller = new AbortController();
+  if (opts?.abortSignal?.aborted) {
+    controller.abort();
+  } else if (opts?.abortSignal) {
+    opts.abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  const timer = opts?.timeoutInSeconds !== undefined
+    ? setTimeout(() => controller.abort(), opts.timeoutInSeconds * 1000)
+    : undefined;
+  return { controller, timer };
+}
+
 export async function rpcCall<T>(
   client: CortiClient,
   agentId: string,
@@ -88,13 +113,7 @@ export async function rpcCall<T>(
   const baseUrl = await resolveAgentsBaseUrl(client);
   const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
 
-  const controller = new AbortController();
-  const timer = opts?.timeoutInSeconds !== undefined
-    ? setTimeout(() => controller.abort(), opts.timeoutInSeconds * 1000)
-    : undefined;
-  if (opts?.abortSignal) {
-    opts.abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
+  const { controller, timer } = makeAbortController(opts);
 
   try {
     const resp = await fetch(url, {
@@ -124,31 +143,29 @@ export async function* rpcStream<T>(
   const baseUrl = await resolveAgentsBaseUrl(client);
   const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
 
-  const controller = new AbortController();
-  if (opts?.abortSignal) {
-    opts.abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
+  const { controller, timer } = makeAbortController(opts);
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: await buildHeaders(client, "text/event-stream"),
-    body: JSON.stringify(buildEnvelope(method, params)),
-    signal: controller.signal,
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
-  }
-  if (!resp.body) {
-    throw new Error("No response body for stream");
-  }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: await buildHeaders(client, "text/event-stream"),
+      body: JSON.stringify(buildEnvelope(method, params)),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
+    }
+    if (!resp.body) {
+      throw new Error("No response body for stream");
+    }
+
+    reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -173,6 +190,18 @@ export async function* rpcStream<T>(
       }
     }
   } finally {
-    reader.releaseLock();
+    if (timer) clearTimeout(timer);
+    if (reader) {
+      try {
+        await reader.cancel();
+      } catch {
+        // ignore — best-effort cleanup
+      }
+      try {
+        reader.releaseLock();
+      } catch {
+        // ignore — already released or cancelled
+      }
+    }
   }
 }

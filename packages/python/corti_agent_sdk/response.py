@@ -21,7 +21,7 @@ class MessageResponse:
         print(r.raw)       # full A2A v1 Task dict (same as .task)
     """
 
-    def __init__(self, raw: Dict[str, Any]) -> None:
+    def __init__(self, raw: Optional[Dict[str, Any]]) -> None:
         self._raw = raw or {}
 
     @classmethod

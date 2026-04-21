@@ -159,14 +159,20 @@ class CortiClient:
 
     @staticmethod
     def _unwrap_rpc(payload: Dict[str, Any]) -> Any:
-        """Return ``result`` from a JSON-RPC response or raise on ``error``."""
-        if "error" in payload and payload["error"] is not None:
+        """Return ``result`` from a JSON-RPC response or raise on malformed/error responses."""
+        has_result = "result" in payload
+        has_error = "error" in payload and payload["error"] is not None
+        if has_result == has_error:
+            raise RuntimeError(
+                "Malformed JSON-RPC response: expected exactly one of 'result' or 'error'"
+            )
+        if has_error:
             err = payload["error"]
             code = err.get("code")
             msg = err.get("message", "JSON-RPC error")
             data = err.get("data")
             raise RuntimeError(f"A2A error {code}: {msg}" + (f" — {data}" if data else ""))
-        return payload.get("result")
+        return payload["result"]
 
     async def rpc_call(
         self,
