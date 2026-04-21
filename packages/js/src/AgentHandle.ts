@@ -1,7 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
 import { MessageResponse } from "./MessageResponse";
-import { connectorsToExperts } from "./connectors";
+import { connectorsToRequestFields } from "./connectors";
 import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 
 /**
@@ -105,13 +105,20 @@ export class AgentHandle {
    * ```
    */
   async update(opts: UpdateAgentOptions): Promise<AgentHandle> {
+    // When `connectors` is provided, semantics is "replace entirely" — we must
+    // send both `experts` and `mcpServers` so either side clears if it's empty.
+    const connectorFields = opts.connectors !== undefined
+      ? (() => {
+          const f = connectorsToRequestFields(opts.connectors);
+          return { experts: f.experts ?? [], mcpServers: f.mcpServers ?? [] };
+        })()
+      : undefined;
+
     const updated = await this.client.agents.update(this._agent.id, {
       ...(opts.name !== undefined && { name: opts.name }),
       ...(opts.description !== undefined && { description: opts.description }),
       ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
-      ...(opts.connectors !== undefined && {
-        experts: connectorsToExperts(opts.connectors),
-      }),
+      ...(connectorFields ?? {}),
     });
 
     return new AgentHandle(updated, this.client);

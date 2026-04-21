@@ -1,6 +1,6 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentHandle } from "./AgentHandle";
-import { connectorsToExperts } from "./connectors";
+import { connectorsToRequestFields } from "./connectors";
 import type { CreateAgentOptions } from "./types";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -19,9 +19,7 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
     // Pass lifecycle: "persistent" to keep an agent across sessions.
     ephemeral: opts.lifecycle !== "persistent",
     ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
-    ...(opts.connectors?.length
-      ? { experts: connectorsToExperts(opts.connectors) }
-      : {}),
+    ...(opts.connectors?.length ? connectorsToRequestFields(opts.connectors) : {}),
   };
 }
 
