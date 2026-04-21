@@ -2,6 +2,7 @@ import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
 import { MessageResponse } from "./MessageResponse";
 import { connectorsToRequestFields } from "./connectors";
+import { updateAgentViaFetch, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 
 /**
@@ -13,7 +14,13 @@ import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 export class AgentHandle {
   constructor(
     private readonly _agent: Corti.AgentsAgent,
-    private readonly client: CortiClient
+    private readonly client: CortiClient,
+    /**
+     * Optional direct-fetch auth config, threaded through by `AgentsClient`.
+     * When present, `update()` uses `fetchAgents.updateAgentViaFetch` instead
+     * of `client.agents.update`. See `fetchAgents.ts` for why.
+     */
+    private readonly auth?: FetchAgentsAuthConfig
   ) {}
 
   get id(): string {
@@ -114,14 +121,20 @@ export class AgentHandle {
         })()
       : undefined;
 
-    const updated = await this.client.agents.update(this._agent.id, {
+    const body: Corti.AgentsUpdateAgent = {
       ...(opts.name !== undefined && { name: opts.name }),
       ...(opts.description !== undefined && { description: opts.description }),
       ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
       ...(connectorFields ?? {}),
-    });
+    };
 
-    return new AgentHandle(updated, this.client);
+    // Direct-fetch path when auth config was threaded through — bypasses
+    // the SDK's mcpServers-stripping serialiser.
+    const updated = this.auth
+      ? await updateAgentViaFetch(this._agent.id, body, this.auth)
+      : await this.client.agents.update(this._agent.id, body);
+
+    return new AgentHandle(updated, this.client, this.auth);
   }
 
   /**
@@ -131,7 +144,7 @@ export class AgentHandle {
   async refresh(): Promise<AgentHandle> {
     const updated = await this.client.agents.get(this._agent.id);
     const agent = !("type" in updated) ? (updated as Corti.AgentsAgent) : this._agent;
-    return new AgentHandle(agent, this.client);
+    return new AgentHandle(agent, this.client, this.auth);
   }
 
   /** Delete this agent. After this call the handle should no longer be used. */

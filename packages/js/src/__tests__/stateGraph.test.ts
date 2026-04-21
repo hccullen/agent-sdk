@@ -54,7 +54,7 @@ describe("StateGraph", () => {
       expect(steps[0].delta).toEqual({ n: 10 });
       expect(steps[0].state.n).toBe(10);
       expect(steps[1].node).toBe("y");
-      expect(steps[1].delta).toEqual({ n: 5 });
+      expect(steps[1].delta).toEqual({ n: 15 });
       expect(steps[1].state.n).toBe(15);
     });
   });

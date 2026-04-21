@@ -1,4 +1,5 @@
-export { AgentsClient } from "./AgentsClient";
+export { AgentsClient, type AgentsClientOptions } from "./AgentsClient";
+export type { FetchAgentsAuthConfig } from "./fetchAgents";
 export { AgentContext } from "./AgentContext";
 export { AgentHandle } from "./AgentHandle";
 export { MessageResponse } from "./MessageResponse";
