@@ -1,5 +1,8 @@
-import { randomUUID } from "crypto";
 import type { CortiClient } from "@corti/sdk";
+
+const randomUUID = (): string =>
+  (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID();
+
 
 /**
  * JSON-RPC 2.0 transport for the A2A endpoint at `/agents/{id}/v1`.
