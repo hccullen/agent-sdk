@@ -1,6 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentHandle } from "./AgentHandle";
 import { connectorsToRequestFields } from "./connectors";
+import { createAgentViaFetch, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CreateAgentOptions } from "./types";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -61,13 +62,28 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
  * const response = await ctx.sendText("What is the ICD-10 code for hypertension?");
  * ```
  */
+export interface AgentsClientOptions {
+  /**
+   * Opt into the direct-fetch path for agent create/update.
+   *
+   * TEMPORARY WORKAROUND: @corti/sdk@1.2.0-rc strips top-level `mcpServers`
+   * during request serialisation (the Fern types declare it, but the
+   * generated serialisers omit it). When `auth` is provided, create/update
+   * go through `fetchAgents.ts` instead — remove this option once the SDK
+   * ships serialisers for `mcpServers`.
+   */
+  auth?: FetchAgentsAuthConfig;
+}
+
 export class AgentsClient {
   private readonly client: CortiClient;
+  private readonly auth?: FetchAgentsAuthConfig;
 
   private static readonly _PATCH_KEY = "__corti_agent_sdk_patched__";
 
-  constructor(client: CortiClient) {
+  constructor(client: CortiClient, options: AgentsClientOptions = {}) {
     this.client = client;
+    this.auth = options.auth;
     this._patchClientAgents();
   }
 
@@ -98,11 +114,15 @@ export class AgentsClient {
         ? toSdkRequest(request)
         : (request as Corti.AgentsCreateAgent);
 
-      const agent = await originalCreate(
-        sdkRequest,
-        options as Parameters<typeof originalCreate>[1]
-      );
-      return new AgentHandle(agent, self.client);
+      // Direct-fetch path: active whenever `auth` was provided to the
+      // AgentsClient constructor. See AgentsClientOptions for the reason.
+      const agent = self.auth
+        ? await createAgentViaFetch(sdkRequest, self.auth)
+        : await originalCreate(
+            sdkRequest,
+            options as Parameters<typeof originalCreate>[1]
+          );
+      return new AgentHandle(agent, self.client, self.auth);
     };
   }
 
@@ -128,7 +148,7 @@ export class AgentsClient {
    */
   async get(agentId: string): Promise<AgentHandle> {
     const agent = await this.client.agents.get(agentId);
-    return new AgentHandle(agent as Corti.AgentsAgent, this.client);
+    return new AgentHandle(agent as Corti.AgentsAgent, this.client, this.auth);
   }
 
   /**
@@ -141,7 +161,7 @@ export class AgentsClient {
     const agents = await this.client.agents.list();
     return agents
       .filter((a): a is Corti.AgentsAgent => !("type" in a))
-      .map((a) => new AgentHandle(a, this.client));
+      .map((a) => new AgentHandle(a, this.client, this.auth));
   }
 
   /**
@@ -149,6 +169,6 @@ export class AgentsClient {
    * call — useful when you already have an agent object from `client.agents.*`.
    */
   wrap(agent: Corti.AgentsAgent): AgentHandle {
-    return new AgentHandle(agent, this.client);
+    return new AgentHandle(agent, this.client, this.auth);
   }
 }
