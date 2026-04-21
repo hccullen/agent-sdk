@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json as _json
 import time
+import uuid
 from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 import httpx
@@ -29,8 +30,8 @@ class CortiClient:
     Async HTTP client for the Corti API.
 
     Handles OAuth2 client-credentials auth (auto-refresh) and provides
-    thin ``request()`` / ``stream_request()`` helpers used by the higher-level
-    wrappers.
+    thin ``request()`` / ``rpc_call()`` / ``rpc_stream()`` helpers used by the
+    higher-level wrappers.
 
     Usage::
 
@@ -145,24 +146,73 @@ class CortiClient:
             return None
         return resp.json()
 
-    async def stream_request(
+    # ── JSON-RPC (A2A) ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _rpc_envelope(method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "method": method,
+            "params": params,
+        }
+
+    @staticmethod
+    def _unwrap_rpc(payload: Dict[str, Any]) -> Any:
+        """Return ``result`` from a JSON-RPC response or raise on malformed/error responses."""
+        has_result = "result" in payload
+        has_error = "error" in payload and payload["error"] is not None
+        if has_result == has_error:
+            raise RuntimeError(
+                "Malformed JSON-RPC response: expected exactly one of 'result' or 'error'"
+            )
+        if has_error:
+            err = payload["error"]
+            code = err.get("code")
+            msg = err.get("message", "JSON-RPC error")
+            data = err.get("data")
+            raise RuntimeError(f"A2A error {code}: {msg}" + (f" — {data}" if data else ""))
+        return payload["result"]
+
+    async def rpc_call(
         self,
-        path: str,
-        body: Dict[str, Any],
+        agent_id: str,
+        method: str,
+        params: Dict[str, Any],
+    ) -> Any:
+        """
+        Make a JSON-RPC 2.0 call against ``/agents/{id}/v1``.
+
+        Returns the ``result`` field from the server's JSON-RPC response, or
+        raises ``RuntimeError`` if the server returns a JSON-RPC ``error``.
+        """
+        url = f"{self._agents_url}/agents/{agent_id}/v1"
+        headers = {**await self._auth_headers(), "Content-Type": "application/json"}
+        resp = await self._http.post(url, headers=headers, json=self._rpc_envelope(method, params))
+        resp.raise_for_status()
+        return self._unwrap_rpc(resp.json())
+
+    async def rpc_stream(
+        self,
+        agent_id: str,
+        method: str,
+        params: Dict[str, Any],
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        POST to *path* and yield SSE events as dicts.
+        Make a streaming JSON-RPC 2.0 call against ``/agents/{id}/v1``.
 
-        The server sends ``data: <json>\\n\\n`` lines; this method parses each
-        one and yields the decoded dict.  Stops on ``data: [DONE]`` or when the
+        Each SSE ``data:`` line carries a full JSON-RPC response; this method
+        parses each one, unwraps ``result`` (raising on ``error``), and yields
+        the decoded event dict. Stops on ``data: [DONE]`` or when the
         connection closes.
         """
-        url = f"{self._agents_url}/{path.lstrip('/')}"
+        url = f"{self._agents_url}/agents/{agent_id}/v1"
         headers = {
             **await self._auth_headers(),
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         }
+        body = self._rpc_envelope(method, params)
 
         async with self._http.stream("POST", url, headers=headers, json=body) as resp:
             resp.raise_for_status()
@@ -174,9 +224,12 @@ class CortiClient:
                 if payload == "[DONE]":
                     break
                 try:
-                    yield _json.loads(payload)
+                    decoded = _json.loads(payload)
                 except _json.JSONDecodeError:
                     continue
+                result = self._unwrap_rpc(decoded)
+                if result is not None:
+                    yield result
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 

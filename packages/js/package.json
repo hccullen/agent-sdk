@@ -21,10 +21,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@corti/sdk": "^0.3.0-agents"
+    "@corti/sdk": "^1.0.0"
   },
   "devDependencies": {
-    "@corti/sdk": "^0.3.0-agents",
+    "@corti/sdk": "^1.0.0",
     "@types/node": "^18.0.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"

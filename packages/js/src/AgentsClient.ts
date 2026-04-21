@@ -130,17 +130,19 @@ export class AgentsClient {
    */
   async get(agentId: string): Promise<AgentHandle> {
     const agent = await this.client.agents.get(agentId);
-    const resolved = "id" in agent ? (agent as Corti.AgentsAgent) : agent;
-    return new AgentHandle(resolved as Corti.AgentsAgent, this.client);
+    return new AgentHandle(agent as Corti.AgentsAgent, this.client);
   }
 
   /**
    * List all agents and return `AgentHandle` wrappers.
+   *
+   * Filters out bare `AgentsAgentReference` entries — we only wrap full
+   * `AgentsAgent` objects here.
    */
   async list(): Promise<AgentHandle[]> {
     const agents = await this.client.agents.list();
     return agents
-      .filter((a): a is Corti.AgentsAgent => "id" in a)
+      .filter((a): a is Corti.AgentsAgent => !("type" in a))
       .map((a) => new AgentHandle(a, this.client));
   }
 

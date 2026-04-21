@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { CortiClient } from "@corti/sdk";
+import { CortiClient, CortiEnvironment } from "@corti/sdk";
 
 /**
  * Build a `CortiClient` from environment variables.
@@ -9,7 +9,8 @@ export function makeClient(): CortiClient {
   const tenantName = required("CORTI_TENANT_NAME");
   const clientId = required("CORTI_CLIENT_ID");
   const clientSecret = required("CORTI_CLIENT_SECRET");
-  const environment = (process.env.CORTI_ENVIRONMENT ?? "eu") as "eu" | "us";
+  const envName = (process.env.CORTI_ENVIRONMENT ?? "eu").toLowerCase();
+  const environment = envName === "us" ? CortiEnvironment.Us : CortiEnvironment.Eu;
 
   return new CortiClient({
     tenantName,

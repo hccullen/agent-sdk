@@ -105,21 +105,13 @@ export class AgentHandle {
    * ```
    */
   async update(opts: UpdateAgentOptions): Promise<AgentHandle> {
-    // The 0.3.0-agents SDK update() expects a full AgentsAgent object;
-    // we merge current state with the caller's partial overrides.
-    const experts =
-      opts.connectors !== undefined
-        ? // Cast: connectorsToExperts returns AgentsCreateAgentExpertsItem[] which
-          // the REST API accepts even though the TS type says AgentsAgentExpertsItem[]
-          (connectorsToExperts(opts.connectors) as unknown as Corti.AgentsAgentExpertsItem[])
-        : this._agent.experts;
-
     const updated = await this.client.agents.update(this._agent.id, {
-      id: this._agent.id,
-      name: opts.name ?? this._agent.name,
-      description: opts.description ?? this._agent.description,
-      systemPrompt: opts.systemPrompt ?? this._agent.systemPrompt,
-      ...(experts !== undefined && { experts }),
+      ...(opts.name !== undefined && { name: opts.name }),
+      ...(opts.description !== undefined && { description: opts.description }),
+      ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
+      ...(opts.connectors !== undefined && {
+        experts: connectorsToExperts(opts.connectors),
+      }),
     });
 
     return new AgentHandle(updated, this.client);
@@ -131,7 +123,7 @@ export class AgentHandle {
    */
   async refresh(): Promise<AgentHandle> {
     const updated = await this.client.agents.get(this._agent.id);
-    const agent = "id" in updated ? (updated as Corti.AgentsAgent) : this._agent;
+    const agent = !("type" in updated) ? (updated as Corti.AgentsAgent) : this._agent;
     return new AgentHandle(agent, this.client);
   }
 

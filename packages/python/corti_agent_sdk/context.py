@@ -62,7 +62,8 @@ class AgentContext:
 
     def _capture_context_id(self, response: Any) -> None:
         if self._context_id is None and isinstance(response, dict):
-            cid = (response.get("task") or {}).get("contextId")
+            # JSON-RPC result may be a Task directly, or a streaming event wrapping a task.
+            cid = response.get("contextId") or (response.get("task") or {}).get("contextId")
             if cid:
                 self._context_id = cid
 
@@ -86,13 +87,13 @@ class AgentContext:
 
     async def _do_send(self, parts: List[Part]) -> MessageResponse:
         """Send parts to the API and capture contextId from the response."""
-        response = await self._client.request(
-            "POST",
-            f"agents/{self._agent_id}/v1/message:send",
-            body={"message": self._build_message(parts)},
+        result = await self._client.rpc_call(
+            self._agent_id,
+            "message/send",
+            {"message": self._build_message(parts)},
         )
-        self._capture_context_id(response)
-        return MessageResponse(response)
+        self._capture_context_id(result)
+        return MessageResponse(result)
 
     async def send_message(self, parts: List[Part]) -> MessageResponse:
         """
@@ -137,9 +138,10 @@ class AgentContext:
                 if state:
                     print(state)
         """
-        async for event in self._client.stream_request(
-            f"agents/{self._agent_id}/v1/message:send",
-            body={"message": self._build_message(parts)},
+        async for event in self._client.rpc_stream(
+            self._agent_id,
+            "message/stream",
+            {"message": self._build_message(parts)},
         ):
             self._capture_context_id(event)
             yield event
