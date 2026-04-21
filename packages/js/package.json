@@ -2,6 +2,7 @@
   "name": "@corti/agent-sdk",
   "version": "0.1.0-alpha.0",
   "description": "Developer-friendly wrapper for building agents with the Corti SDK",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
