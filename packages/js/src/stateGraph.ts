@@ -1,6 +1,6 @@
-import { AgentHandle } from "./AgentHandle";
 import { MessageResponse } from "./MessageResponse";
 import type { Part } from "./types";
+import type { Runnable } from "./workflow";
 
 // ── END sentinel ──────────────────────────────────────────────────────────────
 
@@ -161,21 +161,23 @@ export function stateGraph<S extends AnyState>(): StateGraph<S> {
 // ── agentNode helper ──────────────────────────────────────────────────────────
 
 /**
- * Wrap an `AgentHandle` as a `NodeFn`.
+ * Wrap any `Runnable` (an `AgentHandle`, a `Parallel` group, or a custom
+ * object with a matching `run()`) as a `NodeFn`.
  *
- * @param agent          The agent to invoke.
- * @param getInput       Extract the agent's input from the current state.
- * @param mergeResponse  Merge the agent's response back into state as a partial update.
+ * @param runnable       The runnable to invoke.
+ * @param getInput       Extract the runnable's input from the current state.
+ * @param mergeResponse  Merge the response back into state as a partial update.
  *
  * @example
  * ```ts
  * agentNode(myAgent, s => s.note, (r, s) => ({ summary: r.text ?? "" }))
+ * agentNode(parallel([a, b]), s => s.note, (r, s) => ({ parts: r.statusMessage?.parts ?? [] }))
  * ```
  */
 export function agentNode<S extends AnyState>(
-  agent: AgentHandle,
+  runnable: Runnable,
   getInput: (state: S) => string | Part[],
   mergeResponse: (response: MessageResponse, state: S) => Partial<S>,
 ): NodeFn<S> {
-  return async (state: S) => mergeResponse(await agent.run(getInput(state)), state);
+  return async (state: S) => mergeResponse(await runnable.run(getInput(state)), state);
 }

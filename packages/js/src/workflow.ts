@@ -1,3 +1,4 @@
+import type { Corti } from "@corti/sdk";
 import { AgentHandle } from "./AgentHandle";
 import { MessageResponse } from "./MessageResponse";
 import type { CredentialStore, Part } from "./types";
@@ -5,20 +6,22 @@ import type { CredentialStore, Part } from "./types";
 // ── Runnable ──────────────────────────────────────────────────────────────────
 
 /**
- * Anything that can act as a workflow step: an `AgentHandle`, a `Parallel`
- * group, or any custom object with a `run()` method.
+ * The single contract for anything that can be a step in a workflow, a branch
+ * of a parallel group, or a node in a state graph. `AgentHandle`, `Parallel`,
+ * and any custom object with a matching `run()` all satisfy it.
  */
 export interface Runnable {
   run(input: string | Part[]): Promise<MessageResponse>;
+}
+
+function isRunnable(x: unknown): x is Runnable {
+  return !!x && typeof (x as Runnable).run === "function";
 }
 
 // ── Workflow ──────────────────────────────────────────────────────────────────
 
 /**
  * A fully-specified workflow step.
- *
- * `agent` accepts any `Runnable` — an `AgentHandle`, a `Parallel` group
- * (auto-wrapped to merge fulfilled results), or a custom object.
  */
 export interface WorkflowStep {
   agent: Runnable;
@@ -42,25 +45,10 @@ export interface WorkflowResult {
   stoppedEarly: boolean;
 }
 
-type WorkflowStepDef = AgentHandle | Parallel | WorkflowStep;
-
-function parallelToRunnable(p: Parallel): Runnable {
-  return {
-    run: async (input: string | Part[]) => {
-      const { fulfilled } = await p.run(input);
-      if (fulfilled.length === 0) {
-        throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
-      }
-      return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
-    },
-  };
-}
+type WorkflowStepDef = Runnable | WorkflowStep;
 
 function normaliseWorkflow(step: WorkflowStepDef): WorkflowStep {
-  if (step instanceof AgentHandle) return { agent: step };
-  if (step instanceof Parallel) return { agent: parallelToRunnable(step) };
-  // WorkflowStep dict whose agent is a Parallel — wrap the agent in place.
-  if (step.agent instanceof Parallel) return { ...step, agent: parallelToRunnable(step.agent) };
+  if (isRunnable(step)) return { agent: step };
   return step;
 }
 
@@ -69,8 +57,9 @@ const _delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, m
 /**
  * A deterministic, code-first pipeline of agent invocations.
  *
- * Steps can be `AgentHandle` instances, `Parallel` groups, or `WorkflowStep`
- * objects with optional `when` / `transform` / `retries` controls.
+ * Steps can be any `Runnable` (an `AgentHandle`, a `Parallel` group, or a
+ * custom object) or a `WorkflowStep` with optional `when` / `transform` /
+ * `retries` controls.
  *
  * @example
  * ```ts
@@ -143,13 +132,16 @@ export function workflow(steps: WorkflowStepDef[]): Workflow {
 // ── Parallel ──────────────────────────────────────────────────────────────────
 
 /**
- * A parallel step. Provide `input` to override the shared input for this
- * specific agent; omit to use whatever was passed to `Parallel.run()`.
- * Provide `credentials` to forward auth credentials for this specific agent.
+ * A parallel branch. Either a bare `Runnable` (an `AgentHandle`, a nested
+ * `Parallel`, or any object with a matching `run()`), or a dict form
+ * providing a per-branch `input` override and/or `credentials` (the latter
+ * applies to `AgentHandle` branches).
  */
-export type ParallelStep = AgentHandle | { agent: AgentHandle; input?: string | Part[]; credentials?: CredentialStore };
+export type ParallelStep =
+  | Runnable
+  | { agent: AgentHandle; input?: string | Part[]; credentials?: CredentialStore };
 
-/** Returned by `Parallel.run()`. Mirrors `Promise.allSettled` shape. */
+/** Returned by `Parallel.runSettled()`. Mirrors `Promise.allSettled` shape. */
 export interface ParallelResult {
   /** One entry per step, in the same order as the step list. */
   results: PromiseSettledResult<MessageResponse>[];
@@ -160,22 +152,47 @@ export interface ParallelResult {
 }
 
 /**
- * Run multiple agents concurrently on the same input and collect all responses.
+ * Combine N agent responses into one by concatenating their reply-message
+ * parts. Preserves text parts, data parts, file parts, and their order within
+ * each branch. Failed / user-echo responses are skipped.
+ */
+function mergeResponses(responses: MessageResponse[]): MessageResponse {
+  const parts: Part[] = [];
+  for (const r of responses) {
+    const msg = r.statusMessage;
+    if (!msg || msg.role === "user") continue;
+    for (const p of msg.parts ?? []) parts.push(p);
+  }
+  return new MessageResponse({
+    id: "",
+    contextId: "",
+    kind: "task",
+    status: {
+      state: "completed",
+      message: { role: "agent", parts, messageId: "", kind: "message" },
+    },
+  } as Corti.AgentsTask);
+}
+
+/**
+ * Run multiple agents concurrently on the same input.
  *
- * Can be used standalone (`.run()` → `ParallelResult`) or dropped directly
- * into a `workflow()` step list, where fulfilled results are text-joined into
- * a single `MessageResponse` for the next step.
+ * `run()` returns a single `MessageResponse` whose reply message carries the
+ * concatenated parts of every fulfilled branch — so downstream agents (or a
+ * workflow step) see one message with N branches' worth of parts, not a
+ * lossy text-joined string. Use `runSettled()` when you need the per-branch
+ * allSettled breakdown.
  *
  * @example
  * ```ts
- * // Standalone
- * const { fulfilled } = await parallel([agentA, agentB]).run("prompt");
- *
- * // Inside a workflow
+ * // Inside a workflow — merged parts flow straight into the next step
  * workflow([agentA, parallel([agentB, agentC]), agentD]).run("prompt");
+ *
+ * // Standalone, per-branch results
+ * const { fulfilled, rejected } = await parallel([agentA, agentB]).runSettled("prompt");
  * ```
  */
-export class Parallel {
+export class Parallel implements Runnable {
   private readonly _steps: ParallelStep[];
 
   constructor(steps: ParallelStep[]) {
@@ -183,13 +200,24 @@ export class Parallel {
     this._steps = steps;
   }
 
-  async run(input: string | Part[]): Promise<ParallelResult> {
+  /** Run all branches concurrently and merge fulfilled responses into one `MessageResponse`. */
+  async run(input: string | Part[]): Promise<MessageResponse> {
+    const settled = await this.runSettled(input);
+    if (settled.fulfilled.length === 0) {
+      throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
+    }
+    return mergeResponses(settled.fulfilled);
+  }
+
+  /** Run all branches concurrently and return the full per-branch allSettled result. */
+  async runSettled(input: string | Part[]): Promise<ParallelResult> {
     const promises = this._steps.map((step) => {
-      const agent = step instanceof AgentHandle ? step : step.agent;
-      const stepInput =
-        !(step instanceof AgentHandle) && step.input !== undefined ? step.input : input;
-      const credentials = !(step instanceof AgentHandle) ? step.credentials : undefined;
-      return agent.run(stepInput, credentials !== undefined ? { credentials } : undefined);
+      if (isRunnable(step)) return step.run(input);
+      const stepInput = step.input !== undefined ? step.input : input;
+      return step.agent.run(
+        stepInput,
+        step.credentials !== undefined ? { credentials: step.credentials } : undefined,
+      );
     });
 
     const results = await Promise.allSettled(promises);

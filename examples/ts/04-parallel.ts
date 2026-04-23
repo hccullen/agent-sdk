@@ -2,8 +2,9 @@
  * 04 — Parallel fan-out.
  *
  * Run multiple agents concurrently on the same input. Use `parallel()`
- * standalone, or drop it directly into a `workflow()` step list to merge
- * the fulfilled results into the next step.
+ * standalone (`runSettled()` for per-branch allSettled breakdown), or drop
+ * it directly into a `workflow()` step list — `run()` returns one merged
+ * `MessageResponse` whose reply message carries every branch's parts.
  *
  * Run: `npm run parallel`
  */
@@ -36,7 +37,7 @@ async function main() {
       name: "p-synthesizer",
       description: "Combines clinical perspectives into a single assessment.",
       systemPrompt:
-        "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
+        "You will receive a differential, red-flag list, and suggested workup as separate message parts. Combine them into a concise clinical assessment and plan.",
     }),
   ]);
 
@@ -44,12 +45,13 @@ async function main() {
     "54-year-old male with 2 hours of crushing substernal chest pain, diaphoresis, and dyspnea; history of hypertension and smoking.";
 
   // (a) Standalone: collect every result with Promise.allSettled-like output.
-  const fanout = await parallel([differential, redFlags, workup]).run(presentation);
+  const fanout = await parallel([differential, redFlags, workup]).runSettled(presentation);
   console.log("— Fan-out (standalone) —");
   fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
   if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);
 
-  // (b) Inside a workflow: fulfilled results are joined and fed into `synthesizer`.
+  // (b) Inside a workflow: branches' parts are concatenated into one message
+  //     and fed into `synthesizer`.
   const { output } = await workflow([
     parallel([differential, redFlags, workup]),
     synthesizer,
