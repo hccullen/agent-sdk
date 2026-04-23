@@ -38,18 +38,18 @@
         <a href="#agent-node">agentNode()</a>
         <a href="#walkthrough">Walkthrough</a>
         <a href="#result-shape">Result shape</a>
-        <a href="#vs-workflow">vs workflow()</a>
         <a href="#code">Full code</a>
         <a href="#output">What to expect</a>
 
         <p class="nav-group">All examples</p>
         <a href="01-hello-agent.html">01 · Hello, agent</a>
         <a href="02-connectors.html">02 · Connectors</a>
-        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="03-linear-pipeline.html">03 · Linear pipeline</a>
         <a href="04-parallel.html">04 · Parallel fan-out</a>
         <a href="05-streaming.html">05 · Streaming</a>
         <a href="06-credentials.html">06 · Credentials</a>
         <a href="07-state-graph.html" class="active">07 · State graph</a>
+        <a href="08-graph-mesh.html">08 · Graph mesh</a>
       </nav>
     </aside>
 
@@ -59,7 +59,7 @@
         <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>07 — State graph</strong></p>
         <h1>07 — State graph</h1>
         <p class="lede">
-          <code>stateGraph()</code> is the most powerful composition primitive. Unlike <code>workflow()</code>, it carries a typed state object across nodes and routes dynamically between them — including cycles. This example implements a clinical triage pipeline: triage → code → review → (loop back if rejected).
+          <code>stateGraph()</code> is the one composition primitive. It carries a typed state object across nodes and uses routing functions to pick the next node — including cycles, bounded by <code>maxIterations</code>. This example implements a clinical triage pipeline: triage → code → review → (loop back if rejected).
         </p>
 
         <div class="concept-grid">
@@ -291,33 +291,17 @@ const result = await graph.run("triage", initialState, { maxIterations: 10 });</
 }</code></pre>
       </section>
 
-      <section id="vs-workflow">
-        <h2>vs workflow()</h2>
-        <div class="table-wrapper">
-          <table>
-            <thead><tr><th></th><th><code>workflow()</code></th><th><code>stateGraph()</code></th></tr></thead>
-            <tbody>
-              <tr><td>Shape</td><td>Ordered list of steps</td><td>Named nodes with explicit edges</td></tr>
-              <tr><td>Shared state</td><td>Previous response text only</td><td>Typed object, accumulated across all nodes</td></tr>
-              <tr><td>Branching</td><td><code>when</code> predicate (skip or run)</td><td>Routing function — pick any node by name</td></tr>
-              <tr><td>Cycles</td><td>Not supported</td><td>Supported, bounded by <code>maxIterations</code></td></tr>
-              <tr><td>Best for</td><td>Known, fixed pipelines</td><td>Conditional flows, review loops, dynamic routing</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <section id="code">
         <h2>Full code</h2>
         <p>Source: <code>examples/ts/07-state-graph.ts</code></p>
 <pre><code class="language-typescript">/**
- * 07 — Stateful graph routing.
+ * 07 — Stateful graph with a review loop.
  *
- * Unlike a linear Workflow, a StateGraph accumulates typed shared state
- * across nodes and uses routing functions to decide what runs next —
- * including cycles (bounded by maxIterations).
+ * `stateGraph()` is the one composition primitive. It carries a typed shared
+ * state across nodes and uses routing functions to pick the next node —
+ * including cycles (bounded by `maxIterations`).
  *
- * This example models a clinical triage pipeline:
+ * This example models a clinical triage pipeline with a reviewer loop:
  *
  *   triage ──► coder ──► reviewer ──► END
  *                 ▲           │
@@ -458,17 +442,17 @@ main().catch((err) => {
 
         <h3>Next steps</h3>
         <div class="example-links-grid">
-          <a href="03-workflow.html">
-            03 · Workflow
-            <span>Simpler linear pipelines without routing or cycles.</span>
+          <a href="03-linear-pipeline.html">
+            03 · Linear pipeline
+            <span>A minimal graph for sequential agent chains with retries.</span>
           </a>
           <a href="04-parallel.html">
             04 · Parallel fan-out
-            <span>Run multiple agents on the same input concurrently.</span>
+            <span>Run multiple runnables concurrently; merge their parts.</span>
           </a>
-          <a href="index.html#state-graph">
-            State graph concept docs
-            <span>Full API reference including agentNode() and END.</span>
+          <a href="08-graph-mesh.html">
+            08 · Graph mesh
+            <span>Fan-out + branching + retries + loops in one graph.</span>
           </a>
         </div>
       </section>

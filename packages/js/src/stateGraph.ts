@@ -1,6 +1,6 @@
 import { MessageResponse } from "./MessageResponse";
 import type { Part } from "./types";
-import type { Runnable } from "./workflow";
+import type { Runnable } from "./runnable";
 
 // ── END sentinel ──────────────────────────────────────────────────────────────
 
@@ -53,31 +53,23 @@ export interface StateGraphResult<S extends AnyState> {
 // ── StateGraph ────────────────────────────────────────────────────────────────
 
 /**
- * A stateful routing graph for multi-agent workflows.
+ * A stateful routing graph — the one composition primitive.
  *
- * Unlike the linear `Workflow`, a `StateGraph` maintains a typed shared state
- * object that accumulates across node executions. Edges can be static names or
- * routing functions that inspect the state to decide what runs next — including
- * cycles, bounded by `maxIterations` (default 25).
+ * Nodes hold typed shared state that accumulates across executions. Edges can
+ * be static names or routing functions that inspect state to pick the next
+ * node, including cycles (bounded by `maxIterations`, default 25).
+ *
+ * Linear pipelines, conditional branching, review loops, and parallel
+ * fan-outs (via a `Parallel` node) all fit one shape.
  *
  * @example
  * ```ts
- * interface TriageState {
- *   note: string;
- *   severity?: string;
- *   codes?: string;
- *   approved?: boolean;
- * }
- *
- * const graph = stateGraph<TriageState>()
- *   .addNode("triage",   agentNode(triageAgent,   s => s.note,     (r, s) => ({ ...s, severity: r.text ?? "" })))
- *   .addNode("coder",    agentNode(coderAgent,    s => s.note,     (r, s) => ({ ...s, codes: r.text ?? "" })))
- *   .addNode("reviewer", agentNode(reviewerAgent, s => s.codes!,   (r, s) => ({ ...s, approved: (r.text ?? "").includes("approved") })))
- *   .addEdge("triage",   s => (s.severity ?? "").includes("urgent") ? "coder" : END)
- *   .addEdge("coder",    "reviewer")
- *   .addEdge("reviewer", s => s.approved ? END : "coder");   // bounded by maxIterations
- *
- * const { state, steps } = await graph.run("triage", { note: "Chest pain..." });
+ * // Linear pipeline:
+ * stateGraph<{ note: string; summary: string; severity: string }>()
+ *   .addNode("summarise", agentNode(summariser, s => s.note,    (r, s) => ({ ...s, summary:  r.text ?? "" })))
+ *   .addNode("classify",  agentNode(classifier, s => s.summary, (r, s) => ({ ...s, severity: r.text ?? "" })))
+ *   .addEdge("summarise", "classify")
+ *   .addEdge("classify",  END);
  * ```
  */
 export class StateGraph<S extends AnyState> {
@@ -160,6 +152,16 @@ export function stateGraph<S extends AnyState>(): StateGraph<S> {
 
 // ── agentNode helper ──────────────────────────────────────────────────────────
 
+const _delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Options for `agentNode()`. */
+export interface AgentNodeOptions {
+  /** Re-invoke the runnable if it returns `status === "failed"`. Default: 0. */
+  retries?: number;
+  /** Milliseconds between retry attempts. Default: 1000. */
+  retryDelay?: number;
+}
+
 /**
  * Wrap any `Runnable` (an `AgentHandle`, a `Parallel` group, or a custom
  * object with a matching `run()`) as a `NodeFn`.
@@ -167,17 +169,34 @@ export function stateGraph<S extends AnyState>(): StateGraph<S> {
  * @param runnable       The runnable to invoke.
  * @param getInput       Extract the runnable's input from the current state.
  * @param mergeResponse  Merge the response back into state as a partial update.
+ * @param opts           Optional retry behaviour for failed responses.
  *
  * @example
  * ```ts
- * agentNode(myAgent, s => s.note, (r, s) => ({ summary: r.text ?? "" }))
- * agentNode(parallel([a, b]), s => s.note, (r, s) => ({ parts: r.statusMessage?.parts ?? [] }))
+ * // Agent node with two retries on failure:
+ * agentNode(escalator, s => s.note, (r, s) => ({ ...s, draft: r.text ?? "" }), { retries: 2 })
+ *
+ * // Parallel fan-out as a node:
+ * agentNode(parallel([a, b]), s => s.q, (r, s) => ({ ...s, parts: r.statusMessage?.parts ?? [] }))
  * ```
  */
 export function agentNode<S extends AnyState>(
   runnable: Runnable,
   getInput: (state: S) => string | Part[],
   mergeResponse: (response: MessageResponse, state: S) => Partial<S>,
+  opts?: AgentNodeOptions,
 ): NodeFn<S> {
-  return async (state: S) => mergeResponse(await runnable.run(getInput(state)), state);
+  const maxAttempts = 1 + (opts?.retries ?? 0);
+  const retryMs = opts?.retryDelay ?? 1000;
+
+  return async (state: S) => {
+    const input = getInput(state);
+    let response!: MessageResponse;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      response = await runnable.run(input);
+      if (response.status !== "failed" || attempt + 1 >= maxAttempts) break;
+      if (retryMs > 0) await _delay(retryMs);
+    }
+    return mergeResponse(response, state);
+  };
 }

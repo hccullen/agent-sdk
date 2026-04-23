@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>03 — Linear pipeline · @corti/agent-sdk</title>
+  <meta name="description" content="Chain agents into a deterministic pipeline with a conditional branch and automatic retries, using the one primitive: stateGraph()." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#walkthrough">Walkthrough</a>
+        <a href="#retries">Retries</a>
+        <a href="#code">Full code</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-linear-pipeline.html" class="active">03 · Linear pipeline</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-graph-mesh.html">08 · Graph mesh</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>03 — Linear pipeline</strong></p>
+        <h1>03 — Linear pipeline</h1>
+        <p class="lede">
+          The simplest shape <code>stateGraph()</code> covers: a chain of agents where each step reads state set by the previous one, with an optional branch that skips escalation for routine cases and automatic retries on failure.
+        </p>
+
+        <pre><code class="language-typescript">// Diagram
+//
+//   summarise ──► classify ──(urgent?)──► escalate ──► END
+//                                │
+//                                └──► END (routine)</code></pre>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run pipeline</code></pre>
+      </section>
+
+      <section id="walkthrough">
+        <h2>Walkthrough</h2>
+
+        <h3>1 · Define the state</h3>
+<pre><code class="language-typescript">interface PipelineState {
+  note:       string;   // the original clinical note
+  summary:    string;   // set by summariser
+  severity:   string;   // "urgent" | "routine"
+  escalation: string;   // set by escalator (or empty for routine cases)
+}</code></pre>
+
+        <h3>2 · Build the graph</h3>
+<pre><code class="language-typescript">const graph = stateGraph&lt;PipelineState&gt;()
+  .addNode("summarise", agentNode(
+    summarizer,
+    (s) =&gt; s.note,
+    (r, s) =&gt; ({ ...s, summary: r.text ?? "" }),
+  ))
+  .addNode("classify", agentNode(
+    classifier,
+    (s) =&gt; s.summary,
+    (r, s) =&gt; ({ ...s, severity: (r.text ?? "").trim().toLowerCase() }),
+  ))
+  .addNode("escalate", agentNode(
+    escalator,
+    (s) =&gt; s.note,
+    (r, s) =&gt; ({ ...s, escalation: r.text ?? "" }),
+    { retries: 2, retryDelay: 500 },
+  ))
+  .addEdge("summarise", "classify")
+  .addEdge("classify", (s) =&gt; s.severity.includes("urgent") ? "escalate" : END)
+  .addEdge("escalate", END);</code></pre>
+
+        <div class="callout">
+          <strong>No new primitive.</strong> A linear pipeline is just a graph with one edge per node. Conditional branches drop in as a routing function on the branching edge; skipping a step is routing straight to <code>END</code> (or to whatever comes after the skipped step).
+        </div>
+      </section>
+
+      <section id="retries">
+        <h2>Retries</h2>
+        <p>
+          The fourth argument to <code>agentNode()</code> is an options object. Set <code>retries</code> to re-invoke the runnable when it returns <code>status === "failed"</code>; <code>retryDelay</code> is the pause between attempts (milliseconds, default 1000).
+        </p>
+<pre><code class="language-typescript">agentNode(escalator, getInput, merge, { retries: 2, retryDelay: 500 })</code></pre>
+        <p>
+          Retries fire only on <code>"failed"</code> — not on <code>"input-required"</code> or <code>"auth-required"</code>. If all attempts fail, the final failed response is what gets merged into state.
+        </p>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/03-linear-pipeline.ts</code></p>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="04-parallel.html">
+            04 · Parallel fan-out
+            <span>Run multiple runnables concurrently; merge their parts.</span>
+          </a>
+          <a href="07-state-graph.html">
+            07 · State graph
+            <span>Typed state, routing, and cycles.</span>
+          </a>
+          <a href="08-graph-mesh.html">
+            08 · Graph mesh
+            <span>Fan-out + branching + retries + loops in one graph.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -41,9 +41,9 @@
         <a href="#responses">Response shape</a>
 
         <p class="nav-group">Composition</p>
-        <a href="#workflows">Workflows</a>
-        <a href="#parallel">Parallel fan-out</a>
         <a href="#state-graph">State graph</a>
+        <a href="#parallel">Parallel fan-out</a>
+        <a href="#retries">Retries</a>
         <a href="#streaming">Streaming</a>
         <a href="#credentials">Credentials</a>
 
@@ -74,8 +74,8 @@
             <p>Threads are auto-managed — the <code>contextId</code> just works.</p>
           </div>
           <div>
-            <h3>Composable</h3>
-            <p><code>workflow()</code> and <code>parallel()</code> give you deterministic pipelines and fan-out.</p>
+            <h3>One composition primitive</h3>
+            <p><code>stateGraph()</code> covers linear pipelines, parallel fan-out, branching, and loops. No workflow DSL to learn.</p>
           </div>
           <div>
             <h3>Auth, handled</h3>
@@ -232,64 +232,34 @@ const r = await agent.run("What's the ICD-10 code for asthma?");
         </div>
       </section>
 
-      <section id="workflows">
-        <h2>Workflows</h2>
-        <p>
-          <code>workflow()</code> builds a deterministic chain of steps. Each
-          step's output feeds the next. Steps can be bare
-          <code>AgentHandle</code>s, <code>Parallel</code> groups, or
-          configuration objects with <code>when</code>, <code>transform</code>,
-          and <code>retries</code>.
-        </p>
-<pre><code class="language-typescript">import { workflow, parallel } from "@corti/agent-sdk";
-
-const result = await workflow([
-  summarizer,                                  // bare handle
-  classifier,
-  {
-    agent: escalator,
-    when: (prev) => (prev.text ?? "").includes("urgent"),
-    transform: () =&gt; originalNote,
-    retries: 2,
-    retryDelay: 500,
-  },
-]).run(note);
-
-result.output.text;     // last step's text
-result.steps.length;    // number of steps actually executed
-result.stoppedEarly;    // true if a step failed and halted the run
-</code></pre>
-        <ul>
-          <li><strong><code>when</code></strong> — predicate on the previous
-            response; <code>false</code> skips this step and the previous
-            response passes forward unchanged.</li>
-          <li><strong><code>transform</code></strong> — maps the previous
-            response to this step's input. Default: <code>prev.text</code>.</li>
-          <li><strong><code>retries</code></strong> — additional attempts when
-            a step returns <code>status: "failed"</code>.</li>
-        </ul>
-      </section>
-
       <section id="parallel">
         <h2>Parallel fan-out</h2>
         <p>
-          <code>parallel()</code> runs several agents concurrently on the same
-          input. Use it standalone (<code>Promise.allSettled</code>-like
-          output) or drop it straight into a workflow step list — fulfilled
-          results are text-joined for the next step.
+          <code>parallel()</code> runs several <code>Runnable</code>s
+          concurrently on the same input. <code>run()</code> merges every
+          fulfilled branch's reply-message parts into one
+          <code>MessageResponse</code> — ideal for feeding into a graph node
+          or another agent. <code>runSettled()</code> returns the
+          <code>Promise.allSettled</code>-shaped breakdown when you need the
+          per-branch detail.
         </p>
-<pre><code class="language-typescript">// Standalone
-const { fulfilled, rejected } = await parallel([a, b, c]).run("prompt");
+<pre><code class="language-typescript">import { parallel } from "@corti/agent-sdk";
 
-// Inside a workflow
-await workflow([
-  parallel([a, b, c]),
-  merger,
-]).run("prompt");
+// Merged parts, as a Runnable:
+const merged = await parallel([a, b, c]).run("prompt");
+// merged.statusMessage.parts → Part[] with every branch's parts concatenated
+
+// Per-branch breakdown:
+const { fulfilled, rejected } = await parallel([a, b, c]).runSettled("prompt");
 </code></pre>
         <p>
-          Per-step overrides are supported when you need different inputs or
-          credentials per branch:
+          Parallel is itself a <code>Runnable</code>, so it composes inside a
+          <code>stateGraph()</code> node, inside another <code>Parallel</code>,
+          or anywhere a <code>Runnable</code> is expected.
+        </p>
+        <p>
+          Per-branch overrides are supported when you need different inputs or
+          credentials on a specific branch:
         </p>
 <pre><code class="language-typescript">parallel([
   { agent: a, input: "specialised prompt for a" },
@@ -302,12 +272,16 @@ await workflow([
       <section id="state-graph">
         <h2>State graph</h2>
         <p>
-          A <code>StateGraph</code> is a routing graph that carries a typed
-          shared-state object across nodes. Unlike the linear
-          <code>workflow()</code>, edges can be routing functions that inspect
-          the accumulated state and return the next node name — or
-          <code>END</code> to terminate. Cycles are supported and bounded by
-          <code>maxIterations</code> (default&nbsp;25).
+          <code>stateGraph()</code> is the one composition primitive. It
+          carries a typed shared-state object across nodes; edges are static
+          names, <code>END</code>, or routing functions that inspect the
+          accumulated state and pick the next node. Cycles are supported and
+          bounded by <code>maxIterations</code> (default&nbsp;25).
+        </p>
+        <p>
+          Linear pipelines, parallel fan-out (via a <code>Parallel</code>
+          node), conditional branching, and review loops all fit this one
+          shape.
         </p>
 
         <h3>Concepts</h3>
@@ -370,15 +344,26 @@ console.log(terminatedBy);     // "end" | "maxIterations" | "noEdge"
 
         <h3><code>agentNode()</code></h3>
         <p>
-          Wraps an <code>AgentHandle</code> as a node function. Provide two
-          callbacks: one to extract the agent's input from state, and one to
-          merge the response back.
+          Wraps any <code>Runnable</code> (an <code>AgentHandle</code>, a
+          <code>Parallel</code> group, or a custom object) as a node function.
+          Provide two callbacks — one to extract the runnable's input from
+          state, one to merge the response back — plus an optional
+          <code>{ retries, retryDelay }</code> for automatic re-invocation on
+          <code>status === "failed"</code>.
         </p>
 <pre><code class="language-typescript">agentNode(
   myAgent,
-  (state) =&gt; state.input,                     // extract input
+  (state) =&gt; state.input,                          // extract input
   (response, state) =&gt; ({ ...state,
-    output: response.text ?? "" }),            // merge response
+    output: response.text ?? "" }),                 // merge response
+  { retries: 2, retryDelay: 500 },                  // optional
+)
+
+// Parallel as a node — branches' parts merge into one MessageResponse:
+agentNode(
+  parallel([retriever, websearch]),
+  (state) =&gt; state.query,
+  (r, s) =&gt; ({ ...s, evidence: r.statusMessage?.parts ?? [] }),
 )
 </code></pre>
 
@@ -395,19 +380,28 @@ console.log(terminatedBy);     // "end" | "maxIterations" | "noEdge"
           </table>
         </div>
 
-        <h3>Choosing between <code>workflow</code> and <code>stateGraph</code></h3>
-        <div class="table-wrapper">
-          <table>
-            <thead><tr><th></th><th><code>workflow()</code></th><th><code>stateGraph()</code></th></tr></thead>
-            <tbody>
-              <tr><td>Shape</td><td>Linear list of steps</td><td>Named nodes with explicit edges</td></tr>
-              <tr><td>Shared state</td><td>Previous response text only</td><td>Typed object, accumulated</td></tr>
-              <tr><td>Branching</td><td><code>when</code> predicate (skip or run)</td><td>Routing function (pick any node)</td></tr>
-              <tr><td>Cycles</td><td>None</td><td>Supported, bounded by <code>maxIterations</code></td></tr>
-              <tr><td>Best for</td><td>Known fixed pipelines</td><td>Conditional flows, review loops, dynamic routing</td></tr>
-            </tbody>
-          </table>
-        </div>
+      </section>
+
+      <section id="retries">
+        <h2>Retries</h2>
+        <p>
+          Automatic retries live on <code>agentNode()</code> — the one place
+          that knows it's wrapping a <code>Runnable</code> and can inspect
+          <code>MessageResponse.status</code>. Pass
+          <code>{ retries, retryDelay }</code> to re-invoke on
+          <code>"failed"</code>; the final response (failed or otherwise) is
+          what gets merged into state.
+        </p>
+<pre><code class="language-typescript">agentNode(drafter, s =&gt; s.evidence, (r, s) =&gt; ({ ...s, draft: r.text ?? "" }),
+          { retries: 2, retryDelay: 500 })
+</code></pre>
+        <p>
+          Retries fire only on <code>"failed"</code> — not on
+          <code>"input-required"</code> or <code>"auth-required"</code>. For
+          retrying <em>whole sections of the graph</em>, use a routing
+          function that edges back to an earlier node (see
+          <a href="08-graph-mesh.html">08 — Graph mesh</a>).
+        </p>
       </section>
 
       <section id="streaming">
@@ -500,11 +494,11 @@ for await (const event of stream) {
           <table>
             <thead><tr><th>Export</th><th>Purpose</th></tr></thead>
             <tbody>
-              <tr><td><code>workflow(steps)</code> / <code>Workflow</code></td><td>Deterministic linear pipeline.</td></tr>
-              <tr><td><code>parallel(steps)</code> / <code>Parallel</code></td><td>Concurrent fan-out.</td></tr>
-              <tr><td><code>stateGraph()</code> / <code>StateGraph</code></td><td>Typed stateful routing graph with conditional edges and cycles.</td></tr>
-              <tr><td><code>agentNode(agent, getInput, merge)</code></td><td>Wrap an <code>AgentHandle</code> as a <code>StateGraph</code> node function.</td></tr>
+              <tr><td><code>stateGraph&lt;S&gt;()</code> / <code>StateGraph</code></td><td>The one composition primitive — typed state, edges, cycles.</td></tr>
+              <tr><td><code>agentNode(runnable, getInput, merge, opts?)</code></td><td>Wrap any <code>Runnable</code> as a <code>StateGraph</code> node. <code>opts: { retries?, retryDelay? }</code>.</td></tr>
               <tr><td><code>END</code></td><td>Sentinel returned by edge routers to terminate a <code>StateGraph</code> run.</td></tr>
+              <tr><td><code>parallel(steps)</code> / <code>Parallel</code></td><td>Fan-out <code>Runnable</code>. <code>run()</code> merges parts; <code>runSettled()</code> returns per-branch.</td></tr>
+              <tr><td><code>Runnable</code></td><td>Interface: <code>run(input) =&gt; Promise&lt;MessageResponse&gt;</code>. Implemented by <code>AgentHandle</code>, <code>Parallel</code>, custom objects.</td></tr>
               <tr><td><code>connectors</code></td><td>Typed connector factories.</td></tr>
               <tr><td><code>MessageResponse</code></td><td>Response wrapper.</td></tr>
             </tbody>
@@ -536,14 +530,14 @@ for await (const event of stream) {
                 <td>MCP, registry, and sub-agent connectors; timeout tuning.</td>
               </tr>
               <tr>
-                <td><code>npm run workflow</code></td>
-                <td><a href="03-workflow.html">03 — Workflow</a></td>
-                <td><code>when</code>, <code>transform</code>, retries, result shape.</td>
+                <td><code>npm run pipeline</code></td>
+                <td><a href="03-linear-pipeline.html">03 — Linear pipeline</a></td>
+                <td>Sequential chain with a conditional branch and retries.</td>
               </tr>
               <tr>
                 <td><code>npm run parallel</code></td>
                 <td><a href="04-parallel.html">04 — Parallel fan-out</a></td>
-                <td>Concurrent fan-out standalone and inside a workflow.</td>
+                <td>Concurrent fan-out standalone and as a graph node.</td>
               </tr>
               <tr>
                 <td><code>npm run streaming</code></td>
@@ -559,6 +553,11 @@ for await (const event of stream) {
                 <td><code>npm run state-graph</code></td>
                 <td><a href="07-state-graph.html">07 — State graph</a></td>
                 <td>Typed state, routing functions, reviewer loop, <code>agentNode()</code>.</td>
+              </tr>
+              <tr>
+                <td><code>npm run mesh</code></td>
+                <td><a href="08-graph-mesh.html">08 — Graph mesh</a></td>
+                <td>Fan-out + branching + retries + loops in one graph.</td>
               </tr>
             </tbody>
           </table>

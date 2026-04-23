@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>04 — Parallel fan-out · @corti/agent-sdk</title>
-  <meta name="description" content="Run multiple agents concurrently on the same input, standalone or as a step inside a workflow." />
+  <meta name="description" content="Run multiple Runnables concurrently on the same input, merge their parts, and compose inside a stateGraph() node." />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
 </head>
@@ -35,19 +35,20 @@
         <a href="#overview">Overview</a>
         <a href="#run">Run it</a>
         <a href="#standalone">Standalone fan-out</a>
-        <a href="#in-workflow">Inside a workflow</a>
-        <a href="#per-step">Per-step overrides</a>
+        <a href="#in-graph">As a graph node</a>
+        <a href="#per-step">Per-branch overrides</a>
         <a href="#code">Full code</a>
         <a href="#output">What to expect</a>
 
         <p class="nav-group">All examples</p>
         <a href="01-hello-agent.html">01 · Hello, agent</a>
         <a href="02-connectors.html">02 · Connectors</a>
-        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="03-linear-pipeline.html">03 · Linear pipeline</a>
         <a href="04-parallel.html" class="active">04 · Parallel fan-out</a>
         <a href="05-streaming.html">05 · Streaming</a>
         <a href="06-credentials.html">06 · Credentials</a>
         <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-graph-mesh.html">08 · Graph mesh</a>
       </nav>
     </aside>
 
@@ -57,14 +58,14 @@
         <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>04 — Parallel fan-out</strong></p>
         <h1>04 — Parallel fan-out</h1>
         <p class="lede">
-          <code>parallel()</code> sends the same prompt to multiple agents at the same time and collects the results. Use it standalone for <code>Promise.allSettled</code>-style output, or drop it directly into a <code>workflow()</code> step list to merge the fulfilled results for a downstream synthesiser.
+          <code>parallel()</code> runs multiple <code>Runnable</code>s concurrently on the same input. <code>run()</code> returns one <code>MessageResponse</code> with every fulfilled branch's parts merged — so a downstream agent (or a graph node) sees one message carrying N parts, not a lossy text-joined string. <code>runSettled()</code> is available when you need the per-branch breakdown.
         </p>
 
         <div class="concept-grid">
-          <div><strong>parallel(steps)</strong>Creates a <code>Parallel</code> group. Call <code>.run(input)</code> to execute all agents concurrently.</div>
-          <div><strong>fulfilled / rejected</strong>Standalone result shape. <code>fulfilled</code> is an array of <code>MessageResponse</code>; <code>rejected</code> has <code>reason</code> strings.</div>
-          <div><strong>Inline in workflow()</strong>Drop <code>parallel([...])</code> anywhere in the step list. Fulfilled results are text-joined (one per line) and passed to the next step.</div>
-          <div><strong>Per-step overrides</strong>Each agent in the group can have its own <code>input</code>, <code>credentials</code>, or other step-level options.</div>
+          <div><strong>parallel(steps)</strong>Creates a <code>Parallel</code> group, itself a <code>Runnable</code>.</div>
+          <div><strong>run() → merged MessageResponse</strong>Concatenates every fulfilled branch's reply-message parts. Drop it anywhere a <code>Runnable</code> is expected.</div>
+          <div><strong>runSettled() → allSettled shape</strong>Per-branch <code>fulfilled</code> / <code>rejected</code> arrays for detailed inspection or error handling.</div>
+          <div><strong>Per-branch overrides</strong>Each branch can have its own <code>input</code> or <code>credentials</code>.</div>
         </div>
       </section>
 
@@ -73,25 +74,25 @@
 <pre><code class="language-bash">npm run parallel</code></pre>
 
         <p>
-          The example runs in two parts. First a standalone fan-out that logs each agent's reply independently, then a workflow that feeds the merged results into a synthesiser agent.
+          The example runs in two parts. First a standalone per-branch breakdown via <code>runSettled()</code>, then a graph that feeds the merged parts into a synthesiser agent.
         </p>
       </section>
 
       <section id="standalone">
         <h2>Standalone fan-out</h2>
         <p>
-          Call <code>parallel([...]).run(input)</code> to get the raw settled results:
+          Call <code>parallel([...]).runSettled(input)</code> to get the raw settled results:
         </p>
-<pre><code class="language-typescript">const fanout = await parallel([differential, redFlags, workup]).run(presentation);
+<pre><code class="language-typescript">const fanout = await parallel([differential, redFlags, workup]).runSettled(presentation);
 
 // fulfilled: MessageResponse[]
 fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
 
-// rejected: Array of { reason: unknown }
+// rejected: Array of reasons
 if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);</code></pre>
 
         <p>
-          This behaves like <code>Promise.allSettled</code> — a single agent failure does not abort the group. You get all results regardless.
+          This behaves like <code>Promise.allSettled</code> — a single branch failure does not abort the group.
         </p>
 
         <div class="table-wrapper">
@@ -113,22 +114,27 @@ if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);</code></p
         </div>
       </section>
 
-      <section id="in-workflow">
-        <h2>Inside a workflow</h2>
+      <section id="in-graph">
+        <h2>As a graph node</h2>
         <p>
-          A <code>Parallel</code> group is a valid workflow step. The SDK text-joins all <code>fulfilled</code> results (separated by newlines) and passes the combined string as input to the next step. Rejected results are silently discarded.
+          <code>Parallel</code> is itself a <code>Runnable</code>, so it drops straight into <code>agentNode()</code>. The branches run concurrently; the merged parts land in <code>MessageResponse.statusMessage.parts</code>, which the merge callback captures into state.
         </p>
-<pre><code class="language-typescript">const { output } = await workflow([
-  parallel([differential, redFlags, workup]),   // fan-out step
-  synthesizer,                                  // receives joined text
-]).run(presentation);</code></pre>
-
-        <p>
-          This is the most common pattern — fan out to several specialist agents, then use one more agent to synthesise their outputs into a cohesive result.
-        </p>
+<pre><code class="language-typescript">const graph = stateGraph&lt;S&gt;()
+  .addNode("gather", agentNode(
+    parallel([differential, redFlags, workup]),
+    (s) =&gt; s.presentation,
+    (r, s) =&gt; ({ ...s, evidence: r.statusMessage?.parts ?? [] }),
+  ))
+  .addNode("synthesise", agentNode(
+    synthesizer,
+    (s) =&gt; s.evidence,    // Part[] — three parts, one per branch
+    (r, s) =&gt; ({ ...s, assessment: r.text ?? "" }),
+  ))
+  .addEdge("gather", "synthesise")
+  .addEdge("synthesise", END);</code></pre>
 
         <div class="callout">
-          <strong>What the synthesiser receives</strong> is the text-joined output of all fulfilled parallel agents, one per line. Write the synthesiser's system prompt to expect a structured multi-section input.
+          <strong>What the synthesiser receives</strong> is one message with N parts (one per fulfilled branch). Structured <code>DataPart</code>s survive intact — no text-joining. Write the synthesiser's system prompt to expect parts, not concatenated prose.
         </div>
 
         <h3>Building the agents concurrently</h3>
@@ -174,66 +180,58 @@ if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);</code></p
 <pre><code class="language-typescript">/**
  * 04 — Parallel fan-out.
  *
- * Run multiple agents concurrently on the same input. Use `parallel()`
- * standalone, or drop it directly into a `workflow()` step list to merge
- * the fulfilled results into the next step.
+ * `parallel()` runs multiple Runnables concurrently on the same input.
+ *   • run()        merges fulfilled branches' parts into one MessageResponse.
+ *   • runSettled() returns an allSettled-shaped per-branch breakdown.
+ *
+ * Parallel is itself a Runnable, so it composes anywhere a Runnable is
+ * expected — inside a graph node, inside another Parallel, or standalone.
  *
  * Run: `npm run parallel`
  */
-import { AgentsClient, parallel, workflow } from "@corti/agent-sdk";
+import {
+  AgentsClient, END, type Part,
+  agentNode, parallel, stateGraph,
+} from "@corti/agent-sdk";
 import { makeClient } from "./_client";
+
+interface AssessmentState {
+  presentation: string;
+  evidence: Part[];
+  assessment: string;
+}
 
 async function main() {
   const agents = new AgentsClient(makeClient());
 
-  const [differential, redFlags, workup, synthesizer] = await Promise.all([
-    agents.create({
-      name: "p-differential",
-      description: "Lists a differential diagnosis.",
-      systemPrompt:
-        "List the top 3 differential diagnoses for the presentation, most likely first. One line each.",
-    }),
-    agents.create({
-      name: "p-redflags",
-      description: "Flags symptoms warranting urgent evaluation.",
-      systemPrompt:
-        "List any red-flag features from the presentation that warrant urgent evaluation. One line each.",
-    }),
-    agents.create({
-      name: "p-workup",
-      description: "Suggests initial diagnostic workup.",
-      systemPrompt:
-        "Suggest an initial diagnostic workup (labs, imaging, bedside exam). One line each.",
-    }),
-    agents.create({
-      name: "p-synthesizer",
-      description: "Combines clinical perspectives into a single assessment.",
-      systemPrompt:
-        "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
-    }),
-  ]);
+  const [differential, redFlags, workup, synthesizer] = await Promise.all([ /* …four agents… */ ]);
 
   const presentation =
     "54-year-old male with 2 hours of crushing substernal chest pain, diaphoresis, and dyspnea; history of hypertension and smoking.";
 
-  // (a) Standalone: collect every result with Promise.allSettled-like output.
-  const fanout = await parallel([differential, redFlags, workup]).run(presentation);
-  console.log("— Fan-out (standalone) —");
+  // (a) Standalone per-branch: full allSettled-shaped breakdown.
+  const fanout = await parallel([differential, redFlags, workup]).runSettled(presentation);
   fanout.fulfilled.forEach((r, i) => console.log(`#${i + 1}: ${r.text}`));
-  if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);
 
-  // (b) Inside a workflow: fulfilled results are joined and fed into `synthesizer`.
-  const { output } = await workflow([
-    parallel([differential, redFlags, workup]),
-    synthesizer,
-  ]).run(presentation);
-  console.log("\n— Assessment and plan —\n" + output.text);
-}
+  // (b) As a node in a graph: branches' parts are captured into state, then
+  //     passed straight to the synthesiser as a Part[] — no lossy text-join.
+  const graph = stateGraph&lt;AssessmentState&gt;()
+    .addNode("gather", agentNode(
+      parallel([differential, redFlags, workup]),
+      (s) => s.presentation,
+      (r, s) => ({ ...s, evidence: r.statusMessage?.parts ?? [] }),
+    ))
+    .addNode("synthesise", agentNode(
+      synthesizer,
+      (s) => s.evidence,
+      (r, s) => ({ ...s, assessment: r.text ?? "" }),
+    ))
+    .addEdge("gather", "synthesise")
+    .addEdge("synthesise", END);
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});</code></pre>
+  const { state } = await graph.run("gather", { presentation, evidence: [], assessment: "" });
+  console.log(state.assessment);
+}</code></pre>
       </section>
 
       <section id="output">
@@ -257,13 +255,13 @@ Start ASA 325 mg, heparin, and supplemental O2 while awaiting results.</div>
 
         <h3>Next steps</h3>
         <div class="example-links-grid">
-          <a href="03-workflow.html">
-            03 · Workflow
-            <span>Add conditional steps and retries to a pipeline.</span>
-          </a>
           <a href="07-state-graph.html">
             07 · State graph
-            <span>Dynamic routing and cycles for more complex flows.</span>
+            <span>Typed state, routing, and cycles.</span>
+          </a>
+          <a href="08-graph-mesh.html">
+            08 · Graph mesh
+            <span>Fan-out, retries, branching, and loops in one graph.</span>
           </a>
           <a href="index.html#parallel">
             Parallel concept docs

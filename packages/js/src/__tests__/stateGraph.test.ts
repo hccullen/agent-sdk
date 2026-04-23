@@ -375,4 +375,72 @@ describe("agentNode", () => {
     expect(result.state.output).toBe("processed");
     expect(agent.run).toHaveBeenCalledWith("raw");
   });
+
+  // ── retries ────────────────────────────────────────────────────────────────
+
+  describe("retries", () => {
+    function failingThenSucceedingAgent(
+      failuresBefore: number,
+      successText: string,
+    ) {
+      let calls = 0;
+      const agent = {
+        run: vi.fn().mockImplementation(async () => {
+          calls += 1;
+          if (calls <= failuresBefore) {
+            // Simulate a failed task response (status === "failed").
+            return new MessageResponse({
+              id: "", contextId: "", kind: "task",
+              status: { state: "failed", message: undefined },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any);
+          }
+          return MessageResponse.fromText(successText);
+        }),
+      };
+      return agent as unknown as AgentHandle;
+    }
+
+    it("does not retry by default", async () => {
+      const agent = failingThenSucceedingAgent(5, "ok");
+      const node = agentNode<{ x: string }>(
+        agent, () => "in", (r, s) => ({ ...s, x: r.text ?? "FAIL" }),
+      );
+      const delta = await node({ x: "" });
+      expect(agent.run).toHaveBeenCalledOnce();
+      expect(delta.x).toBe("FAIL");
+    });
+
+    it("retries up to `retries` times on status === 'failed'", async () => {
+      const agent = failingThenSucceedingAgent(2, "recovered");
+      const node = agentNode<{ x: string }>(
+        agent, () => "in", (r, s) => ({ ...s, x: r.text ?? "" }),
+        { retries: 3, retryDelay: 0 },
+      );
+      const delta = await node({ x: "" });
+      expect(agent.run).toHaveBeenCalledTimes(3);
+      expect(delta.x).toBe("recovered");
+    });
+
+    it("gives up after max attempts and merges the last failed response", async () => {
+      const agent = failingThenSucceedingAgent(10, "never reached");
+      const node = agentNode<{ status: string | undefined }>(
+        agent, () => "in", (r, s) => ({ ...s, status: r.status }),
+        { retries: 2, retryDelay: 0 },
+      );
+      const delta = await node({ status: undefined });
+      expect(agent.run).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+      expect(delta.status).toBe("failed");
+    });
+
+    it("succeeds on the first attempt without retrying", async () => {
+      const agent = mockAgent("ok");
+      const node = agentNode<{ x: string }>(
+        agent, () => "in", (r, s) => ({ ...s, x: r.text ?? "" }),
+        { retries: 5, retryDelay: 0 },
+      );
+      await node({ x: "" });
+      expect(agent.run).toHaveBeenCalledOnce();
+    });
+  });
 });

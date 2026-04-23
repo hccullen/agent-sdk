@@ -20,14 +20,16 @@ cp .env.example .env
 
 ## Run
 
-| Script             | Demonstrates                                     |
-| ------------------ | ------------------------------------------------ |
-| `npm run hello`    | Creating an agent and holding a conversation     |
-| `npm run connectors` | MCP, registry, and sub-agent connectors        |
-| `npm run workflow` | Deterministic pipelines with `when` / `transform` |
-| `npm run parallel` | Fan-out, both standalone and inside a workflow   |
-| `npm run streaming` | Consuming `streamMessage()` events              |
-| `npm run credentials` | Forwarding MCP credentials transparently      |
+| Script                 | Demonstrates                                            |
+| ---------------------- | ------------------------------------------------------- |
+| `npm run hello`        | Creating an agent and holding a conversation            |
+| `npm run connectors`   | MCP, registry, and sub-agent connectors                 |
+| `npm run pipeline`     | Linear `stateGraph` with conditional branch and retries |
+| `npm run parallel`     | `parallel()` standalone and as a graph node             |
+| `npm run streaming`    | Consuming `streamMessage()` events                      |
+| `npm run credentials`  | Forwarding MCP credentials transparently                |
+| `npm run state-graph`  | Typed state + routing function + review loop            |
+| `npm run mesh`         | Fan-out, retries, branching, and cycles in one graph    |
 
 Each example is a standalone `.ts` file — open it and the whole story fits on
 one screen. They are intended to be read top-to-bottom as documentation, not

@@ -1,11 +1,11 @@
 /**
- * 07 — Stateful graph routing.
+ * 07 — Stateful graph with a review loop.
  *
- * Unlike a linear Workflow, a StateGraph accumulates typed shared state
- * across nodes and uses routing functions to decide what runs next —
- * including cycles (bounded by maxIterations).
+ * `stateGraph()` is the one composition primitive. It carries a typed shared
+ * state across nodes and uses routing functions to pick the next node —
+ * including cycles (bounded by `maxIterations`).
  *
- * This example models a clinical triage pipeline:
+ * This example models a clinical triage pipeline with a reviewer loop:
  *
  *   triage ──► coder ──► reviewer ──► END
  *                 ▲           │

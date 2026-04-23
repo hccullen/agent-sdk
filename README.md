@@ -1,8 +1,8 @@
 # agent-sdk
 
 Developer-friendly wrappers around the Corti SDK for building multi-agent
-systems. TypeScript and Python are kept in lockstep and share the same API
-shape.
+systems. TypeScript is the reference implementation; a Python port lives
+alongside it.
 
 ## Packages
 
@@ -15,32 +15,47 @@ shape.
 
 - **[Documentation site](./docs/index.html)** — concepts + API reference.
   Serve locally with `python3 -m http.server -d docs 8000`.
-- **[TypeScript examples](./examples/ts/)** — six runnable demos covering
-  agents, connectors, workflows, parallel fan-out, streaming, and MCP
-  credentials.
+- **[TypeScript examples](./examples/ts/)** — seven runnable demos covering
+  agents, connectors, linear pipelines, parallel fan-out, streaming, MCP
+  credentials, and the full agent mesh.
 
 ## 30-second taste
 
 ```ts
 import { CortiClient } from "@corti/sdk";
-import { AgentsClient, connectors, workflow, parallel } from "@corti/agent-sdk";
+import {
+  AgentsClient,
+  END,
+  agentNode,
+  parallel,
+  stateGraph,
+} from "@corti/agent-sdk";
 
 const agents = new AgentsClient(new CortiClient({ /* ... */ }));
 
-const [summarizer, classifier, escalator] = await Promise.all([
-  agents.create({ name: "sum", description: "Summarise.",       systemPrompt: "…" }),
-  agents.create({ name: "cls", description: "Urgent/routine.",  systemPrompt: "…" }),
-  agents.create({ name: "esc", description: "Draft escalation.", systemPrompt: "…" }),
+const [researcher, drafter, reviewer] = await Promise.all([
+  agents.create({ name: "r", description: "Research.",    systemPrompt: "…" }),
+  agents.create({ name: "d", description: "Draft.",       systemPrompt: "…" }),
+  agents.create({ name: "v", description: "Review.",      systemPrompt: "…" }),
 ]);
 
-const { output } = await workflow([
-  summarizer,
-  classifier,
-  { agent: escalator, when: (r) => r.text?.includes("urgent") ?? false, retries: 2 },
-]).run(note);
+interface S { topic: string; draft: string; approved: boolean }
 
-console.log(output.text);
+const graph = stateGraph<S>()
+  .addNode("research", agentNode(researcher, s => s.topic, (r, s) => ({ ...s })))
+  .addNode("draft",    agentNode(drafter,    s => s.topic, (r, s) => ({ ...s, draft: r.text ?? "" }), { retries: 2 }))
+  .addNode("review",   agentNode(reviewer,   s => s.draft, (r, s) => ({ ...s, approved: (r.text ?? "").startsWith("approved") })))
+  .addEdge("research", "draft")
+  .addEdge("draft",    "review")
+  .addEdge("review",   s => s.approved ? END : "draft");
+
+const { state } = await graph.run("research", { topic: "afib management", draft: "", approved: false });
+console.log(state.draft);
 ```
+
+One primitive: `stateGraph()`. Need fan-out? Drop a `parallel([...])` into an
+`agentNode()`. Need retries? `agentNode(..., { retries })`. Need a linear
+chain? A graph with one edge per node.
 
 ## Local development
 

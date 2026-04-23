@@ -7,11 +7,12 @@
   "scripts": {
     "hello": "tsx 01-hello-agent.ts",
     "connectors": "tsx 02-connectors.ts",
-    "workflow": "tsx 03-workflow.ts",
+    "pipeline": "tsx 03-linear-pipeline.ts",
     "parallel": "tsx 04-parallel.ts",
     "streaming": "tsx 05-streaming.ts",
     "credentials": "tsx 06-credentials.ts",
-    "state-graph": "tsx 07-state-graph.ts"
+    "state-graph": "tsx 07-state-graph.ts",
+    "mesh": "tsx 08-graph-mesh.ts"
   },
   "dependencies": {
     "@corti/agent-sdk": "*",

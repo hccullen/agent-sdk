@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>08 — Graph mesh · @corti/agent-sdk</title>
+  <meta name="description" content="Parallel fan-out, conditional branching, retries, and review loops — all in one stateGraph()." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#shape">Graph shape</a>
+        <a href="#fan-out">Fan-out as a node</a>
+        <a href="#loops">Re-gather loop</a>
+        <a href="#code">Full code</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-linear-pipeline.html">03 · Linear pipeline</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-graph-mesh.html" class="active">08 · Graph mesh</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>08 — Graph mesh</strong></p>
+        <h1>08 — Graph mesh</h1>
+        <p class="lede">
+          Everything a "workflow + fan-out + routing graph" DSL would give you, expressed with a single <code>stateGraph()</code> plus a <code>parallel()</code> node. Three researchers fan out, a planner decides whether to gather more evidence, a drafter writes with retries, and a reviewer loops until the draft is approved.
+        </p>
+
+        <pre><code class="language-typescript">// Diagram
+//
+//   gather ──► plan ──(needs_more?)──► gather       (bounded by maxIterations)
+//                 │
+//                 └──► draft ──► review ──(ok?)──► END
+//                                  │
+//                                  └──► draft       (agentNode retries)</code></pre>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run mesh</code></pre>
+      </section>
+
+      <section id="shape">
+        <h2>Graph shape</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Node</th><th>Runnable</th><th>Reads</th><th>Writes</th></tr></thead>
+            <tbody>
+              <tr><td><code>gather</code></td><td><code>parallel([pubmed, textbooks, guidelines])</code></td><td><code>state.topic</code></td><td>Appends merged parts to <code>state.evidence</code></td></tr>
+              <tr><td><code>plan</code></td><td><code>planner</code> (agent)</td><td><code>state.evidence</code></td><td><code>state.plan</code> (<code>"sufficient"</code> | <code>"more"</code>)</td></tr>
+              <tr><td><code>draft</code></td><td><code>drafter</code> (retries: 2)</td><td><code>state.evidence</code></td><td><code>state.draft</code></td></tr>
+              <tr><td><code>review</code></td><td><code>reviewer</code> (agent)</td><td>topic + draft</td><td><code>state.review</code>, <code>state.approved</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="fan-out">
+        <h2>Fan-out as a node</h2>
+        <p>
+          A <code>Parallel</code> is itself a <code>Runnable</code>, so it composes directly inside an <code>agentNode()</code>. The three branches run concurrently; their reply-message parts are concatenated into one <code>MessageResponse</code>, which the merge callback captures into state.
+        </p>
+<pre><code class="language-typescript">.addNode("gather", agentNode(
+  parallel([pubmed, textbooks, guidelines]),
+  (s) =&gt; s.topic,
+  (r, s) =&gt; ({
+    ...s,
+    evidence: [...s.evidence, ...(r.statusMessage?.parts ?? [])],
+  }),
+))</code></pre>
+        <div class="callout">
+          Nothing special happens at the node level — as far as the graph is concerned, <code>gather</code> is just a node that calls <code>.run()</code>. The fan-out lives entirely inside the <code>Parallel</code>, and the merge of parts is handled by <code>Parallel.run()</code>.
+        </div>
+      </section>
+
+      <section id="loops">
+        <h2>Re-gather loop and retry loop</h2>
+        <p>
+          Two independent loops live in this graph, both bounded by <code>maxIterations</code> on the outer run:
+        </p>
+        <ul>
+          <li><strong>Planning loop</strong> — if the planner says <code>"more"</code>, the <code>plan → gather</code> edge sends execution back for another pass. Each pass appends additional parts to <code>state.evidence</code>.</li>
+          <li><strong>Review loop</strong> — if the reviewer rejects, the <code>review → draft</code> edge re-runs the drafter. Independent of the drafter's own per-node retries (which fire only on <code>status === "failed"</code>).</li>
+        </ul>
+<pre><code class="language-typescript">.addEdge("plan",   (s) =&gt; s.plan.includes("sufficient") ? "draft" : "gather")
+.addEdge("review", (s) =&gt; s.approved ? END : "draft");</code></pre>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/08-graph-mesh.ts</code></p>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="07-state-graph.html">
+            07 · State graph
+            <span>The primitive, without the fan-out and mesh.</span>
+          </a>
+          <a href="04-parallel.html">
+            04 · Parallel fan-out
+            <span>More on <code>parallel()</code> and merged parts.</span>
+          </a>
+          <a href="index.html#state-graph">
+            State graph concept docs
+            <span>Full API reference including agentNode() and END.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

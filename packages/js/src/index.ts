@@ -4,10 +4,16 @@ export { AgentContext } from "./AgentContext";
 export { AgentHandle } from "./AgentHandle";
 export { MessageResponse } from "./MessageResponse";
 export { connectors } from "./connectors";
-export { Parallel, Workflow, parallel, workflow } from "./workflow";
-export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow";
+export { Parallel, isRunnable, parallel } from "./runnable";
+export type { ParallelResult, ParallelStep, Runnable } from "./runnable";
 export { END, StateGraph, agentNode, stateGraph } from "./stateGraph";
-export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph";
+export type {
+  AgentNodeOptions,
+  EdgeRouter,
+  NodeFn,
+  StateGraphResult,
+  StateGraphStep,
+} from "./stateGraph";
 
 export type {
   // connector / agent options
