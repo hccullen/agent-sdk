@@ -2,7 +2,7 @@ import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
 import { MessageResponse } from "./MessageResponse";
 import { connectorsToRequestFields } from "./connectors";
-import { updateAgentViaFetch, type FetchAgentsAuthConfig } from "./fetchAgents";
+import { updateAgent, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 
 /**
@@ -128,12 +128,10 @@ export class AgentHandle {
       ...(connectorFields ?? {}),
     };
 
-    // Direct-fetch path when auth config was threaded through — bypasses
-    // the SDK's mcpServers-stripping serialiser.
-    const updated = this.auth
-      ? await updateAgentViaFetch(this._agent.id, body, this.auth)
-      : await this.client.agents.update(this._agent.id, body);
-
+    // Always use the direct-fetch path so `mcpServers` isn't stripped by
+    // the SDK's Fern serialiser. Reuses the existing client's baseUrl +
+    // auth unless an override was provided via AgentsClient.
+    const updated = await updateAgent(this.client, this._agent.id, body, this.auth);
     return new AgentHandle(updated, this.client, this.auth);
   }
 

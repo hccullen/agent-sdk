@@ -10,54 +10,118 @@
  * silently stripped before the HTTP request.
  *
  * Until the SDK ships a fix, we bypass the SDK request pipeline for agent
- * create/update: fetch a short-lived access token via `CortiAuth.getToken`,
- * then issue the POST/PATCH ourselves. Everything else (message send,
- * contexts, etc.) keeps using the SDK.
+ * create/update: we POST/PATCH directly with `fetch()`, reusing the
+ * existing `CortiClient`'s base URL, auth provider, and static headers so
+ * the call behaves identically (proxies, tenant, logging) *except* that
+ * the body is sent verbatim — `mcpServers` included.
  *
  * When the SDK is fixed, delete this file and restore the SDK path in
  * `AgentsClient.create` and `AgentHandle.update`.
  */
 
-import { CortiAuth, type Corti } from "@corti/sdk";
+import { CortiAuth, type Corti, type CortiClient } from "@corti/sdk";
 
+/** Optional override: supply fresh client-credential auth instead of
+ *  reusing the CortiClient's own auth provider. Only needed when the
+ *  caller wants to scope agent create/update to different credentials. */
 export interface FetchAgentsAuthConfig {
-  /**
-   * Environment object (e.g. `CortiEnvironment.Eu`). Must expose an
-   * `agents` origin — that's used both to exchange credentials for a
-   * token and to construct the agents REST URLs.
-   */
   environment: { agents: string } & Record<string, unknown>;
   tenantName: string;
   clientId: string;
   clientSecret: string;
 }
 
-async function getAccessToken(auth: FetchAgentsAuthConfig): Promise<string> {
-  const client = new CortiAuth({
-    // Cast: CortiAuth accepts string | CortiEnvironment — we require the
-    // object form so we can also read `.agents` for the base URL below.
+interface ResolvedRequest {
+  baseUrl: string;
+  headers: Record<string, string>;
+}
+
+async function resolveFromAuthConfig(
+  auth: FetchAgentsAuthConfig
+): Promise<ResolvedRequest> {
+  const cortiAuth = new CortiAuth({
+    // CortiAuth accepts string | CortiEnvironment; the object form is fine.
     environment: auth.environment as unknown as string,
     tenantName: auth.tenantName,
   });
-  const token = await client.getToken({
+  const token = await cortiAuth.getToken({
     clientId: auth.clientId,
     clientSecret: auth.clientSecret,
   });
-  return token.accessToken;
+  return {
+    baseUrl: auth.environment.agents,
+    headers: {
+      authorization: `Bearer ${token.accessToken}`,
+      "tenant-name": auth.tenantName,
+    },
+  };
+}
+
+async function resolveFromClient(client: CortiClient): Promise<ResolvedRequest> {
+  // Reach into the CortiClient's normalised options. Shape is stable
+  // across SDK minor versions: baseUrl / environment / authProvider /
+  // headers / tenantName all live here.
+  const options = (client as unknown as {
+    _options: {
+      baseUrl?: string | (() => string | Promise<string>);
+      environment?: unknown;
+      authProvider: {
+        getAuthRequest(): Promise<{ headers: Record<string, string> }>;
+      };
+      headers?: Record<string, string>;
+      tenantName?: string | (() => string | Promise<string>);
+    };
+  })._options;
+
+  const baseUrl = await resolveBaseUrl(options);
+  const { headers: authHeaders } = await options.authProvider.getAuthRequest();
+  const tenantName =
+    typeof options.tenantName === "function"
+      ? await options.tenantName()
+      : options.tenantName;
+
+  return {
+    baseUrl,
+    headers: {
+      ...(options.headers ?? {}),
+      ...(tenantName ? { "tenant-name": tenantName } : {}),
+      ...authHeaders,
+    },
+  };
+}
+
+async function resolveBaseUrl(options: {
+  baseUrl?: string | (() => string | Promise<string>);
+  environment?: unknown;
+}): Promise<string> {
+  if (options.baseUrl) {
+    return typeof options.baseUrl === "function"
+      ? await options.baseUrl()
+      : options.baseUrl;
+  }
+  const env =
+    typeof options.environment === "function"
+      ? await (options.environment as () => unknown)()
+      : options.environment;
+  if (env && typeof env === "object" && "agents" in env) {
+    return (env as { agents: string }).agents;
+  }
+  throw new Error("[AgentSDK] Could not resolve agents base URL from CortiClient");
 }
 
 async function sendJson<T>(
   url: string,
   method: "POST" | "PATCH",
   body: unknown,
-  token: string,
+  headers: Record<string, string>,
   label: string
 ): Promise<T> {
   const res = await fetch(url, {
     method,
     headers: {
+      accept: "application/json",
       "content-type": "application/json",
-      authorization: `Bearer ${token}`,
+      ...headers,
     },
     body: JSON.stringify(body),
   });
@@ -70,31 +134,35 @@ async function sendJson<T>(
   return (await res.json()) as T;
 }
 
-export async function createAgentViaFetch(
+/** POST /agents. `ephemeral` is extracted from the body and sent as a query
+ *  param to match SDK semantics. */
+export async function createAgent(
+  client: CortiClient,
   body: Corti.AgentsCreateAgent,
-  auth: FetchAgentsAuthConfig
+  authOverride?: FetchAgentsAuthConfig
 ): Promise<Corti.AgentsAgent> {
-  const token = await getAccessToken(auth);
-  return sendJson<Corti.AgentsAgent>(
-    `${auth.environment.agents}/agents`,
-    "POST",
-    body,
-    token,
-    "createAgentViaFetch"
-  );
+  const { baseUrl, headers } = authOverride
+    ? await resolveFromAuthConfig(authOverride)
+    : await resolveFromClient(client);
+
+  const { ephemeral, ...rest } = body;
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}/agents`);
+  if (ephemeral !== undefined) url.searchParams.set("ephemeral", String(ephemeral));
+
+  return sendJson<Corti.AgentsAgent>(url.toString(), "POST", rest, headers, "createAgent");
 }
 
-export async function updateAgentViaFetch(
+/** PATCH /agents/{id}. */
+export async function updateAgent(
+  client: CortiClient,
   id: string,
   body: Corti.AgentsUpdateAgent,
-  auth: FetchAgentsAuthConfig
+  authOverride?: FetchAgentsAuthConfig
 ): Promise<Corti.AgentsAgent> {
-  const token = await getAccessToken(auth);
-  return sendJson<Corti.AgentsAgent>(
-    `${auth.environment.agents}/agents/${encodeURIComponent(id)}`,
-    "PATCH",
-    body,
-    token,
-    "updateAgentViaFetch"
-  );
+  const { baseUrl, headers } = authOverride
+    ? await resolveFromAuthConfig(authOverride)
+    : await resolveFromClient(client);
+
+  const url = `${baseUrl.replace(/\/$/, "")}/agents/${encodeURIComponent(id)}`;
+  return sendJson<Corti.AgentsAgent>(url, "PATCH", body, headers, "updateAgent");
 }
