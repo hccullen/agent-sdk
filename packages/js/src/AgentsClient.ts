@@ -1,7 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentHandle } from "./AgentHandle";
 import { connectorsToRequestFields } from "./connectors";
-import { createAgentViaFetch, type FetchAgentsAuthConfig } from "./fetchAgents";
+import { createAgent, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CreateAgentOptions } from "./types";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -64,13 +64,18 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
  */
 export interface AgentsClientOptions {
   /**
-   * Opt into the direct-fetch path for agent create/update.
+   * Override the auth used by the direct-fetch create/update path.
+   *
+   * Not required: by default agent create/update reuse the underlying
+   * `CortiClient`'s base URL, auth provider, and static headers, so the
+   * direct-fetch workaround is transparent. Supply `auth` only when you
+   * need different client credentials for agent mutations.
    *
    * TEMPORARY WORKAROUND: @corti/sdk@1.2.0-rc strips top-level `mcpServers`
    * during request serialisation (the Fern types declare it, but the
-   * generated serialisers omit it). When `auth` is provided, create/update
-   * go through `fetchAgents.ts` instead — remove this option once the SDK
-   * ships serialisers for `mcpServers`.
+   * generated serialisers omit it). Agent create/update therefore always
+   * bypass the SDK pipeline — remove this file once the SDK ships
+   * serialisers for `mcpServers`.
    */
   auth?: FetchAgentsAuthConfig;
 }
@@ -101,27 +106,21 @@ export class AgentsClient {
     if (agents[AgentsClient._PATCH_KEY]) return;
     agents[AgentsClient._PATCH_KEY] = true;
 
-    const originalCreate = (this.client.agents.create as Function).bind(this.client.agents);
-
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
 
     agents["create"] = async (
       request: CreateAgentOptions | Corti.AgentsCreateAgent,
-      options?: unknown
+      _options?: unknown
     ): Promise<AgentHandle> => {
       const sdkRequest = hasEnhancedFields(request)
         ? toSdkRequest(request)
         : (request as Corti.AgentsCreateAgent);
 
-      // Direct-fetch path: active whenever `auth` was provided to the
-      // AgentsClient constructor. See AgentsClientOptions for the reason.
-      const agent = self.auth
-        ? await createAgentViaFetch(sdkRequest, self.auth)
-        : await originalCreate(
-            sdkRequest,
-            options as Parameters<typeof originalCreate>[1]
-          );
+      // Always go through the direct-fetch path so top-level `mcpServers`
+      // isn't stripped by the SDK's Fern serialiser. Reuses the existing
+      // client's baseUrl + auth unless an override was provided.
+      const agent = await createAgent(self.client, sdkRequest, self.auth);
       return new AgentHandle(agent, self.client, self.auth);
     };
   }
