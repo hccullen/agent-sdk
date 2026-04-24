@@ -263,8 +263,11 @@ class Parallel:
             if _is_runnable(step):
                 return await step.run(input)
             step_input: Union[str, List[Part]] = step.get("input", input)
-            creds = step.get("credentials")
-            return await step["agent"].run(step_input, credentials=creds)
+            # Only forward `credentials` when explicitly set — `run()`
+            # signatures other than AgentHandle's may not accept the kwarg.
+            if step.get("credentials") is not None:
+                return await step["agent"].run(step_input, credentials=step["credentials"])
+            return await step["agent"].run(step_input)
 
         raw = await asyncio.gather(*[_run(s) for s in self._steps], return_exceptions=True)
 
