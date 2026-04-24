@@ -1,7 +1,6 @@
 import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentHandle } from "./AgentHandle";
 import { connectorsToRequestFields } from "./connectors";
-import { createAgent, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CreateAgentOptions } from "./types";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -26,81 +25,16 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
 
 // ── AgentsClient ─────────────────────────────────────────────────────────────
 
-/**
- * A developer-friendly wrapper around `client.agents` that adds:
- *
- * - A `connectors` API to attach MCPs, registry experts, and other agents
- *   without manually building `experts` arrays.
- * - `lifecycle` shorthand (`"ephemeral"` | `"persistent"`) instead of the raw
- *   `ephemeral` boolean.
- * - Rich `AgentHandle` return values with `createContext()` for conversation
- *   management.
- *
- * **Initialisation patches `client.agents.create`** so that it also accepts
- * the extended options and returns `AgentHandle` objects at runtime.
- * TypeScript consumers get full type-safety through `agentClient.create()`.
- *
- * @example
- * ```ts
- * import { CortiClient } from "@corti/sdk";
- * import { AgentsClient, connectors } from "@corti/agent-sdk";
- *
- * const client = new CortiClient({ ... });
- * const agentClient = new AgentsClient(client);
- *
- * const subAgent = await agentClient.create({
- *   name: "my-sub-agent",
- *   description: "Handles weather queries",
- *   lifecycle: "persistent",
- *   connectors: [
- *     { type: "mcp", mcpUrl: "https://mcp.corti.ai" },
- *     { type: "registry", name: "@corti/medical-coding" },
- *   ],
- * });
- *
- * const ctx = subAgent.createContext();
- * const response = await ctx.sendText("What is the ICD-10 code for hypertension?");
- * ```
- */
-export interface AgentsClientOptions {
-  /**
-   * Override the auth used by the direct-fetch create/update path.
-   *
-   * Not required: by default agent create/update reuse the underlying
-   * `CortiClient`'s base URL, auth provider, and static headers, so the
-   * direct-fetch workaround is transparent. Supply `auth` only when you
-   * need different client credentials for agent mutations.
-   *
-   * TEMPORARY WORKAROUND: @corti/sdk@1.2.0-rc strips top-level `mcpServers`
-   * during request serialisation (the Fern types declare it, but the
-   * generated serialisers omit it). Agent create/update therefore always
-   * bypass the SDK pipeline — remove this file once the SDK ships
-   * serialisers for `mcpServers`.
-   */
-  auth?: FetchAgentsAuthConfig;
-}
-
 export class AgentsClient {
   private readonly client: CortiClient;
-  private readonly auth?: FetchAgentsAuthConfig;
 
   private static readonly _PATCH_KEY = "__corti_agent_sdk_patched__";
 
-  constructor(client: CortiClient, options: AgentsClientOptions = {}) {
+  constructor(client: CortiClient) {
     this.client = client;
-    this.auth = options.auth;
     this._patchClientAgents();
   }
 
-  /**
-   * Monkey-patches `client.agents.create` so that:
-   *  1. It accepts `CreateAgentOptions` (with `connectors` / `lifecycle`) in
-   *     addition to the raw `AgentsCreateAgent` shape.
-   *  2. It always returns an `AgentHandle` at runtime.
-   *
-   * Guard prevents double-wrapping when multiple `AgentsClient` instances
-   * share the same `CortiClient`.
-   */
   private _patchClientAgents(): void {
     const agents = this.client.agents as unknown as Record<string, unknown>;
     if (agents[AgentsClient._PATCH_KEY]) return;
@@ -108,6 +42,7 @@ export class AgentsClient {
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
+    const originalCreate = (agents["create"] as (req: Corti.AgentsCreateAgent) => Promise<Corti.AgentsAgent>).bind(agents);
 
     agents["create"] = async (
       request: CreateAgentOptions | Corti.AgentsCreateAgent,
@@ -116,12 +51,8 @@ export class AgentsClient {
       const sdkRequest = hasEnhancedFields(request)
         ? toSdkRequest(request)
         : (request as Corti.AgentsCreateAgent);
-
-      // Always go through the direct-fetch path so top-level `mcpServers`
-      // isn't stripped by the SDK's Fern serialiser. Reuses the existing
-      // client's baseUrl + auth unless an override was provided.
-      const agent = await createAgent(self.client, sdkRequest, self.auth);
-      return new AgentHandle(agent, self.client, self.auth);
+      const agent = await originalCreate(sdkRequest);
+      return new AgentHandle(agent as Corti.AgentsAgent, self.client);
     };
   }
 
@@ -142,32 +73,19 @@ export class AgentsClient {
     ).create(options);
   }
 
-  /**
-   * Fetch an existing agent by ID and return an `AgentHandle`.
-   */
   async get(agentId: string): Promise<AgentHandle> {
     const agent = await this.client.agents.get(agentId);
-    return new AgentHandle(agent as Corti.AgentsAgent, this.client, this.auth);
+    return new AgentHandle(agent as Corti.AgentsAgent, this.client);
   }
 
-  /**
-   * List all agents and return `AgentHandle` wrappers.
-   *
-   * Filters out bare `AgentsAgentReference` entries — we only wrap full
-   * `AgentsAgent` objects here.
-   */
   async list(): Promise<AgentHandle[]> {
     const agents = await this.client.agents.list();
     return agents
       .filter((a): a is Corti.AgentsAgent => !("type" in a))
-      .map((a) => new AgentHandle(a, this.client, this.auth));
+      .map((a) => new AgentHandle(a, this.client));
   }
 
-  /**
-   * Wrap an existing raw `AgentsAgent` in an `AgentHandle` without a network
-   * call — useful when you already have an agent object from `client.agents.*`.
-   */
   wrap(agent: Corti.AgentsAgent): AgentHandle {
-    return new AgentHandle(agent, this.client, this.auth);
+    return new AgentHandle(agent, this.client);
   }
 }

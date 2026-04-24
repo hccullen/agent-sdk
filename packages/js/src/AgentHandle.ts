@@ -2,7 +2,6 @@ import type { Corti, CortiClient } from "@corti/sdk";
 import { AgentContext } from "./AgentContext";
 import { MessageResponse } from "./MessageResponse";
 import { connectorsToRequestFields } from "./connectors";
-import { updateAgent, type FetchAgentsAuthConfig } from "./fetchAgents";
 import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 
 /**
@@ -14,13 +13,7 @@ import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
 export class AgentHandle {
   constructor(
     private readonly _agent: Corti.AgentsAgent,
-    private readonly client: CortiClient,
-    /**
-     * Optional direct-fetch auth config, threaded through by `AgentsClient`.
-     * When present, `update()` uses `fetchAgents.updateAgentViaFetch` instead
-     * of `client.agents.update`. See `fetchAgents.ts` for why.
-     */
-    private readonly auth?: FetchAgentsAuthConfig
+    private readonly client: CortiClient
   ) {}
 
   get id(): string {
@@ -128,11 +121,8 @@ export class AgentHandle {
       ...(connectorFields ?? {}),
     };
 
-    // Always use the direct-fetch path so `mcpServers` isn't stripped by
-    // the SDK's Fern serialiser. Reuses the existing client's baseUrl +
-    // auth unless an override was provided via AgentsClient.
-    const updated = await updateAgent(this.client, this._agent.id, body, this.auth);
-    return new AgentHandle(updated, this.client, this.auth);
+    const updated = await this.client.agents.update(this._agent.id, body);
+    return new AgentHandle(updated as Corti.AgentsAgent, this.client);
   }
 
   /**
@@ -142,7 +132,7 @@ export class AgentHandle {
   async refresh(): Promise<AgentHandle> {
     const updated = await this.client.agents.get(this._agent.id);
     const agent = !("type" in updated) ? (updated as Corti.AgentsAgent) : this._agent;
-    return new AgentHandle(agent, this.client, this.auth);
+    return new AgentHandle(agent, this.client);
   }
 
   /** Delete this agent. After this call the handle should no longer be used. */
