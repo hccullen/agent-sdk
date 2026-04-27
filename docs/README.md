@@ -1,6 +1,6 @@
 # docs/
 
-A single-page static documentation site for `@corti/agent-sdk`.
+A single-page static documentation site for `@newsioaps/agent-sdk`.
 
 ## View locally
 

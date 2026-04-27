@@ -2,13 +2,13 @@
   "name": "corti-agent-sdk-monorepo",
   "private": true,
   "version": "0.0.0",
-  "description": "Workspace root for @corti/agent-sdk and its examples.",
+  "description": "Workspace root for @newsioaps/agent-sdk and its examples.",
   "workspaces": [
     "packages/js",
     "examples/ts"
   ],
   "scripts": {
-    "build": "npm run build --workspace @corti/agent-sdk"
+    "build": "npm run build --workspace @newsioaps/agent-sdk"
   },
   "overrides": {
     "@corti/sdk": "^1.0.0"

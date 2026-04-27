@@ -1,15 +1,37 @@
 {
-  "name": "@corti/agent-sdk",
-  "version": "0.1.0-alpha.0",
+  "name": "@newsioaps/agent-sdk",
+  "version": "0.1.4",
   "description": "Developer-friendly wrapper for building agents with the Corti SDK",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hccullen/agent-sdk.git"
+  },
+  "homepage": "https://hccullen.github.io/agent-sdk",
+  "bugs": {
+    "url": "https://github.com/hccullen/agent-sdk/issues"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest"

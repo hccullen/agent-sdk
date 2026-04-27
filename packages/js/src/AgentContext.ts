@@ -3,8 +3,8 @@ import type { Corti, CortiClient } from "@corti/sdk";
 const randomUUID = (): string =>
   (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID();
 
-import { MessageResponse } from "./MessageResponse";
-import { rpcCall, rpcStream } from "./rpcTransport";
+import { MessageResponse } from "./MessageResponse.js";
+import { rpcCall, rpcStream } from "./rpcTransport.js";
 import type {
   Credential,
   CredentialStore,
@@ -12,27 +12,28 @@ import type {
   StreamEvent,
   TaskArtifactUpdateEvent,
   TaskStatusUpdateEvent,
-} from "./types";
+} from "./types.js";
 
 /**
- * A stateful conversation context (thread) with a specific agent.
+ * A stateful conversation thread with a specific agent.
  *
- * Obtained via `AgentHandle.createContext()`.
+ * Obtain via `AgentHandle.createContext()` (new thread) or
+ * `AgentHandle.getContext(contextId)` (resume an existing thread).
  *
- * The context automatically tracks the `contextId` returned by the first
- * message and passes it in all subsequent calls so the agent maintains memory
- * of the conversation.
+ * The SDK tracks the `contextId` automatically — you never need to pass it
+ * between calls yourself. Keep this object in memory across turns; only
+ * persist the `id` if you need to resume the thread across process restarts.
  *
  * If `credentials` are supplied and the agent returns `auth-required`, the
- * SDK automatically sends them as a follow-up DataPart and returns the final
- * response — no extra code needed on the caller side.
+ * SDK forwards them automatically — no extra code needed on the caller side.
  *
  * @example
  * ```ts
- * const ctx = myAgent.createContext({ credentials: { "my-mcp": "tok_123" } });
+ * const ctx = myAgent.createContext();
  * const r = await ctx.sendText("Hello!");
  * console.log(r.text);     // agent reply
  * console.log(r.status);   // "completed"
+ * console.log(ctx.id);     // thread ID (set after first turn)
  * ```
  */
 export class AgentContext {
