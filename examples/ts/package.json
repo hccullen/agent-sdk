@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@corti/agent-sdk": "*",
-    "@corti/sdk": "^1.0.0",
+    "@corti/sdk": "1.2.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
