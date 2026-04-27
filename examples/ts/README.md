@@ -1,6 +1,6 @@
 # TypeScript examples
 
-Runnable, self-contained examples for `@corti/agent-sdk`. Each script creates
+Runnable, self-contained examples for `@newsioaps/agent-sdk`. Each script creates
 its own agents, runs the demo, and cleans up on exit.
 
 ## Setup

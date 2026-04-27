@@ -1,7 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
-import { AgentHandle } from "./AgentHandle";
-import { connectorsToRequestFields } from "./connectors";
-import type { CreateAgentOptions } from "./types";
+import { AgentHandle } from "./AgentHandle.js";
+import { connectorsToRequestFields } from "./connectors.js";
+import type { CreateAgentOptions } from "./types.js";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 

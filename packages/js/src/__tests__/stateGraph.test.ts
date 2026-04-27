@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { END, StateGraph, agentNode, stateGraph } from "../stateGraph";
-import { MessageResponse } from "../MessageResponse";
-import type { AgentHandle } from "../AgentHandle";
+import { END, StateGraph, agentNode, stateGraph } from "../stateGraph.js";
+import { MessageResponse } from "../MessageResponse.js";
+import type { AgentHandle } from "../AgentHandle.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

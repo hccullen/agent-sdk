@@ -1,8 +1,8 @@
 import type { Corti, CortiClient } from "@corti/sdk";
-import { AgentContext } from "./AgentContext";
-import { MessageResponse } from "./MessageResponse";
-import { connectorsToRequestFields } from "./connectors";
-import type { CredentialStore, Part, UpdateAgentOptions } from "./types";
+import { AgentContext } from "./AgentContext.js";
+import { MessageResponse } from "./MessageResponse.js";
+import { connectorsToRequestFields } from "./connectors.js";
+import type { CredentialStore, Part, UpdateAgentOptions } from "./types.js";
 
 /**
  * A handle to a Corti agent that enriches the raw SDK agent with
@@ -38,27 +38,51 @@ export class AgentHandle {
   }
 
   /**
-   * Create a new conversation context with this agent.
+   * Create a new conversation thread with this agent.
    *
-   * The context is lazy — no network call is made until the first
-   * `sendMessage()` call, at which point the server creates the thread
-   * and returns a `contextId` that is transparently managed for you.
+   * The context is lazy — no network call is made until the first message.
+   * The server assigns a `contextId` on the first response; the SDK tracks it
+   * automatically. You should never need to manage context IDs yourself.
+   *
+   * @param opts.credentials  Service credentials forwarded automatically if the
+   *   agent returns `auth-required`.
    *
    * @example
    * ```ts
    * const ctx = myAgent.createContext();
-   * const r1 = await ctx.sendMessage([{ kind: "text", text: "Hello" }]);
-   * const r2 = await ctx.sendMessage([{ kind: "text", text: "And now?" }]);
+   * const r1 = await ctx.sendText("Hello");
+   * const r2 = await ctx.sendText("And now?");  // same thread
    * ```
-   */
-  /**
-   * Create a new conversation context with this agent.
-   *
-   * @param opts.credentials  Service credentials forwarded automatically if the
-   *   agent returns `auth-required`.
    */
   createContext(opts?: { credentials?: CredentialStore }): AgentContext {
     return new AgentContext(this._agent.id, this.client, undefined, opts?.credentials);
+  }
+
+  /**
+   * Resume an existing conversation thread by its context ID.
+   *
+   * Use this when you have persisted a `contextId` from a previous session and
+   * want to continue that thread. In most applications you won't need this —
+   * keep the `AgentContext` object in memory across turns instead.
+   *
+   * @param contextId  The thread ID to resume (from a prior `ctx.id`).
+   * @param opts.credentials  Service credentials forwarded automatically if the
+   *   agent returns `auth-required`.
+   *
+   * @example
+   * ```ts
+   * // Session 1
+   * const ctx = agent.createContext();
+   * await ctx.sendText("Hello");
+   * const savedId = ctx.id!;   // persist this somewhere
+   *
+   * // Session 2 — resume the same thread
+   * const ctx2 = agent.getContext(savedId);
+   * await ctx2.sendText("Pick up where we left off.");
+   * ```
+   */
+  getContext(contextId: string, opts?: { credentials?: CredentialStore }): AgentContext {
+    return new AgentContext(this._agent.id, this.client, contextId, opts?.credentials);
   }
 
   /**
@@ -75,12 +99,12 @@ export class AgentHandle {
    */
   async run(
     input: string | Part[],
-    opts?: { contextId?: string; credentials?: CredentialStore; timeoutInSeconds?: number }
+    opts?: { credentials?: CredentialStore; timeoutInSeconds?: number }
   ): Promise<MessageResponse> {
     const ctx = new AgentContext(
       this._agent.id,
       this.client,
-      opts?.contextId,
+      undefined,
       opts?.credentials
     );
     const sendOpts =

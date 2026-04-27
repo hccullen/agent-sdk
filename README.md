@@ -8,7 +8,7 @@ shape.
 
 | Path                  | Package               | Language   |
 | --------------------- | --------------------- | ---------- |
-| `packages/js/`        | `@corti/agent-sdk`    | TypeScript |
+| `packages/js/`        | `@newsioaps/agent-sdk`    | TypeScript |
 | `packages/python/`    | `corti-agent-sdk`     | Python     |
 
 ## Quick links
@@ -23,7 +23,7 @@ shape.
 
 ```ts
 import { CortiClient } from "@corti/sdk";
-import { AgentsClient, connectors, workflow, parallel } from "@corti/agent-sdk";
+import { AgentsClient, connectors, workflow, parallel } from "@newsioaps/agent-sdk";
 
 const agents = new AgentsClient(new CortiClient({ /* ... */ }));
 
@@ -46,7 +46,7 @@ console.log(output.text);
 
 ```bash
 npm install              # installs the workspace (packages/js + examples/ts)
-npm run build            # builds @corti/agent-sdk
+npm run build            # builds @newsioaps/agent-sdk
 
 cd examples/ts
 cp .env.example .env     # fill in your Corti credentials

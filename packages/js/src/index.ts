@@ -1,12 +1,12 @@
-export { AgentsClient } from "./AgentsClient";
-export { AgentContext } from "./AgentContext";
-export { AgentHandle } from "./AgentHandle";
-export { MessageResponse } from "./MessageResponse";
-export { connectors } from "./connectors";
-export { Parallel, Workflow, parallel, workflow } from "./workflow";
-export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow";
-export { END, StateGraph, agentNode, stateGraph } from "./stateGraph";
-export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph";
+export { AgentsClient } from "./AgentsClient.js";
+export { AgentContext } from "./AgentContext.js";
+export { AgentHandle } from "./AgentHandle.js";
+export { MessageResponse } from "./MessageResponse.js";
+export { connectors } from "./connectors.js";
+export { Parallel, Workflow, parallel, workflow } from "./workflow.js";
+export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow.js";
+export { END, StateGraph, agentNode, stateGraph } from "./stateGraph.js";
+export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph.js";
 
 export type {
   // connector / agent options
@@ -36,4 +36,4 @@ export type {
   TaskStatus,
   // streaming
   StreamEvent,
-} from "./types";
+} from "./types.js";

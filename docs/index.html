@@ -39,6 +39,7 @@
         <a href="#connectors">Connectors</a>
         <a href="#contexts">Contexts &amp; threads</a>
         <a href="#responses">Response shape</a>
+        <a href="#lifecycle">Agent lifecycle</a>
 
         <p class="nav-group">Composition</p>
         <a href="#workflows">Workflows</a>
@@ -107,7 +108,7 @@ const agent = await agents.create({
   name: "coder",
   description: "Returns ICD-10 codes for clinical terms.",
   systemPrompt: "Respond with only the ICD-10 code.",
-  connectors: [connectors.registry({ name: "@corti/medical-coding" })],
+  connectors: [connectors.registry({ name: "coding-expert" })],
 });
 
 const ctx = agent.createContext();
@@ -155,10 +156,57 @@ const all = await agents.list();
 });
 </code></pre>
 
-        <h3>Lifecycles</h3>
+        <h3>Lifecycle: ephemeral vs persistent</h3>
+        <p>
+          Agents default to <code>lifecycle: "ephemeral"</code>. This is the
+          right choice for the vast majority of use cases — the server cleans
+          them up automatically and they never accumulate in your tenant.
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th></th><th><code>ephemeral</code> (default)</th><th><code>persistent</code></th></tr></thead>
+            <tbody>
+              <tr><td>Cleaned up by server</td><td>Yes, automatically</td><td>No — call <code>agent.delete()</code></td></tr>
+              <tr><td>Visible in <code>agents.list()</code></td><td>No</td><td>Yes</td></tr>
+              <tr><td>Survives process restarts</td><td>No</td><td>Yes — store <code>agent.id</code></td></tr>
+              <tr><td>Best for</td><td>Scripts, request handlers, tests</td><td>Long-lived bots; avoid recreating on every deploy</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <strong>Use ephemeral unless you have a specific reason not to.</strong>
+          Persistent agents accumulate if you forget to delete them.
+        </p>
+<pre><code class="language-typescript">// Ephemeral (default) — no cleanup needed
+const agent = await agents.create({ name: "my-agent", description: "..." });
+
+// Persistent — store the id and reuse it across deploys
+const agent = await agents.create({
+  name: "my-bot",
+  description: "...",
+  lifecycle: "persistent",
+});
+localStorage.set("agentId", agent.id);
+</code></pre>
+        <p>
+          Note: <em>lifecycle</em> controls the agent definition (system prompt,
+          connectors). Conversation threads are always managed automatically —
+          see <a href="#contexts">Contexts &amp; threads</a>.
+        </p>
+      </section>
+
+      <section id="lifecycle">
+        <h2>Agent lifecycle</h2>
+        <p>
+          Agent lifecycle (<code>ephemeral</code> vs <code>persistent</code>) is
+          separate from conversation threads. See the
+          <a href="#agents">Agents → Lifecycle</a> section above for the full
+          comparison table. The short version:
+        </p>
         <ul>
-          <li><code>ephemeral</code> (default): auto-deleted; not shown in <code>list()</code>.</li>
-          <li><code>persistent</code>: durable across sessions.</li>
+          <li>Use <code>ephemeral</code> (the default) for everything — scripts, request handlers, tests. The server cleans up automatically.</li>
+          <li>Use <code>persistent</code> only when you need the agent definition (system prompt, connectors) to survive process restarts without recreating it.</li>
+          <li>Conversation threads are always managed automatically regardless of lifecycle — you never create or delete them manually.</li>
         </ul>
       </section>
 
@@ -171,8 +219,34 @@ const all = await agents.list();
 <pre><code class="language-typescript">import { connectors } from "@corti/agent-sdk";
 
 connectors.mcp({ mcpUrl: "https://mcp.example.com" });
-connectors.registry({ name: "@corti/medical-coding" });
+connectors.registry({ name: "coding-expert" });      // ICD-10 / medical coding
+connectors.registry({ name: "web-search-expert" });  // live web search
 connectors.fromAgent({ agentId: subAgent.id });
+</code></pre>
+        <p>
+          Typical registry experts:
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Name</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>"coding-expert"</code></td><td>ICD-10 / medical coding — translates clinical terms to codes</td></tr>
+              <tr><td><code>"web-search-expert"</code></td><td>Live web search — recent guidelines, drug approvals</td></tr>
+              <tr><td><code>"pubmed-expert"</code></td><td>PubMed literature search — finds relevant clinical studies</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Use them together to build a well-rounded clinical orchestrator:</p>
+<pre><code class="language-typescript">const agent = await agents.create({
+  name: "clinical-orchestrator",
+  description: "Answers clinical questions with coding, search, and literature.",
+  systemPrompt: "You are a clinical assistant. Use coding-expert for ICD-10 lookups, web-search-expert for recent guidelines, and pubmed-expert to find supporting studies.",
+  connectors: [
+    connectors.registry({ name: "coding-expert" }),
+    connectors.registry({ name: "web-search-expert" }),
+    connectors.registry({ name: "pubmed-expert" }),
+  ],
+});
 </code></pre>
         <div class="table-wrapper">
           <table>
@@ -187,26 +261,65 @@ connectors.fromAgent({ agentId: subAgent.id });
             </tbody>
           </table>
         </div>
+
+        <h3>Discovering available registry experts</h3>
+        <p>
+          To see what experts are available in your tenant, call
+          <code>getRegistryExperts()</code> on the underlying Corti client:
+        </p>
+<pre><code class="language-typescript">const { experts } = await corti.agents.getRegistryExperts();
+// e.g. [{ name: "coding-expert", description: "..." },
+//       { name: "web-search-expert", description: "..." },
+//       { name: "pubmed-expert", description: "..." }, ...]
+
+// Pass the name directly to connectors.registry:
+connectors.registry({ name: experts[0].name })
+</code></pre>
       </section>
 
       <section id="contexts">
         <h2>Contexts &amp; threads</h2>
         <p>
-          <code>AgentHandle.createContext()</code> returns an
-          <code>AgentContext</code>. It's lazy: no network call happens until
-          the first message. The first response carries a <code>contextId</code>
-          that the context stores and passes back on every subsequent call —
-          you never touch it yourself.
+          <code>agent.createContext()</code> returns an <code>AgentContext</code>.
+          It's lazy — no network call happens until the first message. The server
+          assigns a thread ID (<code>contextId</code>) on the first response; the
+          SDK tracks it and passes it on every subsequent call automatically.
+        </p>
+        <p>
+          <strong>You should never need to handle context IDs yourself.</strong>
+          Keep the <code>AgentContext</code> object in memory across turns and the
+          thread just works. Only read <code>ctx.id</code> if you need to resume
+          the thread after a process restart.
         </p>
 <pre><code class="language-typescript">const ctx = agent.createContext();
 
-await ctx.sendText("Hi");          // starts the thread
-await ctx.sendText("And now?");    // continues the same thread
-
-console.log(ctx.id);               // contextId once known
+await ctx.sendText("Hi");           // starts the thread
+await ctx.sendText("And now?");     // continues the same thread — no extra work
 </code></pre>
+
+        <h3>Resuming a thread across sessions</h3>
+        <p>
+          If you need to continue a thread after a process restart, persist
+          <code>ctx.id</code> (only available after the first turn) and use
+          <code>agent.getContext(id)</code> next time.
+        </p>
+<pre><code class="language-typescript">// Session 1
+const ctx = agent.createContext();
+await ctx.sendText("Hello");
+const savedId = ctx.id!;            // persist this
+
+// Session 2 — resume the same thread
+const ctx2 = agent.getContext(savedId);
+await ctx2.sendText("What did I say last time?");
+</code></pre>
+        <p class="callout">
+          This is the <em>only</em> valid way to pass a context ID — do not try
+          to construct <code>AgentContext</code> yourself or pass IDs to
+          <code>createContext()</code>.
+        </p>
+
         <h3>One-shot</h3>
-<pre><code class="language-typescript">// Skip the context for single-shot invocations.
+<pre><code class="language-typescript">// No context object needed for single-shot invocations.
 const r = await agent.run("What's the ICD-10 code for asthma?");
 </code></pre>
       </section>
@@ -473,8 +586,9 @@ for await (const event of stream) {
             <thead><tr><th>Member</th><th>Type</th><th>Purpose</th></tr></thead>
             <tbody>
               <tr><td><code>id</code>, <code>name</code>, <code>description</code>, <code>systemPrompt</code>, <code>raw</code></td><td>—</td><td>Agent metadata.</td></tr>
-              <tr><td><code>createContext(opts?)</code></td><td><code>AgentContext</code></td><td>Start a new (lazy) thread.</td></tr>
-              <tr><td><code>run(input, opts?)</code></td><td><code>Promise&lt;MessageResponse&gt;</code></td><td>One-shot invoke.</td></tr>
+              <tr><td><code>createContext(opts?)</code></td><td><code>AgentContext</code></td><td>Start a new (lazy) thread. <code>opts.credentials</code> are auto-forwarded on <code>auth-required</code>.</td></tr>
+              <tr><td><code>getContext(contextId, opts?)</code></td><td><code>AgentContext</code></td><td>Resume an existing thread by ID. Use only when resuming across process restarts.</td></tr>
+              <tr><td><code>run(input, opts?)</code></td><td><code>Promise&lt;MessageResponse&gt;</code></td><td>One-shot invoke. <code>opts</code>: <code>{ credentials?, timeoutInSeconds? }</code>.</td></tr>
               <tr><td><code>update(opts)</code></td><td><code>Promise&lt;AgentHandle&gt;</code></td><td>Partial update; returns a new handle.</td></tr>
               <tr><td><code>refresh()</code></td><td><code>Promise&lt;AgentHandle&gt;</code></td><td>Re-fetch the latest state.</td></tr>
               <tr><td><code>delete()</code></td><td><code>Promise&lt;void&gt;</code></td><td>Delete the agent.</td></tr>
@@ -583,7 +697,7 @@ async with CortiClient(...) as client:
     agent = await agents.create(
         name="coder",
         description="ICD-10 codes",
-        connectors=[connectors.registry(name="@corti/medical-coding")],
+        connectors=[connectors.registry(name="coding-expert")],
     )
     r = await agent.create_context().send_text("Hypertension?")
     print(r.text)

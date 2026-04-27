@@ -7,7 +7,7 @@
  *
  * Run: `npm run parallel`
  */
-import { AgentsClient, parallel, workflow } from "@corti/agent-sdk";
+import { AgentsClient, parallel, workflow } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {

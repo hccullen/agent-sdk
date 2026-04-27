@@ -1,9 +1,9 @@
 {
-  "name": "@corti/agent-sdk-examples-ts",
+  "name": "@newsioaps/agent-sdk-examples-ts",
   "version": "0.0.0",
   "private": true,
-  "description": "Runnable TypeScript examples for @corti/agent-sdk.",
-  "type": "commonjs",
+  "description": "Runnable TypeScript examples for @newsioaps/agent-sdk.",
+  "type": "module",
   "scripts": {
     "hello": "tsx 01-hello-agent.ts",
     "connectors": "tsx 02-connectors.ts",
@@ -14,7 +14,7 @@
     "state-graph": "tsx 07-state-graph.ts"
   },
   "dependencies": {
-    "@corti/agent-sdk": "*",
+    "@newsioaps/agent-sdk": "*",
     "@corti/sdk": "1.2.0",
     "dotenv": "^16.4.5"
   },
