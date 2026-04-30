@@ -85,17 +85,28 @@ class AgentContext:
             return []
         return [self._build_auth_part(name, cred) for name, cred in self._credentials.items()]
 
-    async def _do_send(self, parts: List[Part]) -> MessageResponse:
+    async def _do_send(
+        self,
+        parts: List[Part],
+        *,
+        timeout_in_seconds: Optional[float] = None,
+    ) -> MessageResponse:
         """Send parts to the API and capture contextId from the response."""
         result = await self._client.rpc_call(
             self._agent_id,
             "message/send",
             {"message": self._build_message(parts)},
+            timeout_in_seconds=timeout_in_seconds,
         )
         self._capture_context_id(result)
         return MessageResponse(result)
 
-    async def send_message(self, parts: List[Part]) -> MessageResponse:
+    async def send_message(
+        self,
+        parts: List[Part],
+        *,
+        timeout_in_seconds: Optional[float] = None,
+    ) -> MessageResponse:
         """
         Send a message and receive a :class:`MessageResponse`.
 
@@ -109,16 +120,21 @@ class AgentContext:
         is_new_context = self._context_id is None
         all_parts = self._build_auth_parts() + parts if is_new_context and self._credentials else parts
 
-        result = await self._do_send(all_parts)
+        result = await self._do_send(all_parts, timeout_in_seconds=timeout_in_seconds)
 
         if result.status == "auth-required" and self._credentials:
-            result = await self._do_send(self._build_auth_parts())
+            result = await self._do_send(self._build_auth_parts(), timeout_in_seconds=timeout_in_seconds)
 
         return result
 
-    async def send_text(self, text: str) -> MessageResponse:
+    async def send_text(
+        self,
+        text: str,
+        *,
+        timeout_in_seconds: Optional[float] = None,
+    ) -> MessageResponse:
         """Convenience wrapper for sending a plain-text message."""
-        return await self.send_message([{"kind": "text", "text": text}])
+        return await self.send_message([{"kind": "text", "text": text}], timeout_in_seconds=timeout_in_seconds)
 
     async def stream_message(self, parts: List[Part]) -> AsyncGenerator[StreamEvent, None]:
         """
@@ -138,10 +154,31 @@ class AgentContext:
                 if state:
                     print(state)
         """
-        async for event in self._client.rpc_stream(
+        async for raw in self._client.rpc_stream(
             self._agent_id,
             "message/stream",
             {"message": self._build_message(parts)},
         ):
+            event = _normalize_stream_event(raw)
             self._capture_context_id(event)
             yield event
+
+
+def _normalize_stream_event(raw: Any) -> StreamEvent:
+    """Translate flat A2A events ({kind: "status-update", ...}) into the wrapped
+    shape ({statusUpdate?, message?, task?, artifactUpdate?}) the SDK exposes.
+    Already-wrapped events are passed through unchanged."""
+    if not isinstance(raw, dict):
+        return raw
+    if any(k in raw for k in ("statusUpdate", "artifactUpdate", "message", "task")):
+        return raw
+    kind = raw.get("kind")
+    if kind == "task":
+        return {"task": raw}
+    if kind == "status-update":
+        return {"statusUpdate": raw}
+    if kind == "artifact-update":
+        return {"artifactUpdate": raw}
+    if kind == "message":
+        return {"message": raw}
+    return raw

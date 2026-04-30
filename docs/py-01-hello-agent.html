@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-01 · Hello, agent · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="py-index.html">Python SDK</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html" class="active">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>01 — Hello, agent</strong></p>
+        <h1>01 — Hello, agent</h1>
+        <p class="lede">The minimum viable example. Create an agent, open a conversation context, send two messages, and read the replies.</p>
+        <div class="concept-grid">
+          <div><strong>CortiClient</strong>Async HTTP client. Use as an <code>async with</code> context manager for automatic cleanup.</div>
+          <div><strong>AgentsClient</strong>Factory for agent CRUD — wraps all responses in typed <code>AgentHandle</code> objects.</div>
+          <div><strong>AgentHandle</strong>Reference to a registered agent. Call <code>create_context()</code> to start a thread.</div>
+          <div><strong>AgentContext</strong>Lazy conversation thread. Tracks <code>context_id</code> automatically after the first message.</div>
+        </div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+01 — Hello, agent.
+
+Minimum viable example: create an agent, open a context, send two messages.
+Ephemeral agents are GC'd server-side — no explicit cleanup needed.
+"""
+import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        agent = await agents.create(
+            name="hello-agent",
+            description="A minimal greeting agent.",
+            system_prompt="You are a friendly assistant. Keep replies to one sentence.",
+        )
+
+        ctx = agent.create_context()
+
+        reply = await ctx.send_text("Say hello and tell me one fun fact.")
+        print("Agent:", reply.text)
+        print("Status:", reply.status)
+        print("Context ID:", ctx.id)
+
+        # The context persists across calls — the agent remembers the thread.
+        follow_up = await ctx.send_text("Tell me another one.")
+        print("Agent:", follow_up.text)
+
+asyncio.run(main())
+</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block">Agent:      Hello! Did you know that honey never spoils — archaeologists have found 3,000-year-old honey in Egyptian tombs that was still edible.
+Status:     completed
+Context ID: ctx_abc123
+Agent:      Octopuses have three hearts, and two of them stop beating when they swim!</div>
+
+        <div class="callout">
+          <strong>Tip:</strong> The <code>context_id</code> is <code>None</code> until the first message is sent. After that it's stable — you can persist it and resume with <code>agent.get_context(saved_id)</code>.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-02-connectors.html">02 · Connectors<span>Wire up MCP servers, sub-agents, and registry experts.</span></a>
+          <a href="py-03-workflow.html">03 · Workflow<span>Chain agents into a deterministic pipeline.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

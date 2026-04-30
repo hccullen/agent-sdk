@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-02 · Connectors · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#connector-types">Connector types</a>
+        <a href="#code">Full code</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html" class="active">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>02 — Connectors</strong></p>
+        <h1>02 — Connectors</h1>
+        <p class="lede">Wire MCP servers, registry experts, and other Corti agents into an orchestrator agent using the <code>connectors</code> factory.</p>
+        <div class="concept-grid">
+          <div><strong>connectors.from_agent</strong>Reference another Corti agent as a callable sub-agent.</div>
+          <div><strong>connectors.registry</strong>Pull in a named expert from the Corti registry (e.g. <code>"@corti/medical-coding"</code>).</div>
+          <div><strong>connectors.mcp</strong>Attach any MCP-compatible server directly to the agent.</div>
+          <div><strong>timeout_in_seconds</strong>Raise the per-request timeout for orchestrators that call multiple sub-agents.</div>
+        </div>
+      </section>
+
+      <section id="connector-types">
+        <h2>Connector types</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Factory</th><th>Key params</th></tr></thead>
+          <tbody>
+            <tr><td><code>connectors.from_agent(agent_id)</code></td><td><code>agent_id: str</code></td></tr>
+            <tr><td><code>connectors.registry(name, *, system_prompt?)</code></td><td><code>name: str</code> e.g. <code>"@corti/medical-coding"</code></td></tr>
+            <tr><td><code>connectors.mcp(mcp_url, *, name?, transport?, auth_type?, token?)</code></td><td><code>auth_type: "none"|"bearer"|"inherit"|"oauth2.0"</code></td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+02 — Connectors.
+
+Build an orchestrator that routes to a sub-agent and a registry expert.
+"""
+import asyncio, os
+from corti_agent_sdk import CortiClient, AgentsClient, connectors
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        # 1 — Create a specialised sub-agent
+        symptom_agent = await agents.create(
+            name="symptom-extractor",
+            description="Extracts structured symptoms from a clinical note.",
+            system_prompt="Return a JSON array of symptoms. No prose.",
+        )
+
+        # 2 — Create an orchestrator with multiple connectors
+        orchestrator = await agents.create(
+            name="orchestrator",
+            description="Routes clinical queries to the right expert.",
+            system_prompt="You coordinate medical coding. Use your experts.",
+            connectors=[
+                connectors.from_agent(symptom_agent.id),
+                connectors.registry(name="@corti/medical-coding"),
+                # Attach an optional MCP server:
+                # connectors.mcp(mcp_url="https://mcp.corti.ai", auth_type="inherit"),
+            ],
+        )
+
+        ctx = orchestrator.create_context()
+        # Raise timeout for orchestrators that fan out to several sub-agents.
+        reply = await ctx.send_text(
+            "Patient has chest pain and shortness of breath. What ICD-10 codes apply?",
+            timeout_in_seconds=180,
+        )
+        print(reply.text)
+
+asyncio.run(main())
+</code></pre>
+
+        <div class="callout">
+          <strong>auth_type</strong> on <code>connectors.mcp()</code> tells the server which authentication scheme to use:
+          <code>"none"</code> (default), <code>"bearer"</code> (static or runtime token),
+          <code>"inherit"</code> (reuse the Corti API token), or <code>"oauth2.0"</code>.
+          See <a href="py-06-credentials.html">06 · Credentials</a> for runtime token forwarding.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-03-workflow.html">03 · Workflow<span>Chain multiple agents into a sequential pipeline.</span></a>
+          <a href="py-06-credentials.html">06 · Credentials<span>Forward bearer tokens to authenticated MCP servers.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

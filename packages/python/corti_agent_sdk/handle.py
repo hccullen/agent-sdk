@@ -52,6 +52,7 @@ class AgentHandle:
         *,
         context_id: Optional[str] = None,
         credentials: Optional[CredentialStore] = None,
+        timeout_in_seconds: Optional[float] = None,
     ) -> MessageResponse:
         """
         One-shot invoke: create a fresh context, send the message, return the response.
@@ -65,6 +66,8 @@ class AgentHandle:
         credentials:
             Service credentials forwarded automatically if the agent returns
             ``auth-required``.
+        timeout_in_seconds:
+            Per-request timeout override. Raise for long-running orchestrators.
 
         Example::
 
@@ -73,8 +76,8 @@ class AgentHandle:
         """
         ctx = AgentContext(self._agent["id"], self._client, context_id, credentials)
         if isinstance(input, str):
-            return await ctx.send_text(input)
-        return await ctx.send_message(input)
+            return await ctx.send_text(input, timeout_in_seconds=timeout_in_seconds)
+        return await ctx.send_message(input, timeout_in_seconds=timeout_in_seconds)
 
     def create_context(
         self,
@@ -101,6 +104,41 @@ class AgentHandle:
             r2 = await ctx.send_text("Follow-up?")
         """
         return AgentContext(self._agent["id"], self._client, credentials=credentials)
+
+    def get_context(
+        self,
+        context_id: str,
+        *,
+        credentials: Optional[CredentialStore] = None,
+    ) -> AgentContext:
+        """
+        Resume an existing conversation thread by its context ID.
+
+        Use this when you have persisted a ``context_id`` from a previous
+        session and want to continue that thread. In most applications you
+        won't need this — keep the :class:`AgentContext` object in memory
+        across turns instead.
+
+        Parameters
+        ----------
+        context_id:
+            The thread ID to resume (from a prior ``ctx.id``).
+        credentials:
+            Service credentials forwarded automatically if the agent returns
+            ``auth-required``.
+
+        Example::
+
+            # Session 1
+            ctx = agent.create_context()
+            await ctx.send_text("Hello")
+            saved_id = ctx.id   # persist this somewhere
+
+            # Session 2 — resume the same thread
+            ctx2 = agent.get_context(saved_id)
+            await ctx2.send_text("Pick up where we left off.")
+        """
+        return AgentContext(self._agent["id"], self._client, context_id, credentials)
 
     async def update(
         self,
