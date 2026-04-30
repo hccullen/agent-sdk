@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-03 · Workflow · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#step-options">Step options</a>
+        <a href="#code">Full code</a>
+        <a href="#result">Result shape</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html" class="active">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>03 — Workflow</strong></p>
+        <h1>03 — Workflow</h1>
+        <p class="lede">A <code>Workflow</code> is a deterministic, code-first pipeline. Steps run in order; each step receives the previous step's text as input. Use <code>when</code>, <code>transform</code>, and <code>retries</code> to add conditional logic.</p>
+        <div class="concept-grid">
+          <div><strong>workflow(steps)</strong>Factory that accepts <code>AgentHandle</code>s, <code>Parallel</code> groups, or <code>WorkflowStep</code> dicts.</div>
+          <div><strong>when</strong>Optional predicate <code>(prev: MessageResponse) → bool</code>. If it returns <code>False</code>, the step is skipped.</div>
+          <div><strong>transform</strong>Optional function <code>(prev: MessageResponse) → str | list[Part]</code>. Reshape the output before passing to the next step.</div>
+          <div><strong>retries</strong>Re-attempt the step up to N extra times on failure. Combine with <code>retry_delay</code> (seconds).</div>
+        </div>
+      </section>
+
+      <section id="step-options">
+        <h2>Step options</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>agent</code></td><td><code>AgentHandle | Parallel</code></td><td>required</td><td>The agent or parallel group to run.</td></tr>
+            <tr><td><code>when</code></td><td><code>Callable[[MessageResponse], bool]</code></td><td>always run</td><td>Skip this step if the predicate returns <code>False</code>.</td></tr>
+            <tr><td><code>transform</code></td><td><code>Callable[[MessageResponse], str | list]</code></td><td>pass text through</td><td>Shape the previous output before passing to this step.</td></tr>
+            <tr><td><code>retries</code></td><td><code>int</code></td><td><code>0</code></td><td>Extra attempts on <code>"failed"</code> status.</td></tr>
+            <tr><td><code>retry_delay</code></td><td><code>float</code></td><td><code>1.0</code></td><td>Seconds to wait between retries.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+03 — Workflow.
+
+A three-step pipeline: extract → code → review (conditional).
+"""
+import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient, workflow, WorkflowStep
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        extractor = await agents.create(
+            name="extractor",
+            description="Extracts key symptoms from a clinical note.",
+            system_prompt="List the key symptoms as a comma-separated string. No prose.",
+        )
+        coder = await agents.create(
+            name="coder",
+            description="Maps symptoms to ICD-10 codes.",
+            system_prompt="Return only comma-separated ICD-10 codes.",
+        )
+        reviewer = await agents.create(
+            name="reviewer",
+            description="Flags potentially incorrect codes.",
+            system_prompt='Reply "ok" if the codes look correct, otherwise explain why.',
+        )
+
+        result = await workflow([
+            extractor,   # bare AgentHandle — shorthand for WorkflowStep(agent=extractor)
+
+            coder,
+
+            WorkflowStep(
+                agent=reviewer,
+                # Only run if coder returned something
+                when=lambda r: bool(r.text),
+                # Prepend context so the reviewer knows what note was coded
+                transform=lambda r: f"Codes: {r.text}",
+                retries=1,
+                retry_delay=2.0,
+            ),
+        ]).run("Patient presents with chest pain and dyspnoea.")
+
+        print("Final output:", result.output.text)
+        print("Steps run:   ", len(result.steps))
+        print("Stopped early:", result.stopped_early)
+
+asyncio.run(main())
+</code></pre>
+      </section>
+
+      <section id="result">
+        <h2>Result shape</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Field</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>result.output</code></td><td><code>MessageResponse</code> from the last executed step.</td></tr>
+            <tr><td><code>result.steps</code></td><td>List of <code>MessageResponse</code> for every step that ran (skipped steps excluded).</td></tr>
+            <tr><td><code>result.stopped_early</code></td><td><code>True</code> if a step's status was <code>"failed"</code> and execution halted.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-04-parallel.html">04 · Parallel fan-out<span>Run multiple agents on the same input at once.</span></a>
+          <a href="py-07-state-graph.html">07 · State graph<span>Conditional routing and reviewer loops.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

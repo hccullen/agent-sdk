@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-07 · State graph · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#agent-node">agent_node()</a>
+        <a href="#code">Full code</a>
+        <a href="#result">Result shape</a>
+        <a href="#vs-workflow">vs workflow()</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html" class="active">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>07 — State graph</strong></p>
+        <h1>07 — State graph</h1>
+        <p class="lede"><code>stateGraph()</code> maintains a shared state dict across nodes and routes dynamically — including cycles. This example builds a clinical triage pipeline: triage → code → review → (loop back if rejected).</p>
+        <div class="concept-grid">
+          <div><strong>Shared state</strong>A plain dict accumulated across every node. Each node returns a partial update that is shallow-merged in.</div>
+          <div><strong>Nodes</strong>Async functions <code>async def(state) → dict</code>. <code>agent_node()</code> wraps an <code>AgentHandle</code> into this shape.</div>
+          <div><strong>Edges</strong>Static node names, <code>END</code>, or callables <code>(state) → str | END</code> that pick the next node after the current one updates state.</div>
+          <div><strong>max_iterations</strong>Safety limit (default 25). The graph stops with <code>terminated_by="maxIterations"</code> if the budget is exhausted.</div>
+        </div>
+
+        <h3>Graph structure</h3>
+<pre><code class="language-python">#   triage ──(urgent?)──► coder ──► reviewer ──(approved?)──► END
+#              │                        │
+#              ▼ (routine)              ▼ (rejected)
+#             END                    coder   ← loop</code></pre>
+      </section>
+
+      <section id="agent-node">
+        <h2>agent_node()</h2>
+        <p><code>agent_node(agent, get_input, merge_response)</code> wraps an <code>AgentHandle</code> as a node function:</p>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Argument</th><th>Type</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>agent</code></td><td><code>AgentHandle</code></td><td>The agent to invoke.</td></tr>
+            <tr><td><code>get_input(state)</code></td><td><code>Callable[[dict], str | list]</code></td><td>Extract the agent's input from current state.</td></tr>
+            <tr><td><code>merge_response(response, state)</code></td><td><code>Callable[[MessageResponse, dict], dict]</code></td><td>Return the state patch to merge in.</td></tr>
+          </tbody>
+        </table></div>
+        <p>You can also write a raw async node function directly:</p>
+<pre><code class="language-python">async def my_node(state):
+    result = await my_agent.run(state["note"])
+    return {"severity": (result.text or "").strip()}
+</code></pre>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+07 — Stateful graph routing.
+
+Clinical triage pipeline with a reviewer loop:
+
+  triage → coder → reviewer → END
+                 ↑         |
+                 └─ reject ┘
+"""
+import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient, stateGraph, agent_node, END
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        triage_agent = await agents.create(
+            name="sg-triage",
+            description="Classifies clinical urgency.",
+            system_prompt='Reply with exactly one word: "urgent" or "routine". No punctuation.',
+        )
+        coder_agent = await agents.create(
+            name="sg-coder",
+            description="Assigns ICD-10 codes.",
+            system_prompt="Suggest up to three ICD-10 codes. Format: comma-separated codes only.",
+        )
+        reviewer_agent = await agents.create(
+            name="sg-reviewer",
+            description="Reviews proposed ICD-10 codes.",
+            system_prompt=(
+                'Your reply MUST begin with exactly "approved:" or "rejected:" '
+                "(lowercase, colon). No preamble."
+            ),
+        )
+
+        graph = (
+            stateGraph()
+            .add_node("triage",
+                agent_node(
+                    triage_agent,
+                    lambda s: s["note"],
+                    lambda r, s: {"severity": r.text or ""},
+                ))
+            .add_node("coder",
+                agent_node(
+                    coder_agent,
+                    lambda s: s["note"],
+                    lambda r, s: {"codes": r.text or ""},
+                ))
+            .add_node("reviewer",
+                agent_node(
+                    reviewer_agent,
+                    lambda s: f"Note: {s['note']}\n\nProposed codes: {s['codes']}",
+                    lambda r, s: {
+                        "reviewer_feedback": r.text or "",
+                        "approved": (r.text or "").strip().lower().startswith("approved"),
+                    },
+                ))
+            # Only code urgent cases
+            .add_edge("triage", lambda s: "coder" if "urgent" in s["severity"].lower() else END)
+            # Coder always goes to reviewer
+            .add_edge("coder", "reviewer")
+            # Loop back if reviewer rejects
+            .add_edge("reviewer", lambda s: END if s["approved"] else "coder")
+        )
+
+        initial_state = {
+            "note": "Patient presents with sudden onset chest pain radiating to left arm.",
+            "severity": "",
+            "codes": "",
+            "reviewer_feedback": "",
+            "approved": False,
+        }
+
+        result = await graph.run("triage", initial_state, max_iterations=10)
+
+        print("Severity:         ", result.state["severity"])
+        print("ICD-10 codes:     ", result.state["codes"])
+        print("Reviewer feedback:", result.state["reviewer_feedback"])
+        print("Approved:         ", result.state["approved"])
+        print()
+        print("Execution trace:")
+        for step in result.steps:
+            print(f"  [{step.node}]", list(step.delta.keys()))
+        print("Iterations:   ", result.iterations)
+        print("Terminated by:", result.terminated_by)
+
+asyncio.run(main())
+</code></pre>
+      </section>
+
+      <section id="result">
+        <h2>Result shape</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Field</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>result.state</code></td><td>Final accumulated state dict.</td></tr>
+            <tr><td><code>result.steps</code></td><td>List of <code>StateGraphStep(node, delta, state)</code> — one per execution, including repeated nodes from cycles.</td></tr>
+            <tr><td><code>result.iterations</code></td><td>Total node executions. Always equals <code>len(result.steps)</code>.</td></tr>
+            <tr><td><code>result.terminated_by</code></td><td><code>"end"</code> (edge returned END) · <code>"maxIterations"</code> · <code>"noEdge"</code>.</td></tr>
+          </tbody>
+        </table></div>
+
+        <div class="callout">
+          <strong>Python note:</strong> TypeScript uses <code>terminatedBy</code> (camelCase); Python uses <code>terminated_by</code> (snake_case). Same for <code>stoppedEarly</code> → <code>stopped_early</code> in <code>WorkflowResult</code>.
+        </div>
+      </section>
+
+      <section id="vs-workflow">
+        <h2>vs workflow()</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th></th><th><code>workflow()</code></th><th><code>stateGraph()</code></th></tr></thead>
+          <tbody>
+            <tr><td>Shape</td><td>Ordered list of steps</td><td>Named nodes with explicit edges</td></tr>
+            <tr><td>Shared state</td><td>Previous response text only</td><td>Full dict, accumulated across all nodes</td></tr>
+            <tr><td>Branching</td><td><code>when</code> predicate (skip or run)</td><td>Routing function — jump to any node</td></tr>
+            <tr><td>Cycles</td><td>Not supported</td><td>Supported, bounded by <code>max_iterations</code></td></tr>
+            <tr><td>Best for</td><td>Fixed, known pipelines</td><td>Conditional flows, review loops, dynamic routing</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-03-workflow.html">03 · Workflow<span>Simpler linear pipelines.</span></a>
+          <a href="07-state-graph.html">TypeScript version<span>Same example in TypeScript for comparison.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -19,7 +19,8 @@ class _McpBase(TypedDict):
 
 class McpConnector(_McpBase, total=False):
     name: str
-    transport: Literal["sse", "streamable_http"]
+    transport: Literal["sse", "streamable_http", "stdio"]
+    auth_type: Literal["none", "bearer", "inherit", "oauth2.0"]
     token: str
 
 

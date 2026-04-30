@@ -179,6 +179,8 @@ class CortiClient:
         agent_id: str,
         method: str,
         params: Dict[str, Any],
+        *,
+        timeout_in_seconds: Optional[float] = None,
     ) -> Any:
         """
         Make a JSON-RPC 2.0 call against ``/agents/{id}/v1``.
@@ -188,7 +190,8 @@ class CortiClient:
         """
         url = f"{self._agents_url}/agents/{agent_id}/v1"
         headers = {**await self._auth_headers(), "Content-Type": "application/json"}
-        resp = await self._http.post(url, headers=headers, json=self._rpc_envelope(method, params))
+        timeout = httpx.Timeout(timeout_in_seconds) if timeout_in_seconds is not None else None
+        resp = await self._http.post(url, headers=headers, json=self._rpc_envelope(method, params), timeout=timeout)
         resp.raise_for_status()
         return self._unwrap_rpc(resp.json())
 

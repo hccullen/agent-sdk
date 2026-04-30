@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-04 · Parallel fan-out · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#code">Full code</a>
+        <a href="#result">Result shape</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html" class="active">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>04 — Parallel fan-out</strong></p>
+        <h1>04 — Parallel fan-out</h1>
+        <p class="lede">Run multiple agents concurrently on the same input using <code>parallel()</code>. Individual failures don't stop the others — results are split into <code>fulfilled</code> and <code>rejected</code>.</p>
+        <div class="concept-grid">
+          <div><strong>parallel(steps)</strong>Factory accepting <code>AgentHandle</code>s or <code>ParallelStep</code> dicts with per-step <code>input</code> / <code>credentials</code> overrides.</div>
+          <div><strong>asyncio.gather</strong>Under the hood, all steps run via <code>asyncio.gather(..., return_exceptions=True)</code>.</div>
+          <div><strong>In a workflow</strong>Drop a <code>Parallel</code> directly into a <code>workflow()</code> step list — fulfilled results are text-joined for the next step.</div>
+          <div><strong>ParallelResult</strong>Contains <code>results</code> (all), <code>fulfilled</code> (succeeded), and <code>rejected</code> (raised exceptions).</div>
+        </div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+04 — Parallel fan-out.
+
+Run two specialists on the same clinical note simultaneously,
+then combine results in a workflow step.
+"""
+import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient, parallel, workflow
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        icd_agent = await agents.create(
+            name="icd-coder",
+            description="Assigns ICD-10 codes.",
+            system_prompt="Return only ICD-10 codes, comma-separated.",
+        )
+        cpt_agent = await agents.create(
+            name="cpt-coder",
+            description="Assigns CPT procedure codes.",
+            system_prompt="Return only CPT codes, comma-separated.",
+        )
+        summary_agent = await agents.create(
+            name="summariser",
+            description="Summarises the combined coding results.",
+            system_prompt="Given ICD-10 and CPT codes, write a one-sentence clinical billing summary.",
+        )
+
+        NOTE = "Patient underwent laparoscopic appendectomy for acute appendicitis."
+
+        # --- Standalone fan-out ---
+        fan_out = parallel([icd_agent, cpt_agent])
+        result = await fan_out.run(NOTE)
+
+        print("Fulfilled:", len(result.fulfilled))
+        for r in result.fulfilled:
+            print(" ", r.text)
+        if result.rejected:
+            print("Rejected:", result.rejected)
+
+        # --- Inside a workflow (fulfilled results are text-joined) ---
+        pipeline = await workflow([
+            parallel([icd_agent, cpt_agent]),
+            summary_agent,
+        ]).run(NOTE)
+        print("\nSummary:", pipeline.output.text)
+
+asyncio.run(main())
+</code></pre>
+      </section>
+
+      <section id="result">
+        <h2>Result shape</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Field</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>result.results</code></td><td>One entry per step: <code>{"status": "fulfilled", "value": ...}</code> or <code>{"status": "rejected", "reason": ...}</code>.</td></tr>
+            <tr><td><code>result.fulfilled</code></td><td>List of <code>MessageResponse</code> from steps that succeeded.</td></tr>
+            <tr><td><code>result.rejected</code></td><td>List of exceptions from steps that raised.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-03-workflow.html">03 · Workflow<span>Combine parallel with sequential steps.</span></a>
+          <a href="py-07-state-graph.html">07 · State graph<span>More complex fan-in/fan-out with routing.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

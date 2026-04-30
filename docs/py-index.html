@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Python SDK · @corti/agent-sdk</title>
+  <meta name="description" content="corti-agent-sdk for Python — install, quick start, and API reference." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">TS Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+        <p class="nav-group">On this page</p>
+        <a href="#install">Install</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#api">API reference</a>
+        <a href="#differences">vs TypeScript</a>
+        <p class="nav-group">Python examples</p>
+        <a href="py-01-hello-agent.html" class="active">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html">Docs</a> / <strong>Python SDK</strong></p>
+        <h1>Python SDK</h1>
+        <p class="lede">
+          <code>corti-agent-sdk</code> is the Python sibling of the TypeScript SDK.
+          It exposes an identical API surface — same primitives, same behaviour —
+          adapted to Python idioms: <code>async with</code>, snake_case, dataclasses.
+        </p>
+        <div class="pitch-grid">
+          <div><h3>Feature-identical</h3><p>Every TypeScript primitive has a Python equivalent: <code>Workflow</code>, <code>Parallel</code>, <code>StateGraph</code>, streaming, credentials.</p></div>
+          <div><h3>Async-native</h3><p>Built on <code>httpx.AsyncClient</code>. Use <code>async with CortiClient(...) as client:</code> for automatic cleanup.</p></div>
+          <div><h3>Snake_case</h3><p><code>send_text()</code>, <code>create_context()</code>, <code>system_prompt</code>, <code>timeout_in_seconds</code> — all Pythonic.</p></div>
+          <div><h3>Type-safe</h3><p>Full <code>TypedDict</code> and <code>dataclass</code> annotations throughout. Works well with mypy and Pyright.</p></div>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>Install</h2>
+        <pre><code class="language-bash">pip install corti-agent-sdk</code></pre>
+        <p>Requires Python 3.9+. The only runtime dependency is <code>httpx</code>.</p>
+      </section>
+
+      <section id="quick-start">
+        <h2>Quick start</h2>
+<pre><code class="language-python">import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient, connectors
+
+async def main():
+    async with CortiClient(
+        tenant_name="my-tenant",
+        environment="eu",          # or "us"
+        auth={"client_id": "...", "client_secret": "..."},
+    ) as client:
+        agents = AgentsClient(client)
+
+        agent = await agents.create(
+            name="coder",
+            description="Returns ICD-10 codes for clinical terms.",
+            system_prompt="Respond with only the ICD-10 code.",
+            connectors=[connectors.registry(name="coding-expert")],
+        )
+
+        ctx = agent.create_context()
+        reply = await ctx.send_text("Hypertension?")
+        print(reply.text)    # "I10"
+        print(reply.status)  # "completed"
+
+asyncio.run(main())
+</code></pre>
+      </section>
+
+      <section id="api">
+        <h2>API reference</h2>
+
+        <h3>CortiClient</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>tenant_name</code></td><td><code>str</code></td><td>Your Corti tenant slug.</td></tr>
+            <tr><td><code>environment</code></td><td><code>"eu" | "us" | dict</code></td><td>Predefined region or <code>{"agents": "...", "login": "..."}</code>.</td></tr>
+            <tr><td><code>auth</code></td><td><code>dict</code></td><td><code>{"client_id": "...", "client_secret": "..."}</code></td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>AgentsClient</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>await create(...)</code></td><td><code>AgentHandle</code></td><td>Create a new agent.</td></tr>
+            <tr><td><code>await get(agent_id)</code></td><td><code>AgentHandle</code></td><td>Fetch an existing agent by ID.</td></tr>
+            <tr><td><code>await list()</code></td><td><code>list[AgentHandle]</code></td><td>List all agents in the tenant.</td></tr>
+            <tr><td><code>wrap(raw)</code></td><td><code>AgentHandle</code></td><td>Wrap a raw API dict.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>AgentHandle</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Member</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>.id</code>, <code>.name</code>, <code>.description</code>, <code>.system_prompt</code>, <code>.raw</code></td><td>Properties.</td></tr>
+            <tr><td><code>create_context(*, credentials?)</code></td><td>Open a new conversation thread (lazy — no network call until first message).</td></tr>
+            <tr><td><code>get_context(context_id, *, credentials?)</code></td><td>Resume an existing thread by ID.</td></tr>
+            <tr><td><code>await run(input, *, credentials?, timeout_in_seconds?)</code></td><td>One-shot invoke and return response.</td></tr>
+            <tr><td><code>await update(*, name?, description?, system_prompt?, connectors?)</code></td><td>Partially update the agent.</td></tr>
+            <tr><td><code>await refresh()</code></td><td>Re-fetch agent state from API.</td></tr>
+            <tr><td><code>await delete()</code></td><td>Delete the agent.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>AgentContext</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Member</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>.id</code></td><td>Thread ID — <code>None</code> until first message is sent.</td></tr>
+            <tr><td><code>await send_message(parts, *, timeout_in_seconds?)</code></td><td>Send message parts, receive <code>MessageResponse</code>.</td></tr>
+            <tr><td><code>await send_text(text, *, timeout_in_seconds?)</code></td><td>Send plain text, receive <code>MessageResponse</code>.</td></tr>
+            <tr><td><code>async for event in stream_message(parts)</code></td><td>Stream events as an async generator.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>MessageResponse</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Property</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>.text</code></td><td>Joined text parts from the agent's reply. <code>None</code> if no text.</td></tr>
+            <tr><td><code>.status</code></td><td>Terminal state: <code>"completed"</code>, <code>"failed"</code>, <code>"auth-required"</code>, etc.</td></tr>
+            <tr><td><code>.context_id</code></td><td>Thread ID.</td></tr>
+            <tr><td><code>.task_id</code></td><td>Task ID.</td></tr>
+            <tr><td><code>.artifacts</code></td><td>Deduplicated structured outputs.</td></tr>
+            <tr><td><code>.raw</code></td><td>Full unmodified API response dict.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Composition primitives</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Import</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>workflow(steps)</code></td><td>Linear pipeline. See <a href="py-03-workflow.html">03 · Workflow</a>.</td></tr>
+            <tr><td><code>parallel(steps)</code></td><td>Concurrent fan-out. See <a href="py-04-parallel.html">04 · Parallel</a>.</td></tr>
+            <tr><td><code>stateGraph()</code></td><td>Stateful routing graph. See <a href="py-07-state-graph.html">07 · State graph</a>.</td></tr>
+            <tr><td><code>agent_node(agent, get_input, merge)</code></td><td>Wrap an <code>AgentHandle</code> as a graph node function.</td></tr>
+            <tr><td><code>END</code></td><td>Sentinel to terminate a <code>StateGraph</code>.</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>connectors</h3>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Factory</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>connectors.from_agent(agent_id)</code></td><td>Reference another Corti agent as a sub-agent.</td></tr>
+            <tr><td><code>connectors.mcp(mcp_url, *, name?, transport?, auth_type?, token?)</code></td><td>Attach an MCP server.</td></tr>
+            <tr><td><code>connectors.registry(name, *, system_prompt?)</code></td><td>Reference a named expert from the registry.</td></tr>
+            <tr><td><code>connectors.a2a(a2a_url)</code></td><td>A2A protocol (reserved, not yet supported).</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="differences">
+        <h2>vs TypeScript</h2>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>TypeScript</th><th>Python</th></tr></thead>
+          <tbody>
+            <tr><td><code>new CortiClient({...})</code></td><td><code>async with CortiClient(...) as client:</code></td></tr>
+            <tr><td><code>sendText()</code></td><td><code>await send_text()</code></td></tr>
+            <tr><td><code>createContext()</code></td><td><code>create_context()</code></td></tr>
+            <tr><td><code>getContext(id)</code></td><td><code>get_context(id)</code></td></tr>
+            <tr><td><code>systemPrompt</code></td><td><code>system_prompt</code></td></tr>
+            <tr><td><code>timeoutInSeconds</code></td><td><code>timeout_in_seconds=</code> (keyword-only)</td></tr>
+            <tr><td><code>authType: "bearer"</code></td><td><code>auth_type="bearer"</code></td></tr>
+            <tr><td><code>terminatedBy</code></td><td><code>terminated_by</code></td></tr>
+            <tr><td><code>stoppedEarly</code></td><td><code>stopped_early</code></td></tr>
+            <tr><td><code>agentNode()</code></td><td><code>agent_node()</code></td></tr>
+            <tr><td><code>WorkflowResult.steps</code></td><td><code>WorkflowResult.steps</code></td></tr>
+            <tr><td><code>OAuth2Credential.clientId</code></td><td><code>OAuth2Credential["client_id"]</code></td></tr>
+          </tbody>
+        </table></div>
+        <p>The wire format (A2A JSON-RPC) is identical — both SDKs talk to the same API.</p>
+      </section>
+
+      <section id="examples-index">
+        <h2>Examples</h2>
+        <div class="example-links-grid">
+          <a href="py-01-hello-agent.html">01 · Hello, agent<span>Create an agent, open a context, send messages.</span></a>
+          <a href="py-02-connectors.html">02 · Connectors<span>Sub-agents, registry experts, MCP servers.</span></a>
+          <a href="py-03-workflow.html">03 · Workflow<span>Linear pipelines with when/transform/retries.</span></a>
+          <a href="py-04-parallel.html">04 · Parallel fan-out<span>Concurrent agent execution.</span></a>
+          <a href="py-05-streaming.html">05 · Streaming<span>Async iteration over SSE events.</span></a>
+          <a href="py-06-credentials.html">06 · Credentials<span>MCP bearer-token forwarding.</span></a>
+          <a href="py-07-state-graph.html">07 · State graph<span>Typed state, routing functions, reviewer loops.</span></a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-05 · Streaming · corti-agent-sdk</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#event-shape">Event shape</a>
+        <a href="#code">Full code</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html" class="active">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>05 — Streaming</strong></p>
+        <h1>05 — Streaming</h1>
+        <p class="lede">Use <code>ctx.stream_message()</code> to receive the agent's response as an async generator of <code>StreamEvent</code> dicts. Each event carries a state update, artifact chunk, or the final message.</p>
+        <div class="concept-grid">
+          <div><strong>stream_message(parts)</strong>Returns an async generator — use <code>async for event in ctx.stream_message(...):</code></div>
+          <div><strong>statusUpdate</strong>State-transition events: <code>submitted → working → completed</code>.</div>
+          <div><strong>artifactUpdate</strong>Structured output chunks streamed incrementally.</div>
+          <div><strong>message</strong>Final assembled message — equivalent to what <code>send_message()</code> returns.</div>
+        </div>
+      </section>
+
+      <section id="event-shape">
+        <h2>Event shape</h2>
+        <p>The SDK normalises raw A2A events into a wrapped dict before yielding:</p>
+        <div class="table-wrapper"><table>
+          <thead><tr><th>Key</th><th>Present when</th></tr></thead>
+          <tbody>
+            <tr><td><code>event["statusUpdate"]</code></td><td>State transitions (<code>submitted</code>, <code>working</code>, <code>completed</code>, …)</td></tr>
+            <tr><td><code>event["artifactUpdate"]</code></td><td>Structured output chunk available.</td></tr>
+            <tr><td><code>event["message"]</code></td><td>Final assembled agent message.</td></tr>
+            <tr><td><code>event["task"]</code></td><td>Full task object (first event only).</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+<pre><code class="language-python">"""
+05 — Streaming.
+
+Stream the agent's response event-by-event over SSE.
+"""
+import asyncio
+from corti_agent_sdk import CortiClient, AgentsClient
+
+async def main():
+    async with CortiClient(
+        tenant_name="YOUR_TENANT",
+        environment="eu",
+        auth={"client_id": "YOUR_ID", "client_secret": "YOUR_SECRET"},
+    ) as client:
+        agents = AgentsClient(client)
+
+        agent = await agents.create(
+            name="stream-demo",
+            description="Demonstrates streaming responses.",
+            system_prompt="You are a helpful assistant.",
+        )
+
+        ctx = agent.create_context()
+
+        async for event in ctx.stream_message([{"kind": "text", "text": "Tell me about ICD-10."}]):
+            # State transitions
+            if su := event.get("statusUpdate"):
+                state = (su.get("status") or {}).get("state")
+                print(f"  [{state}]")
+
+            # Final message text
+            if msg := event.get("message"):
+                for part in msg.get("parts", []):
+                    if part.get("kind") == "text":
+                        print("Agent:", part["text"])
+
+        print("Context ID:", ctx.id)  # available after first event
+
+asyncio.run(main())
+</code></pre>
+
+        <div class="callout">
+          <strong>Note:</strong> <code>stream_message()</code> does not automatically forward credentials on <code>auth-required</code> the way <code>send_message()</code> does. For MCP auth flows, use <code>send_message()</code> or handle the retry yourself.
+        </div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-06-credentials.html">06 · Credentials<span>Forward MCP bearer tokens automatically.</span></a>
+          <a href="py-01-hello-agent.html">01 · Hello, agent<span>Non-streaming send_text() baseline.</span></a>
+        </div>
+      </section>
+
+      <footer><p>MIT-licensed · <a href="py-index.html">Python SDK</a> · <a href="index.html">Docs home</a></p></footer>
+    </main>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

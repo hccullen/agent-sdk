@@ -30,6 +30,7 @@ class connectors:
         *,
         name: Optional[str] = None,
         transport: Optional[str] = None,
+        auth_type: Optional[str] = None,
         token: Optional[str] = None,
     ) -> McpConnector:
         """Attach an MCP server directly to the agent."""
@@ -38,6 +39,8 @@ class connectors:
             c["name"] = name
         if transport is not None:
             c["transport"] = transport  # type: ignore[typeddict-item]
+        if auth_type is not None:
+            c["auth_type"] = auth_type  # type: ignore[typeddict-item]
         if token is not None:
             c["token"] = token
         return c
@@ -74,10 +77,11 @@ def connectors_to_experts(defs: List[ConnectorDef]) -> List[Dict[str, Any]]:
         if t == "mcp":
             mcp = conn  # type: ignore[assignment]
             name = mcp.get("name") or _mcp_url_to_name(mcp["mcp_url"])
+            authorization_type = mcp.get("auth_type") or ("bearer" if mcp.get("token") else "none")
             server: Dict[str, Any] = {
                 "name": name,
                 "transportType": mcp.get("transport", "sse"),
-                "authorizationType": "bearer" if mcp.get("token") else "inherit",
+                "authorizationType": authorization_type,
                 "url": mcp["mcp_url"],
             }
             if mcp.get("token"):

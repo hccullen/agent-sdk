@@ -51,7 +51,7 @@
         <p class="nav-group">Reference</p>
         <a href="#api">API reference</a>
         <a href="#examples">Examples</a>
-        <a href="#python">Python</a>
+        <a href="py-index.html">Python SDK ↗</a>
       </nav>
     </aside>
 
@@ -688,7 +688,9 @@ for await (const event of stream) {
         <h2>Python</h2>
         <p>
           A sibling package, <code>corti-agent-sdk</code>, provides the same
-          API in Python. See <code>packages/python/</code> in the repo.
+          API in Python — same primitives, same behaviour, Python idioms.
+          See the <a href="py-index.html">Python SDK docs</a> for the full
+          reference and examples.
         </p>
 <pre><code class="language-python">from corti_agent_sdk import CortiClient, AgentsClient, connectors
 
@@ -702,6 +704,7 @@ async with CortiClient(...) as client:
     r = await agent.create_context().send_text("Hypertension?")
     print(r.text)
 </code></pre>
+        <p><a href="py-index.html">→ Full Python SDK docs, API reference &amp; examples</a></p>
       </section>
 
       <footer>
