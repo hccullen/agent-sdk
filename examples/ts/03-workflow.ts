@@ -6,7 +6,7 @@
  *
  * Run: `npm run workflow`
  */
-import { AgentsClient, workflow } from "@corti/agent-sdk";
+import { AgentsClient, workflow } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {

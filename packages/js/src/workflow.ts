@@ -1,6 +1,6 @@
-import { AgentHandle } from "./AgentHandle";
-import { MessageResponse } from "./MessageResponse";
-import type { CredentialStore, Part } from "./types";
+import { AgentHandle } from "./AgentHandle.js";
+import { MessageResponse } from "./MessageResponse.js";
+import type { CredentialStore, Part } from "./types.js";
 
 // ── Runnable ──────────────────────────────────────────────────────────────────
 

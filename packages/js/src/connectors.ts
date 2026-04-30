@@ -5,7 +5,7 @@ import type {
   CortiAgentConnector,
   McpConnector,
   RegistryConnector,
-} from "./types";
+} from "./types.js";
 
 // ── Connector factory helpers ────────────────────────────────────────────────
 

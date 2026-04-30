@@ -13,7 +13,7 @@
  *
  * Run: `npm run state-graph`
  */
-import { AgentsClient, END, agentNode, stateGraph } from "@corti/agent-sdk";
+import { AgentsClient, END, agentNode, stateGraph } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 interface TriageState {

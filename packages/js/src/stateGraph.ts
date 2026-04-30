@@ -1,6 +1,6 @@
-import { AgentHandle } from "./AgentHandle";
-import { MessageResponse } from "./MessageResponse";
-import type { Part } from "./types";
+import { AgentHandle } from "./AgentHandle.js";
+import { MessageResponse } from "./MessageResponse.js";
+import type { Part } from "./types.js";
 
 // ── END sentinel ──────────────────────────────────────────────────────────────
 
