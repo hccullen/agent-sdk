@@ -1,6 +1,6 @@
 {
   "name": "@newsioaps/agent-sdk",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Developer-friendly wrapper for building agents with the Corti SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,10 +44,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@corti/sdk": ">=1.2.0"
+    "@corti/sdk": ">=2.0.0"
   },
   "devDependencies": {
-    "@corti/sdk": "1.2.0",
+    "@corti/sdk": "2.0.0",
     "@types/node": "^18.0.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
