@@ -42,6 +42,7 @@
         <a href="py-05-streaming.html">05 · Streaming</a>
         <a href="py-06-credentials.html">06 · Credentials</a>
         <a href="py-07-state-graph.html">07 · State graph</a>
+        <a href="py-08-workflow-config.html">08 · Workflow config</a>
       </nav>
     </aside>
 
@@ -164,6 +165,7 @@ asyncio.run(main())
           <thead><tr><th>Import</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>workflow(steps)</code></td><td>Linear pipeline. See <a href="py-03-workflow.html">03 · Workflow</a>.</td></tr>
+            <tr><td><code>from_config(config, agents_client)</code></td><td>Build a <code>Workflow</code> from a plain dict config. See <a href="py-08-workflow-config.html">08 · Workflow config</a>.</td></tr>
             <tr><td><code>parallel(steps)</code></td><td>Concurrent fan-out. See <a href="py-04-parallel.html">04 · Parallel</a>.</td></tr>
             <tr><td><code>stateGraph()</code></td><td>Stateful routing graph. See <a href="py-07-state-graph.html">07 · State graph</a>.</td></tr>
             <tr><td><code>agent_node(agent, get_input, merge)</code></td><td>Wrap an <code>AgentHandle</code> as a graph node function.</td></tr>
@@ -215,6 +217,7 @@ asyncio.run(main())
           <a href="py-05-streaming.html">05 · Streaming<span>Async iteration over SSE events.</span></a>
           <a href="py-06-credentials.html">06 · Credentials<span>MCP bearer-token forwarding.</span></a>
           <a href="py-07-state-graph.html">07 · State graph<span>Typed state, routing functions, reviewer loops.</span></a>
+          <a href="py-08-workflow-config.html">08 · Workflow config<span>JSON-first topology with <code>from_config()</code> and declarative <code>when</code>.</span></a>
         </div>
       </section>
 

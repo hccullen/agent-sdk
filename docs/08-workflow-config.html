@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>08 — Workflow config DSL · @corti/agent-sdk</title>
+  <meta name="description" content="Define agents and workflow topology as plain JSON, then run it with fromConfig()." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">◼</span>
+        <span class="brand-name">@corti/agent-sdk</span>
+        <span class="brand-version">0.1.0-alpha</span>
+      </a>
+      <nav class="topbar-nav">
+        <a href="https://github.com/corticph" target="_blank" rel="noopener">GitHub</a>
+        <a href="index.html#examples">Examples</a>
+        <a href="index.html#api">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Back to docs</a></p>
+
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#run">Run it</a>
+        <a href="#schema">Config schema</a>
+        <a href="#when">When predicates</a>
+        <a href="#parallel">Parallel groups</a>
+        <a href="#vs-code-api">vs code-first API</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+
+        <p class="nav-group">All examples</p>
+        <a href="01-hello-agent.html">01 · Hello, agent</a>
+        <a href="02-connectors.html">02 · Connectors</a>
+        <a href="03-workflow.html">03 · Workflow</a>
+        <a href="04-parallel.html">04 · Parallel fan-out</a>
+        <a href="05-streaming.html">05 · Streaming</a>
+        <a href="06-credentials.html">06 · Credentials</a>
+        <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-workflow-config.html" class="active">08 · Workflow config</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <p class="breadcrumb"><a href="index.html#examples">Examples</a> / <strong>08 — Workflow config DSL</strong></p>
+        <h1>08 — Workflow config DSL</h1>
+        <p class="lede">
+          <code>fromConfig()</code> lets you describe your entire agent topology as a plain JSON object — agents, connectors, and the workflow steps that connect them — and hands back a ready-to-run <code>Workflow</code>. All agents are created concurrently; steps reference them by name.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>agents[]</strong>Array of agent definitions — the same options as <code>agents.create()</code>: <code>name</code>, <code>description</code>, <code>systemPrompt</code>, <code>lifecycle</code>, <code>connectors</code>.</div>
+          <div><strong>workflow[]</strong>Ordered step list. Each item is a bare agent name, a full step object <code>{ agent, retries, retryDelay, when }</code>, or a parallel group <code>{ parallel: [...] }</code>.</div>
+          <div><strong>when predicates</strong>Declarative conditions: <code>{ text: { includes: "…" } }</code>, <code>{ text: { notIncludes: "…" } }</code>, or <code>{ status: "completed" }</code>. No code required.</div>
+          <div><strong>Additive</strong>Not a replacement — the code-first <code>workflow()</code> / <code>parallel()</code> API still works. Use whichever fits the job. Custom <code>transform</code> functions require the code API.</div>
+        </div>
+      </section>
+
+      <section id="run">
+        <h2>Run it</h2>
+<pre><code class="language-bash">npm run workflow-config</code></pre>
+        <p>
+          The example runs the same clinical pipeline as examples 03 and 04: summarise → classify → parallel fan-out (differential + red flags) → conditional escalation. The entire setup is a single JSON object — no agent handle wrangling needed.
+        </p>
+      </section>
+
+      <section id="schema">
+        <h2>Config schema</h2>
+        <p>
+          The full JSON Schema lives at <code>packages/workflow-config.schema.json</code>. Add it to your editor for autocomplete. The TypeScript types are exported directly from the package:
+        </p>
+<pre><code class="language-typescript">import type { WorkflowConfig } from "@newsioaps/agent-sdk";
+
+const config: WorkflowConfig = {
+  agents: [
+    {
+      name: "summarizer",
+      description: "Summarises a clinical note in one sentence.",
+      systemPrompt: "Summarise the note in a single sentence.",
+    },
+    {
+      name: "classifier",
+      description: "Classifies the summary as urgent or routine.",
+      systemPrompt: "Reply with exactly one word: 'urgent' or 'routine'.",
+    },
+  ],
+  workflow: [
+    "summarizer",
+    "classifier",
+  ],
+};
+</code></pre>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Field</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>agents[].name</code></td><td>Yes</td><td>Unique name used to reference the agent in the <code>workflow</code> array.</td></tr>
+              <tr><td><code>agents[].description</code></td><td>Yes</td><td>Human-readable description of the agent's purpose.</td></tr>
+              <tr><td><code>agents[].systemPrompt</code></td><td>No</td><td>Instructions defining the agent's behaviour.</td></tr>
+              <tr><td><code>agents[].lifecycle</code></td><td>No</td><td><code>"ephemeral"</code> (default) or <code>"persistent"</code>.</td></tr>
+              <tr><td><code>agents[].connectors</code></td><td>No</td><td>MCP, registry, cortiAgent, or a2a connectors — same shape as <code>agents.create()</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Connectors in JSON</h3>
+        <p>Connector objects use camelCase keys matching the TypeScript types:</p>
+<pre><code class="language-typescript">{
+  "agents": [
+    {
+      "name": "coder",
+      "description": "ICD-10 coder",
+      "connectors": [
+        { "type": "registry", "name": "@corti/medical-coding" },
+        { "type": "mcp", "mcpUrl": "https://mcp.example.com", "authType": "bearer" }
+      ]
+    }
+  ],
+  "workflow": ["coder"]
+}
+</code></pre>
+      </section>
+
+      <section id="when">
+        <h2>When predicates</h2>
+        <p>
+          The <code>when</code> field accepts a declarative predicate object. If the condition is false, the step is skipped and the previous response passes forward unchanged — identical behaviour to a code-first <code>when</code> function.
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Predicate</th><th>Runs the step when…</th></tr></thead>
+            <tbody>
+              <tr><td><code>{ "text": { "includes": "urgent" } }</code></td><td>The previous response's text contains <code>"urgent"</code>.</td></tr>
+              <tr><td><code>{ "text": { "notIncludes": "routine" } }</code></td><td>The previous response's text does <em>not</em> contain <code>"routine"</code>.</td></tr>
+              <tr><td><code>{ "status": "completed" }</code></td><td>The previous step's <code>status</code> equals the given <code>TaskState</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<pre><code class="language-typescript">// Only escalate when the classifier said "urgent"
+{
+  "agent": "escalator",
+  "when": { "text": { "includes": "urgent" } },
+  "retries": 2,
+  "retryDelay": 500
+}
+</code></pre>
+
+        <div class="callout">
+          <strong>Need custom logic?</strong> Predicates that can't be expressed declaratively (e.g. checking a numeric value, regex matching) require a code-first <code>WorkflowStep</code> with a <code>when</code> function. The two styles compose freely — mix JSON-loaded steps with code-defined ones.
+        </div>
+      </section>
+
+      <section id="parallel">
+        <h2>Parallel groups</h2>
+        <p>
+          Use the <code>{ parallel: [...] }</code> step form to fan out to multiple agents concurrently. Fulfilled results are text-joined and passed as input to the next step — identical to dropping a <code>parallel()</code> call into a code-first workflow.
+        </p>
+<pre><code class="language-typescript">// Fan out to differential and red-flags in parallel
+{ "parallel": ["differential", "redflags"] }
+
+// Override the input for one branch
+{ "parallel": [
+    { "agent": "differential", "input": "Focus on cardiac differentials only." },
+    "redflags"
+  ]
+}
+</code></pre>
+      </section>
+
+      <section id="vs-code-api">
+        <h2>vs the code-first API</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th></th><th>JSON config DSL</th><th>Code-first API</th></tr></thead>
+            <tbody>
+              <tr><td>Agent creation</td><td>Declared in <code>agents[]</code>, all created concurrently by <code>fromConfig()</code></td><td>Manual <code>await agents.create()</code> calls</td></tr>
+              <tr><td>Step ordering</td><td>Strings and objects in <code>workflow[]</code></td><td>Array passed to <code>workflow()</code></td></tr>
+              <tr><td>Parallel fan-out</td><td><code>{ "parallel": ["a", "b"] }</code></td><td><code>parallel([a, b])</code></td></tr>
+              <tr><td>Conditional steps</td><td>Declarative <code>when</code> predicate object</td><td>Arbitrary <code>when</code> function</td></tr>
+              <tr><td>Input transforms</td><td>Not supported — use code API</td><td><code>transform</code> function</td></tr>
+              <tr><td>Config as data</td><td>Serialisable — load from file, env, API</td><td>Code only</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Both styles produce a <code>Workflow</code> instance with an identical <code>.run(input)</code> interface. The result shape is exactly the same.</p>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/ts/08-workflow-config.ts</code></p>
+<pre><code class="language-typescript">/**
+ * 08 — JSON DSL workflow config.
+ *
+ * Define the full agent topology as a plain JSON object (or load it from a
+ * .json file), then hand it to `fromConfig()` which creates all agents
+ * concurrently and returns a ready-to-run `Workflow`.
+ *
+ * This is an alternative to the code-first `workflow()` API — both can be
+ * used in the same project.
+ *
+ * Run: `npm run workflow-config`
+ */
+import { AgentsClient, fromConfig } from "@newsioaps/agent-sdk";
+import type { WorkflowConfig } from "@newsioaps/agent-sdk";
+import { makeClient } from "./_client";
+
+const config: WorkflowConfig = {
+  agents: [
+    {
+      name: "wfc-summarizer",
+      description: "Summarises a clinical note in one sentence.",
+      systemPrompt: "Summarise the note in a single sentence.",
+    },
+    {
+      name: "wfc-classifier",
+      description: "Classifies a summary as 'urgent' or 'routine'.",
+      systemPrompt: "Reply with exactly one word: 'urgent' or 'routine'. No punctuation.",
+    },
+    {
+      name: "wfc-differential",
+      description: "Lists a differential diagnosis.",
+      systemPrompt: "List the top 3 differential diagnoses, most likely first. One line each.",
+    },
+    {
+      name: "wfc-redflags",
+      description: "Flags symptoms warranting urgent evaluation.",
+      systemPrompt: "List any red-flag features from the presentation. One line each.",
+    },
+    {
+      name: "wfc-escalator",
+      description: "Drafts an escalation for urgent cases.",
+      systemPrompt: "Draft a one-line escalation to the on-call physician.",
+    },
+  ],
+  workflow: [
+    // Step 1: summarise the note
+    "wfc-summarizer",
+    // Step 2: classify as urgent or routine
+    "wfc-classifier",
+    // Step 3: fan out differential + red-flags in parallel (only for urgent cases)
+    {
+      parallel: ["wfc-differential", "wfc-redflags"],
+    },
+    // Step 4: escalate — only when the classifier flagged the case as urgent
+    {
+      agent: "wfc-escalator",
+      when: { text: { includes: "urgent" } },
+      retries: 2,
+      retryDelay: 500,
+    },
+  ],
+};
+
+async function main() {
+  const agents = new AgentsClient(makeClient());
+
+  const wf = await fromConfig(config, agents);
+
+  const note =
+    "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago.";
+
+  const result = await wf.run(note);
+
+  console.log("Final output:", result.output.text);
+  console.log("Steps executed:", result.steps.length);
+  console.log("Stopped early:", result.stoppedEarly);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="dim">Final output:</span> Immediate escalation to on-call physician — patient presenting with acute chest
+pain radiating to left arm, high suspicion for STEMI.
+<span class="dim">Steps executed:</span> 4
+<span class="dim">Stopped early:</span> false</div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="03-workflow.html">
+            03 · Workflow
+            <span>Code-first pipelines with custom <code>when</code> and <code>transform</code>.</span>
+          </a>
+          <a href="04-parallel.html">
+            04 · Parallel fan-out
+            <span>Standalone and inline parallel execution.</span>
+          </a>
+          <a href="py-08-workflow-config.html">
+            py-08 · Python version
+            <span>The same config dict running in Python.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · built on <a href="https://www.npmjs.com/package/@corti/sdk">@corti/sdk</a> · <a href="index.html">Back to docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
