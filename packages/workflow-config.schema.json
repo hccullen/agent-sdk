@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WorkflowConfig",
+  "description": "JSON DSL for defining agent workflow configurations. Runnable via fromConfig() (TS) or from_config() (Python).",
+  "type": "object",
+  "required": ["agents", "workflow"],
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "type": "array",
+      "description": "Agent definitions to create before the workflow runs. Order does not matter — all are created concurrently.",
+      "items": { "$ref": "#/$defs/AgentConfig" }
+    },
+    "workflow": {
+      "type": "array",
+      "description": "Ordered workflow steps. Each step is either an agent name, a step-with-options object, or a parallel group.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/WorkflowStepConfig" }
+    }
+  },
+  "$defs": {
+    "AgentConfig": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name":         { "type": "string", "description": "Unique name used to reference this agent in the workflow." },
+        "description":  { "type": "string" },
+        "systemPrompt": { "type": "string" },
+        "lifecycle":    { "type": "string", "enum": ["ephemeral", "persistent"] },
+        "connectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorDef" }
+        }
+      }
+    },
+    "ConnectorDef": {
+      "oneOf": [
+        { "$ref": "#/$defs/McpConnector" },
+        { "$ref": "#/$defs/RegistryConnector" },
+        { "$ref": "#/$defs/CortiAgentConnector" },
+        { "$ref": "#/$defs/A2aConnector" }
+      ]
+    },
+    "McpConnector": {
+      "type": "object",
+      "required": ["type", "mcpUrl"],
+      "additionalProperties": false,
+      "properties": {
+        "type":      { "const": "mcp" },
+        "mcpUrl":    { "type": "string" },
+        "name":      { "type": "string" },
+        "transport": { "type": "string", "enum": ["sse", "streamable_http", "stdio"] },
+        "authType":  { "type": "string", "enum": ["none", "bearer", "inherit", "oauth2.0"] },
+        "token":     { "type": "string" }
+      }
+    },
+    "RegistryConnector": {
+      "type": "object",
+      "required": ["type", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "type":         { "const": "registry" },
+        "name":         { "type": "string" },
+        "systemPrompt": { "type": "string" }
+      }
+    },
+    "CortiAgentConnector": {
+      "type": "object",
+      "required": ["type", "agentId"],
+      "additionalProperties": false,
+      "properties": {
+        "type":    { "const": "cortiAgent" },
+        "agentId": { "type": "string" }
+      }
+    },
+    "A2aConnector": {
+      "type": "object",
+      "required": ["type", "a2aUrl"],
+      "additionalProperties": false,
+      "properties": {
+        "type":   { "const": "a2a" },
+        "a2aUrl": { "type": "string" }
+      }
+    },
+    "WorkflowStepConfig": {
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Bare agent name — runs the agent with no extra options."
+        },
+        { "$ref": "#/$defs/FullStepConfig" },
+        { "$ref": "#/$defs/ParallelGroupConfig" }
+      ]
+    },
+    "FullStepConfig": {
+      "type": "object",
+      "required": ["agent"],
+      "additionalProperties": false,
+      "properties": {
+        "agent":      { "type": "string", "description": "Name of the agent to run." },
+        "retries":    { "type": "integer", "minimum": 0, "description": "Additional attempts on failure." },
+        "retryDelay": { "type": "number",  "minimum": 0, "description": "Milliseconds between retries." },
+        "when":       { "$ref": "#/$defs/WhenPredicate" }
+      }
+    },
+    "ParallelGroupConfig": {
+      "type": "object",
+      "required": ["parallel"],
+      "additionalProperties": false,
+      "properties": {
+        "parallel": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ParallelItemConfig" }
+        }
+      }
+    },
+    "ParallelItemConfig": {
+      "oneOf": [
+        { "type": "string", "description": "Agent name — runs with the shared parallel input." },
+        {
+          "type": "object",
+          "required": ["agent"],
+          "additionalProperties": false,
+          "properties": {
+            "agent": { "type": "string" },
+            "input": { "type": "string", "description": "Override the shared input for this specific agent." }
+          }
+        }
+      ]
+    },
+    "WhenPredicate": {
+      "description": "Declarative condition evaluated against the previous step's response. Omit to always run the step.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "object",
+              "oneOf": [
+                {
+                  "required": ["includes"],
+                  "additionalProperties": false,
+                  "properties": { "includes": { "type": "string" } }
+                },
+                {
+                  "required": ["notIncludes"],
+                  "additionalProperties": false,
+                  "properties": { "notIncludes": { "type": "string" } }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["status"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["submitted", "working", "input-required", "completed", "canceled", "failed", "rejected", "auth-required", "unknown"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

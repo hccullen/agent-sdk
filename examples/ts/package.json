@@ -11,7 +11,8 @@
     "parallel": "tsx 04-parallel.ts",
     "streaming": "tsx 05-streaming.ts",
     "credentials": "tsx 06-credentials.ts",
-    "state-graph": "tsx 07-state-graph.ts"
+    "state-graph": "tsx 07-state-graph.ts",
+    "workflow-config": "tsx 08-workflow-config.ts"
   },
   "dependencies": {
     "@newsioaps/agent-sdk": "*",
