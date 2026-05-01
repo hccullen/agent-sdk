@@ -35,6 +35,7 @@ Usage::
 """
 
 from .agents import AgentsClient
+from .config import from_config
 from .client import CortiClient
 from .connectors import connectors
 from .context import AgentContext
@@ -92,6 +93,7 @@ __all__ = [
     "AgentContext",
     "AgentHandle",
     "AgentsClient",
+    "from_config",
     "CortiClient",
     "MessageResponse",
     "Parallel",

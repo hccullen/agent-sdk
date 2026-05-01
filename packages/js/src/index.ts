@@ -1,4 +1,6 @@
 export { AgentsClient } from "./AgentsClient.js";
+export { fromConfig } from "./config.js";
+export type { AgentConfig, FullStepConfig, ParallelGroupConfig, ParallelItemConfig, WhenPredicate, WorkflowConfig, WorkflowStepConfig } from "./config.js";
 export { AgentContext } from "./AgentContext.js";
 export { AgentHandle } from "./AgentHandle.js";
 export { MessageResponse } from "./MessageResponse.js";

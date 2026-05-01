@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>py-08 · Workflow config DSL · corti-agent-sdk</title>
+  <meta name="description" content="Define agents and workflow topology as a plain dict, then run it with from_config()." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" class="brand"><span class="brand-mark">◼</span><span class="brand-name">@corti/agent-sdk</span><span class="brand-version">0.1.0-alpha</span></a>
+      <nav class="topbar-nav"><a href="py-index.html">Python SDK</a></nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Sections">
+      <nav>
+        <p class="nav-group" style="margin-top:0"><a href="py-index.html" style="color:var(--text-dim);font-size:0.85rem;text-decoration:none;">← Python SDK</a></p>
+        <p class="nav-group">This example</p>
+        <a href="#overview">Overview</a>
+        <a href="#schema">Config schema</a>
+        <a href="#when">When predicates</a>
+        <a href="#parallel">Parallel groups</a>
+        <a href="#code">Full code</a>
+        <a href="#output">What to expect</a>
+        <p class="nav-group">All Python examples</p>
+        <a href="py-01-hello-agent.html">01 · Hello, agent</a>
+        <a href="py-02-connectors.html">02 · Connectors</a>
+        <a href="py-03-workflow.html">03 · Workflow</a>
+        <a href="py-04-parallel.html">04 · Parallel fan-out</a>
+        <a href="py-05-streaming.html">05 · Streaming</a>
+        <a href="py-06-credentials.html">06 · Credentials</a>
+        <a href="py-07-state-graph.html">07 · State graph</a>
+        <a href="py-08-workflow-config.html" class="active">08 · Workflow config</a>
+      </nav>
+    </aside>
+
+    <main id="main">
+      <section id="overview">
+        <p class="breadcrumb"><a href="py-index.html">Python SDK</a> / <strong>py-08 — Workflow config DSL</strong></p>
+        <h1>py-08 — Workflow config DSL</h1>
+        <p class="lede">
+          <code>from_config()</code> turns a plain Python dict (or a JSON file loaded with <code>json.load()</code>) into a ready-to-run <code>Workflow</code>. Agents are defined by name and created concurrently; the <code>workflow</code> list wires them together.
+        </p>
+
+        <div class="concept-grid">
+          <div><strong>agents[]</strong>List of agent definition dicts — same options as <code>agents.create()</code>: <code>name</code>, <code>description</code>, <code>systemPrompt</code>, <code>lifecycle</code>, <code>connectors</code>.</div>
+          <div><strong>workflow[]</strong>Ordered step list. Each item is a bare agent name string, a full step dict <code>{"agent": …, "retries": …, "when": …}</code>, or a parallel group <code>{"parallel": […]}</code>.</div>
+          <div><strong>camelCase keys</strong>The config dict uses camelCase (<code>systemPrompt</code>, <code>mcpUrl</code>) — the same format as the JSON DSL — so configs are portable between Python and TypeScript consumers.</div>
+          <div><strong>Additive</strong>Works alongside the code-first <code>workflow()</code> / <code>parallel()</code> API. Use whichever fits. Custom <code>transform</code> callables still require the code API.</div>
+        </div>
+      </section>
+
+      <section id="schema">
+        <h2>Config schema</h2>
+        <p>
+          The config is a plain <code>dict</code>. Its shape is validated by the JSON Schema at <code>packages/workflow-config.schema.json</code>. Since it's serialisable, you can load it from a file:
+        </p>
+<pre><code class="language-python">import json
+from corti_agent_sdk import from_config
+
+with open("my-workflow.json") as f:
+    config = json.load(f)
+
+wf = await from_config(config, agents_client)
+result = await wf.run("Patient note…")
+</code></pre>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Key</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>name</code></td><td>Yes</td><td>Unique name used to reference the agent in the <code>workflow</code> list.</td></tr>
+              <tr><td><code>description</code></td><td>Yes</td><td>Human-readable description of the agent's purpose.</td></tr>
+              <tr><td><code>systemPrompt</code></td><td>No</td><td>Instructions defining the agent's behaviour. (camelCase — translated to <code>system_prompt</code> internally.)</td></tr>
+              <tr><td><code>lifecycle</code></td><td>No</td><td><code>"ephemeral"</code> (default) or <code>"persistent"</code>.</td></tr>
+              <tr><td><code>connectors</code></td><td>No</td><td>List of connector dicts. Use camelCase keys: <code>mcpUrl</code>, <code>authType</code>, <code>agentId</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="when">
+        <h2>When predicates</h2>
+        <p>
+          The <code>"when"</code> field accepts a declarative predicate dict. If the condition is false, the step is skipped and the previous response passes forward unchanged.
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Predicate</th><th>Runs the step when…</th></tr></thead>
+            <tbody>
+              <tr><td><code>{"text": {"includes": "urgent"}}</code></td><td>The previous response text contains <code>"urgent"</code>.</td></tr>
+              <tr><td><code>{"text": {"notIncludes": "routine"}}</code></td><td>The previous response text does <em>not</em> contain <code>"routine"</code>.</td></tr>
+              <tr><td><code>{"status": "completed"}</code></td><td>The previous step's status equals the given <code>TaskState</code> string.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+<pre><code class="language-python"># Only escalate when the classifier said "urgent"
+{
+    "agent": "escalator",
+    "when": {"text": {"includes": "urgent"}},
+    "retries": 2,
+    "retryDelay": 500,
+}
+</code></pre>
+        <div class="callout">
+          <strong>Note:</strong> <code>retryDelay</code> is in milliseconds in the config (matching the TypeScript convention). <code>from_config()</code> translates it to <code>retry_delay</code> (seconds) automatically when building the Python <code>WorkflowStep</code>.
+        </div>
+      </section>
+
+      <section id="parallel">
+        <h2>Parallel groups</h2>
+        <p>
+          The <code>{"parallel": [...]}</code> step fans out to multiple agents concurrently. Fulfilled results are joined and passed to the next step.
+        </p>
+<pre><code class="language-python"># Fan out to two agents in parallel
+{"parallel": ["differential", "redflags"]}
+
+# Override the input for one branch
+{"parallel": [
+    {"agent": "differential", "input": "Focus on cardiac differentials only."},
+    "redflags",
+]}
+</code></pre>
+      </section>
+
+      <section id="code">
+        <h2>Full code</h2>
+        <p>Source: <code>examples/py/08-workflow-config.py</code></p>
+<pre><code class="language-python">"""
+08 — JSON DSL workflow config.
+
+Define the full agent topology as a plain dict (or load it from a .json file),
+then hand it to ``from_config()`` which creates all agents concurrently and
+returns a ready-to-run ``Workflow``.
+
+This is an alternative to the code-first ``workflow()`` API — both can be
+used in the same project.
+"""
+import asyncio
+import os
+
+from corti_agent_sdk import AgentsClient, from_config
+from corti_agent_sdk.client import CortiClient
+
+CONFIG = {
+    "agents": [
+        {
+            "name": "wfc-summarizer",
+            "description": "Summarises a clinical note in one sentence.",
+            "systemPrompt": "Summarise the note in a single sentence.",
+        },
+        {
+            "name": "wfc-classifier",
+            "description": "Classifies a summary as 'urgent' or 'routine'.",
+            "systemPrompt": "Reply with exactly one word: 'urgent' or 'routine'. No punctuation.",
+        },
+        {
+            "name": "wfc-differential",
+            "description": "Lists a differential diagnosis.",
+            "systemPrompt": "List the top 3 differential diagnoses, most likely first. One line each.",
+        },
+        {
+            "name": "wfc-redflags",
+            "description": "Flags symptoms warranting urgent evaluation.",
+            "systemPrompt": "List any red-flag features from the presentation. One line each.",
+        },
+        {
+            "name": "wfc-escalator",
+            "description": "Drafts an escalation for urgent cases.",
+            "systemPrompt": "Draft a one-line escalation to the on-call physician.",
+        },
+    ],
+    "workflow": [
+        # Step 1: summarise the note
+        "wfc-summarizer",
+        # Step 2: classify as urgent or routine
+        "wfc-classifier",
+        # Step 3: fan out differential + red-flags in parallel
+        {"parallel": ["wfc-differential", "wfc-redflags"]},
+        # Step 4: escalate only when classifier flagged as urgent
+        {
+            "agent": "wfc-escalator",
+            "when": {"text": {"includes": "urgent"}},
+            "retries": 2,
+            "retryDelay": 500,
+        },
+    ],
+}
+
+
+async def main() -> None:
+    async with CortiClient(
+        tenant_name=os.environ["CORTI_TENANT"],
+        environment=os.environ.get("CORTI_ENV", "eu"),
+        auth={
+            "client_id": os.environ["CORTI_CLIENT_ID"],
+            "client_secret": os.environ["CORTI_CLIENT_SECRET"],
+        },
+    ) as client:
+        agents = AgentsClient(client)
+
+        wf = await from_config(CONFIG, agents)
+
+        note = "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago."
+
+        result = await wf.run(note)
+
+        print("Final output:", result.output.text)
+        print("Steps executed:", len(result.steps))
+        print("Stopped early:", result.stopped_early)
+
+
+asyncio.run(main())</code></pre>
+      </section>
+
+      <section id="output">
+        <h2>What to expect</h2>
+        <div class="output-block"><span class="dim">Final output:</span> Immediate escalation to on-call physician — patient presenting with acute chest
+pain radiating to left arm, high suspicion for STEMI.
+<span class="dim">Steps executed:</span> 4
+<span class="dim">Stopped early:</span> False</div>
+
+        <h3>Next steps</h3>
+        <div class="example-links-grid">
+          <a href="py-03-workflow.html">
+            py-03 · Workflow
+            <span>Code-first pipelines with custom <code>when</code> and <code>transform</code>.</span>
+          </a>
+          <a href="py-04-parallel.html">
+            py-04 · Parallel fan-out
+            <span>Standalone and inline parallel execution.</span>
+          </a>
+          <a href="08-workflow-config.html">
+            08 · TypeScript version
+            <span>The same config object running in TypeScript.</span>
+          </a>
+        </div>
+      </section>
+
+      <footer>
+        <p>MIT-licensed · <a href="py-index.html">Python SDK docs</a> · <a href="index.html">Back to TS docs</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -43,6 +43,7 @@
 
         <p class="nav-group">Composition</p>
         <a href="#workflows">Workflows</a>
+        <a href="#workflow-config">Workflow config DSL</a>
         <a href="#parallel">Parallel fan-out</a>
         <a href="#state-graph">State graph</a>
         <a href="#streaming">Streaming</a>
@@ -383,6 +384,43 @@ result.stoppedEarly;    // true if a step failed and halted the run
         </ul>
       </section>
 
+      <section id="workflow-config">
+        <h2>Workflow config DSL</h2>
+        <p>
+          <code>fromConfig(config, agentsClient)</code> is an additive alternative to the
+          code-first <code>workflow()</code> API. Pass a plain JSON-compatible object that
+          declares agents by name and describes the workflow topology; all agents are
+          created concurrently and a ready-to-run <code>Workflow</code> is returned.
+        </p>
+<pre><code class="language-typescript">import { fromConfig } from "@newsioaps/agent-sdk";
+import type { WorkflowConfig } from "@newsioaps/agent-sdk";
+
+const config: WorkflowConfig = {
+  agents: [
+    { name: "summarizer", description: "Summarises text", systemPrompt: "…" },
+    { name: "classifier", description: "Classifies the summary", systemPrompt: "…" },
+  ],
+  workflow: [
+    "summarizer",
+    { agent: "classifier", when: { text: { includes: "urgent" } }, retries: 1 },
+  ],
+};
+
+const wf = await fromConfig(config, agentsClient);
+const result = await wf.run("Patient note…");
+</code></pre>
+        <p>
+          Steps can be bare agent names, full step objects with <code>retries</code> /
+          <code>retryDelay</code> / <code>when</code>, or parallel groups
+          <code>{ parallel: ["a", "b"] }</code>. The <code>when</code> field accepts a
+          declarative predicate object — no function required. For custom
+          <code>transform</code> functions or more complex predicates, use the code-first
+          <code>WorkflowStep</code> API instead. Both styles produce identical
+          <code>WorkflowResult</code> objects.
+        </p>
+        <p>A JSON Schema for editor autocomplete lives at <code>packages/workflow-config.schema.json</code>.</p>
+      </section>
+
       <section id="parallel">
         <h2>Parallel fan-out</h2>
         <p>
@@ -615,6 +653,7 @@ for await (const event of stream) {
             <thead><tr><th>Export</th><th>Purpose</th></tr></thead>
             <tbody>
               <tr><td><code>workflow(steps)</code> / <code>Workflow</code></td><td>Deterministic linear pipeline.</td></tr>
+              <tr><td><code>fromConfig(config, agentsClient)</code></td><td>Build a <code>Workflow</code> from a plain JSON config object. Additive alternative to <code>workflow()</code>.</td></tr>
               <tr><td><code>parallel(steps)</code> / <code>Parallel</code></td><td>Concurrent fan-out.</td></tr>
               <tr><td><code>stateGraph()</code> / <code>StateGraph</code></td><td>Typed stateful routing graph with conditional edges and cycles.</td></tr>
               <tr><td><code>agentNode(agent, getInput, merge)</code></td><td>Wrap an <code>AgentHandle</code> as a <code>StateGraph</code> node function.</td></tr>
@@ -673,6 +712,11 @@ for await (const event of stream) {
                 <td><code>npm run state-graph</code></td>
                 <td><a href="07-state-graph.html">07 — State graph</a></td>
                 <td>Typed state, routing functions, reviewer loop, <code>agentNode()</code>.</td>
+              </tr>
+              <tr>
+                <td><code>npm run workflow-config</code></td>
+                <td><a href="08-workflow-config.html">08 — Workflow config DSL</a></td>
+                <td>JSON-first agent topology with <code>fromConfig()</code>, declarative <code>when</code>, parallel groups.</td>
               </tr>
             </tbody>
           </table>
