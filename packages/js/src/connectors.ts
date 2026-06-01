@@ -43,10 +43,11 @@ export const connectors = {
   }),
 
   /** Reference a named expert from the Corti registry. */
-  registry: (opts: { name: string; systemPrompt?: string }): RegistryConnector => ({
+  registry: (opts: { name: string; systemPrompt?: string; config?: Record<string, unknown> }): RegistryConnector => ({
     type: "registry",
     name: opts.name,
     ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
+    ...(opts.config !== undefined && { config: opts.config }),
   }),
 
   /** Connect via the A2A protocol (not yet supported — reserved for future use). */
@@ -105,6 +106,7 @@ export function connectorsToRequestFields(
           type: "reference",
           name: conn.name,
           ...(conn.systemPrompt !== undefined && { systemPrompt: conn.systemPrompt }),
+          ...(conn.config !== undefined && { config: conn.config }),
         });
         break;
       case "cortiAgent":
