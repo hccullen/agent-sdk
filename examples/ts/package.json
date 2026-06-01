@@ -11,11 +11,12 @@
     "parallel": "tsx 04-parallel.ts",
     "streaming": "tsx 05-streaming.ts",
     "credentials": "tsx 06-credentials.ts",
-    "state-graph": "tsx 07-state-graph.ts"
+    "state-graph": "tsx 07-state-graph.ts",
+    "latency-test": "tsx 08-latency-test.ts"
   },
   "dependencies": {
     "@newsioaps/agent-sdk": "*",
-    "@corti/sdk": "1.2.0",
+    "@corti/sdk": "3.0.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
