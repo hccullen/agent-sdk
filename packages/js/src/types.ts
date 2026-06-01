@@ -39,6 +39,8 @@ export interface RegistryConnector {
   name: string;
   /** Additional instructions appended to the expert's default system prompt. */
   systemPrompt?: string;
+  /** Expert-specific configuration passed through to the registry expert. */
+  config?: Record<string, unknown>;
 }
 
 /** Another Corti agent referenced by ID. */
