@@ -44,10 +44,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@corti/sdk": ">=2.0.0"
+    "@corti/sdk": ">=3.0.0"
   },
   "devDependencies": {
-    "@corti/sdk": "2.0.0",
+    "@corti/sdk": "3.0.0",
     "@types/node": "^18.0.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
