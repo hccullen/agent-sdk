@@ -68,6 +68,10 @@ export class AgentsClient {
 
   async list(): Promise<AgentHandle[]> {
     const agents = await this._client.agents.list();
+    // The SDK list response may include typed system entries (e.g. pagination
+    // cursors or sentinel objects that carry a `type` discriminant).  Only
+    // plain AgentsAgent objects — which have no top-level `type` field — are
+    // user-created agents; the rest are filtered out.
     return agents
       .filter((a): a is Corti.AgentsAgent => !("type" in a))
       .map((a) => this._wrap(a));

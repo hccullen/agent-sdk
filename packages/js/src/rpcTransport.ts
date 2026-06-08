@@ -169,19 +169,41 @@ export async function* rpcStream<T>(
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    // SSE spec: normalize line endings, dispatch on blank-line event boundary.
+    // Multiple `data:` lines within one event are concatenated with \n.
+    // https://html.spec.whatwg.org/multipage/server-sent-events.html
+    //
+    // Returns accumulated results and whether [DONE] was encountered.
+    // Mutates `buffer` via closure to keep only the unconsumed tail.
+    const drainBuffer = (): { results: T[]; done: boolean } => {
+      // Normalise \r\n and bare \r so we only need to handle \n.
+      const normalised = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      let searchFrom = 0;
+      let eventEnd: number;
+      const results: T[] = [];
 
-      let idx: number;
-      while ((idx = buffer.indexOf("\n")) !== -1) {
-        const rawLine = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        const line = rawLine.replace(/\r$/, "").trim();
-        if (!line || !line.startsWith("data: ")) continue;
-        const payload = line.slice(6);
-        if (payload === "[DONE]") return;
+      while ((eventEnd = normalised.indexOf("\n\n", searchFrom)) !== -1) {
+        const eventBlock = normalised.slice(searchFrom, eventEnd);
+        searchFrom = eventEnd + 2;
+
+        const dataLines: string[] = [];
+        for (const rawLine of eventBlock.split("\n")) {
+          if (rawLine.startsWith("data:")) {
+            // Per spec: strip one optional space after the colon.
+            dataLines.push(rawLine.length > 5 && rawLine[5] === " " ? rawLine.slice(6) : rawLine.slice(5));
+          } else if (rawLine === "data") {
+            dataLines.push("");
+          }
+          // event:, id:, retry:, and comment (:) lines are intentionally ignored.
+        }
+
+        if (dataLines.length === 0) continue;
+        const payload = dataLines.join("\n");
+        if (payload === "[DONE]") {
+          buffer = "";
+          return { results, done: true };
+        }
+
         let parsed: RpcResponse<T>;
         try {
           parsed = JSON.parse(payload);
@@ -189,8 +211,27 @@ export async function* rpcStream<T>(
           continue;
         }
         const result = unwrap(parsed);
-        if (result !== undefined) yield result;
+        if (result !== undefined) results.push(result);
       }
+
+      buffer = normalised.slice(searchFrom);
+      return { results, done: false };
+    };
+
+    let streamDone = false;
+    while (!streamDone) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { results, done: signalled } = drainBuffer();
+      for (const r of results) yield r;
+      if (signalled) { streamDone = true; }
+    }
+    // Flush any remaining data the server sent without a trailing blank line.
+    if (!streamDone) {
+      buffer += "\n\n";
+      const { results } = drainBuffer();
+      for (const r of results) yield r;
     }
   } finally {
     if (timer) clearTimeout(timer);

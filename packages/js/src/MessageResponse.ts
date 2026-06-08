@@ -41,7 +41,7 @@ export class MessageResponse {
   private get _nodeStatus() { return this._raw.status; }
 
   /** The full A2A v1 Task object. */
-  get task(): Corti.AgentsTask | undefined {
+  get task(): Corti.AgentsTask {
     return this._raw;
   }
 

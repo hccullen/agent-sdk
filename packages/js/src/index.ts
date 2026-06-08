@@ -12,7 +12,6 @@ export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./sta
 
 export type {
   // connector / agent options
-  A2aConnector,
   ConnectorDef,
   CortiAgentConnector,
   CreateAgentOptions,

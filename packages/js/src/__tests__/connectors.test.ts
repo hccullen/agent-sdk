@@ -48,10 +48,6 @@ describe("connectors factory", () => {
     expect(c.config).toEqual({ lang: "da" });
   });
 
-  it("a2a builds an a2a connector", () => {
-    const c = connectors.a2a({ a2aUrl: "https://a2a.example.com" });
-    expect(c).toEqual({ type: "a2a", a2aUrl: "https://a2a.example.com" });
-  });
 });
 
 describe("connectorsToRequestFields", () => {
@@ -111,9 +107,4 @@ describe("connectorsToRequestFields", () => {
     expect(result.experts).toHaveLength(1);
   });
 
-  it("throws for A2A connectors (not yet supported)", () => {
-    expect(() =>
-      connectorsToRequestFields([connectors.a2a({ a2aUrl: "https://a2a.example.com" })])
-    ).toThrow(/A2A connectors are not yet supported/);
-  });
 });

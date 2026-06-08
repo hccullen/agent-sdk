@@ -1,6 +1,5 @@
 import type { Corti } from "@corti/sdk";
 import type {
-  A2aConnector,
   ConnectorDef,
   CortiAgentConnector,
   McpConnector,
@@ -43,17 +42,15 @@ export const connectors = {
   }),
 
   /** Reference a named expert from the Corti registry. */
-  registry: (opts: { name: string; systemPrompt?: string; config?: Record<string, unknown> }): RegistryConnector => ({
+  registry: (opts: {
+    name: string;
+    systemPrompt?: string;
+    config?: Record<string, unknown>;
+  }): RegistryConnector => ({
     type: "registry",
     name: opts.name,
     ...(opts.systemPrompt !== undefined && { systemPrompt: opts.systemPrompt }),
     ...(opts.config !== undefined && { config: opts.config }),
-  }),
-
-  /** Connect via the A2A protocol (not yet supported — reserved for future use). */
-  a2a: (opts: { a2aUrl: string }): A2aConnector => ({
-    type: "a2a",
-    a2aUrl: opts.a2aUrl,
   }),
 };
 
@@ -80,9 +77,7 @@ export interface ConnectorRequestFields {
  * - `mcpServers`: MCP connectors are attached at the top level of the agent.
  * - `experts`:    registry / cortiAgent connectors stay as experts.
  */
-export function connectorsToRequestFields(
-  defs: ConnectorDef[]
-): ConnectorRequestFields {
+export function connectorsToRequestFields(defs: ConnectorDef[]): ConnectorRequestFields {
   const experts: Corti.AgentsCreateAgentExpertsItem[] = [];
   const mcpServers: Corti.AgentsCreateMcpServer[] = [];
 
@@ -90,8 +85,7 @@ export function connectorsToRequestFields(
     switch (conn.type) {
       case "mcp": {
         const name = conn.name ?? mcpUrlToName(conn.mcpUrl);
-        const authorizationType =
-          conn.authType ?? (conn.token ? "bearer" : "none");
+        const authorizationType = conn.authType ?? (conn.token ? "bearer" : "none");
         mcpServers.push({
           name,
           transportType: conn.transport ?? "sse",
@@ -115,11 +109,6 @@ export function connectorsToRequestFields(
           id: conn.agentId,
         });
         break;
-      case "a2a":
-        throw new Error(
-          `[AgentSDK] A2A connectors are not yet supported (url: ${conn.a2aUrl}). ` +
-            `Use type "mcp" with an MCP-compatible endpoint instead.`
-        );
       default: {
         const exhaustive: never = conn;
         throw new Error(`[AgentSDK] Unknown connector type: ${(exhaustive as ConnectorDef).type}`);

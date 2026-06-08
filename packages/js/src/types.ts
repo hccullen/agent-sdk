@@ -49,17 +49,7 @@ export interface CortiAgentConnector {
   agentId: string;
 }
 
-/** An agent reachable via the A2A protocol (not yet supported). */
-export interface A2aConnector {
-  type: "a2a";
-  a2aUrl: string;
-}
-
-export type ConnectorDef =
-  | McpConnector
-  | RegistryConnector
-  | CortiAgentConnector
-  | A2aConnector;
+export type ConnectorDef = McpConnector | RegistryConnector | CortiAgentConnector;
 
 // ── Agent creation options ───────────────────────────────────────────────────
 
