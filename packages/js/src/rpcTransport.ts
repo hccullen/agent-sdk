@@ -1,64 +1,38 @@
-import type { CortiClient, CortiEnvironmentUrls } from "@corti/sdk";
+import type { CortiClient } from "@corti/sdk";
 import { HttpError, RpcError } from "./errors.js";
 import { randomUUID } from "./utils.js";
 
 /**
  * JSON-RPC 2.0 transport for the A2A endpoint at `/agents/{id}/v1`.
  *
- * Reuses the `CortiClient`'s resolved base URL and OAuth bearer token via
- * its public `getAuthHeaders()` helper, so the caller doesn't need to
- * duplicate auth config.
+ * Uses `client.agents.getCardUrl(agentId)` to resolve the per-agent RPC URL
+ * without accessing any private or protected SDK internals. Auth headers come
+ * from the public `client.getAuthHeaders()` method.
  */
 
 // ── URL resolution ─────────────────────────────────────────────────────────────
 
-type Supplier<T> = T | Promise<T> | (() => T | Promise<T>);
-
-async function resolveSupplier<T>(s: Supplier<T>): Promise<T> {
-  const v = typeof s === "function" ? (s as () => T | Promise<T>)() : s;
-  return await v;
-}
-
 /**
- * Shape of `CortiClient._options` we need to resolve the agents base URL.
+ * Derive the JSON-RPC endpoint URL for a given agent.
  *
- * `_options` is `protected` (not private) in @corti/sdk ≥3.0.0 — the SDK
- * itself accesses it in `CustomAgents.getCardUrl`. There is no public
- * `client.getAgentsBaseUrl()` method yet; this cast is the only mechanism
- * available. If @corti/sdk ever exposes a stable method, remove this cast
- * and use it instead. Pass `agentsBaseUrl` explicitly to bypass this entirely.
+ * `getCardUrl` returns: `https://<host>/agents/<id>/agent-card.json`
+ * The relative reference `"v1"` resolves the last path segment to `v1`:
+ *   → `https://<host>/agents/<id>/v1`
+ *
+ * When `agentsBaseUrlOverride` is supplied (proxy / custom deployment), the
+ * URL is built directly from that base instead.
  */
-interface PartialClientOptions {
-  baseUrl?: Supplier<string>;
-  environment: Supplier<CortiEnvironmentUrls | { agents: string }>;
-}
-
-export async function resolveAgentsBaseUrl(
+async function resolveRpcUrl(
   client: CortiClient,
-  override?: string,
+  agentId: string,
+  agentsBaseUrlOverride?: string,
 ): Promise<string> {
-  if (override) return override.replace(/\/+$/, "");
-
-  const opts = (client as unknown as { _options: PartialClientOptions })._options;
-
-  let resolved: string | undefined;
-  if (opts.baseUrl) {
-    const base = await resolveSupplier(opts.baseUrl);
-    if (base) resolved = base;
+  if (agentsBaseUrlOverride) {
+    const base = agentsBaseUrlOverride.replace(/\/+$/, "");
+    return `${base}/agents/${encodeURIComponent(agentId)}/v1`;
   }
-  if (!resolved) {
-    const env = await resolveSupplier(opts.environment);
-    resolved = (env as { agents?: string }).agents;
-  }
-  if (!resolved || !/^https?:\/\//i.test(resolved)) {
-    throw new Error(
-      `[AgentSDK] Could not resolve agents base URL from CortiClient options ` +
-      `(got ${JSON.stringify(resolved)}). Pass a CortiClient configured with ` +
-      `\`environment: CortiEnvironment.Eu | CortiEnvironment.Us\`, or supply ` +
-      `\`agentsBaseUrl\` explicitly to \`AgentsClient\`.`,
-    );
-  }
-  return resolved.replace(/\/+$/, "");
+  const cardUrl = await client.agents.getCardUrl(agentId);
+  return new URL("v1", cardUrl).href;
 }
 
 // ── JSON-RPC envelope ─────────────────────────────────────────────────────────
@@ -140,9 +114,7 @@ export async function rpcCall<T>(
   agentsBaseUrl?: string,
   opts?: RpcCallOptions,
 ): Promise<T | undefined> {
-  const baseUrl = await resolveAgentsBaseUrl(client, agentsBaseUrl);
-  const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
-
+  const url = await resolveRpcUrl(client, agentId, agentsBaseUrl);
   const { controller, timer } = makeAbortController(opts);
 
   try {
@@ -173,9 +145,7 @@ export async function* rpcStream<T>(
   agentsBaseUrl?: string,
   opts?: RpcCallOptions,
 ): AsyncGenerator<T> {
-  const baseUrl = await resolveAgentsBaseUrl(client, agentsBaseUrl);
-  const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
-
+  const url = await resolveRpcUrl(client, agentId, agentsBaseUrl);
   const { controller, timer } = makeAbortController(opts);
 
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
