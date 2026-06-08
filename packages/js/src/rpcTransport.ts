@@ -1,8 +1,6 @@
-import type { CortiClient } from "@corti/sdk";
-
-const randomUUID = (): string =>
-  (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID();
-
+import type { CortiClient, CortiEnvironmentUrls } from "@corti/sdk";
+import { HttpError, RpcError } from "./errors.js";
+import { randomUUID } from "./utils.js";
 
 /**
  * JSON-RPC 2.0 transport for the A2A endpoint at `/agents/{id}/v1`.
@@ -12,6 +10,8 @@ const randomUUID = (): string =>
  * duplicate auth config.
  */
 
+// ── URL resolution ─────────────────────────────────────────────────────────────
+
 type Supplier<T> = T | Promise<T> | (() => T | Promise<T>);
 
 async function resolveSupplier<T>(s: Supplier<T>): Promise<T> {
@@ -19,11 +19,27 @@ async function resolveSupplier<T>(s: Supplier<T>): Promise<T> {
   return await v;
 }
 
-async function resolveAgentsBaseUrl(client: CortiClient): Promise<string> {
-  const opts = (client as unknown as { _options: {
-    baseUrl?: Supplier<string>;
-    environment: Supplier<{ agents: string }>;
-  } })._options;
+/**
+ * Shape of `CortiClient._options` we need to resolve the agents base URL.
+ *
+ * `_options` is `protected` (not private) in @corti/sdk ≥3.0.0 — the SDK
+ * itself accesses it in `CustomAgents.getCardUrl`. There is no public
+ * `client.getAgentsBaseUrl()` method yet; this cast is the only mechanism
+ * available. If @corti/sdk ever exposes a stable method, remove this cast
+ * and use it instead. Pass `agentsBaseUrl` explicitly to bypass this entirely.
+ */
+interface PartialClientOptions {
+  baseUrl?: Supplier<string>;
+  environment: Supplier<CortiEnvironmentUrls | { agents: string }>;
+}
+
+export async function resolveAgentsBaseUrl(
+  client: CortiClient,
+  override?: string,
+): Promise<string> {
+  if (override) return override.replace(/\/+$/, "");
+
+  const opts = (client as unknown as { _options: PartialClientOptions })._options;
 
   let resolved: string | undefined;
   if (opts.baseUrl) {
@@ -32,16 +48,20 @@ async function resolveAgentsBaseUrl(client: CortiClient): Promise<string> {
   }
   if (!resolved) {
     const env = await resolveSupplier(opts.environment);
-    resolved = env?.agents;
+    resolved = (env as { agents?: string }).agents;
   }
   if (!resolved || !/^https?:\/\//i.test(resolved)) {
     throw new Error(
-      `Could not resolve agents base URL from CortiClient options (got ${JSON.stringify(resolved)}). ` +
-      `Pass a CortiClient configured with \`baseUrl\` or \`environment: CortiEnvironment.Eu | CortiEnvironment.Us\`.`
+      `[AgentSDK] Could not resolve agents base URL from CortiClient options ` +
+      `(got ${JSON.stringify(resolved)}). Pass a CortiClient configured with ` +
+      `\`environment: CortiEnvironment.Eu | CortiEnvironment.Us\`, or supply ` +
+      `\`agentsBaseUrl\` explicitly to \`AgentsClient\`.`,
     );
   }
   return resolved.replace(/\/+$/, "");
 }
+
+// ── JSON-RPC envelope ─────────────────────────────────────────────────────────
 
 interface RpcEnvelope {
   jsonrpc: "2.0";
@@ -64,15 +84,16 @@ function buildEnvelope(method: string, params: unknown): RpcEnvelope {
 function unwrap<T>(payload: RpcResponse<T>): T | undefined {
   if (payload.error) {
     const { code, message, data } = payload.error;
-    const suffix = data !== undefined ? ` — ${JSON.stringify(data)}` : "";
-    throw new Error(`A2A error ${code}: ${message}${suffix}`);
+    throw new RpcError(code, message, data);
   }
   return payload.result;
 }
 
+// ── Headers ───────────────────────────────────────────────────────────────────
+
 async function buildHeaders(
   client: CortiClient,
-  accept: string
+  accept: string,
 ): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -84,6 +105,8 @@ async function buildHeaders(
   });
   return headers;
 }
+
+// ── Abort / timeout ───────────────────────────────────────────────────────────
 
 export interface RpcCallOptions {
   timeoutInSeconds?: number;
@@ -100,20 +123,24 @@ function makeAbortController(opts?: RpcCallOptions): {
   } else if (opts?.abortSignal) {
     opts.abortSignal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  const timer = opts?.timeoutInSeconds !== undefined
-    ? setTimeout(() => controller.abort(), opts.timeoutInSeconds * 1000)
-    : undefined;
+  const timer =
+    opts?.timeoutInSeconds !== undefined
+      ? setTimeout(() => controller.abort(), opts.timeoutInSeconds * 1000)
+      : undefined;
   return { controller, timer };
 }
+
+// ── rpcCall ───────────────────────────────────────────────────────────────────
 
 export async function rpcCall<T>(
   client: CortiClient,
   agentId: string,
   method: string,
   params: unknown,
-  opts?: RpcCallOptions
+  agentsBaseUrl?: string,
+  opts?: RpcCallOptions,
 ): Promise<T | undefined> {
-  const baseUrl = await resolveAgentsBaseUrl(client);
+  const baseUrl = await resolveAgentsBaseUrl(client, agentsBaseUrl);
   const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
 
   const { controller, timer } = makeAbortController(opts);
@@ -127,7 +154,7 @@ export async function rpcCall<T>(
     });
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
-      throw new Error(`HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
+      throw new HttpError(resp.status, `HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
     }
     const json = (await resp.json()) as RpcResponse<T>;
     return unwrap(json);
@@ -136,14 +163,17 @@ export async function rpcCall<T>(
   }
 }
 
+// ── rpcStream ─────────────────────────────────────────────────────────────────
+
 export async function* rpcStream<T>(
   client: CortiClient,
   agentId: string,
   method: string,
   params: unknown,
-  opts?: RpcCallOptions
+  agentsBaseUrl?: string,
+  opts?: RpcCallOptions,
 ): AsyncGenerator<T> {
-  const baseUrl = await resolveAgentsBaseUrl(client);
+  const baseUrl = await resolveAgentsBaseUrl(client, agentsBaseUrl);
   const url = `${baseUrl}/agents/${encodeURIComponent(agentId)}/v1`;
 
   const { controller, timer } = makeAbortController(opts);
@@ -159,10 +189,10 @@ export async function* rpcStream<T>(
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
-      throw new Error(`HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
+      throw new HttpError(resp.status, `HTTP ${resp.status} from ${url}${text ? `: ${text}` : ""}`);
     }
     if (!resp.body) {
-      throw new Error("No response body for stream");
+      throw new Error("[AgentSDK] No response body for stream");
     }
 
     reader = resp.body.getReader();
@@ -195,16 +225,8 @@ export async function* rpcStream<T>(
   } finally {
     if (timer) clearTimeout(timer);
     if (reader) {
-      try {
-        await reader.cancel();
-      } catch {
-        // ignore — best-effort cleanup
-      }
-      try {
-        reader.releaseLock();
-      } catch {
-        // ignore — already released or cancelled
-      }
+      try { await reader.cancel(); } catch { /* best-effort cleanup */ }
+      try { reader.releaseLock(); } catch { /* already released */ }
     }
   }
 }

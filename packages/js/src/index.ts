@@ -1,7 +1,9 @@
 export { AgentsClient } from "./AgentsClient.js";
+export type { AgentsClientOptions } from "./AgentsClient.js";
 export { AgentContext } from "./AgentContext.js";
 export { AgentHandle } from "./AgentHandle.js";
 export { MessageResponse } from "./MessageResponse.js";
+export { AgentSDKError, HttpError, RpcError } from "./errors.js";
 export { connectors } from "./connectors.js";
 export { Parallel, Workflow, parallel, workflow } from "./workflow.js";
 export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow.js";
