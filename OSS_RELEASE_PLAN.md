@@ -26,6 +26,9 @@ useful. The gaps are largely operational and hygiene-level — not architectural
   canonical org repo (e.g. `corti-ai/agent-sdk` or whichever org hosts this)
 - Confirm the `@corti` npm org is claimed and the publishing token is scoped to it
 
+> **Status:** Not addressed in PR #16 — requires an org-level decision on the npm scope
+> and GitHub repo before code changes make sense.
+
 ### 2. Fix the broken build script
 
 `packages/js/package.json`:
@@ -41,16 +44,25 @@ useful. The gaps are largely operational and hygiene-level — not architectural
 "build": "rm -rf dist && tsc -p tsconfig.json"
 ```
 
+> **Fixed in PR #16.** Changed to `require('fs').rmSync(...)`. Build script now works
+> correctly in all environments.
+
 ### 3. Reconcile the peer dependency version
 
 `package.json` declares `@corti/sdk >= 3.0.0`; `README.md` says `>= 1.2.0`.
 Determine the actual minimum version, update both, and add a note in the changelog if there
 was a breaking change in 3.0.0 that this SDK depends on.
 
+> **Status:** Not addressed in PR #16 — requires clarifying which SDK version introduced
+> the APIs this SDK depends on (`getAuthHeaders`, `getCardUrl`, `CustomAgents`). The
+> minimum is at least 3.0.0.
+
 ### 4. Verify `@corti/sdk` is publicly available on npm
 
 If `@corti/sdk` is not public on `npmjs.org`, the install step will fail for all external
 developers. Confirm it is published and accessible before announcing this SDK.
+
+> **Status:** Not addressed in PR #16 — external check required.
 
 ### 5. Add a CI test workflow
 
@@ -72,6 +84,8 @@ jobs:
 
 An OSS package without automated test gates on contributions is a liability.
 
+> **Status:** Not addressed in PR #16 — requires adding `.github/workflows/ci.yml`.
+
 ---
 
 ## High priority — fix before public announcement
@@ -91,6 +105,10 @@ The monkey-patch on `client.agents.create` is fragile:
 **Fix:** Remove the patch entirely. `AgentsClient.create()` is the documented entry point.
 No user needs `client.agents.create()` to be patched.
 
+> **Fixed in PR #16.** `_patchClientAgents`, `_PATCH_KEY`, and `hasEnhancedFields` removed.
+> `AgentsClient.create()` now calls `this._client.agents.create()` directly. An optional
+> `agentsBaseUrl` constructor param was added as a clean escape hatch for proxy deployments.
+
 ### 7. Break the dependency on `@corti/sdk` private internals
 
 `packages/js/src/rpcTransport.ts:22`
@@ -109,6 +127,12 @@ this silently at runtime with no TypeScript error.
   coupling)
 - Require the caller to pass `environment` explicitly alongside `CortiClient`
 
+> **Fixed in PR #16.** The `_options` cast is gone entirely. URL resolution now uses the
+> public `client.agents.getCardUrl(agentId)` method (available in `@corti/sdk` ≥3.0.0):
+> `getCardUrl` returns `https://<host>/agents/<id>/agent-card.json`; the relative reference
+> `"v1"` resolves it to the A2A RPC endpoint `https://<host>/agents/<id>/v1`. No private
+> fields accessed anywhere in the transport layer.
+
 ### 8. Fix `streamMessage` API shape
 
 `packages/js/src/AgentContext.ts:163`
@@ -125,6 +149,9 @@ for await (const e of ctx.streamMessage([...])) { ... }
 Change the return type from `Promise<AsyncIterable<StreamEvent>>` to
 `AsyncGenerator<StreamEvent>` and make the method `async *`.
 
+> **Fixed in PR #16.** `streamMessage` is now `async *streamMessage(): AsyncGenerator<StreamEvent>`.
+> Callers can write `for await (const e of ctx.streamMessage([...]))` directly.
+
 ### 9. Add credential support to `streamMessage`
 
 `sendMessage` proactively injects auth `DataPart`s on the first call of a new context;
@@ -132,6 +159,10 @@ Change the return type from `Promise<AsyncIterable<StreamEvent>>` to
 
 Implement the same `_buildAuthParts()` injection in the streaming path, mirroring
 `sendMessage`'s behaviour.
+
+> **Fixed in PR #16.** `streamMessage` now calls `_buildAuthParts()` and prepends auth
+> DataParts on the first call of a new context, matching `sendMessage` exactly. Covered
+> by a dedicated test in `agentContext.test.ts`.
 
 ### 10. Introduce structured error types
 
@@ -148,6 +179,10 @@ export class HttpError extends AgentSDKError { status: number }
 Re-throw all errors through these types in `rpcTransport.ts` and export them from
 `index.ts`.
 
+> **Fixed in PR #16.** `src/errors.ts` added with `AgentSDKError`, `RpcError` (`.code`,
+> `.data`), and `HttpError` (`.status`). `rpcTransport` throws these throughout. All three
+> exported from `index.ts`.
+
 ### 11. Expand test coverage
 
 Only `stateGraph.test.ts` exists. Add test files for:
@@ -159,6 +194,11 @@ Only `stateGraph.test.ts` exists. Add test files for:
 | `workflow` | Retry logic, `when` branching, `transform`, `stoppedEarly`, empty-skip guard |
 | `connectors` | `connectorsToRequestFields` mapping for all connector types, exhaustive check |
 | `rpcTransport` | SSE line parsing, timeout/abort, HTTP error, RPC error unwrapping |
+
+> **Fixed in PR #16.** Four new test files added; total tests grew from 27 to 92 (all
+> passing). Coverage: `agentContext.test.ts` (13 tests), `messageResponse.test.ts` (13),
+> `connectors.test.ts` (12), `workflow.test.ts` (16), `sseParser.test.ts` (11 — uses
+> stubbed `fetch` to exercise the real SSE transport layer end-to-end).
 
 ---
 
@@ -175,6 +215,9 @@ export const randomUUID = (): string => crypto.randomUUID();
 
 Node ≥ 18 (the declared engine minimum) guarantees `globalThis.crypto.randomUUID`.
 
+> **Fixed in PR #16.** `src/utils.ts` created with the shared helper; both files updated
+> to import from it.
+
 ### 13. Make SSE parsing spec-compliant
 
 `packages/js/src/rpcTransport.ts:176`
@@ -185,12 +228,20 @@ uses blank lines (`\n\n`) as event delimiters and supports multi-line `data:` va
 will fail if the server evolves. Rewrite the inner loop to accumulate field lines and
 dispatch on `\n\n`.
 
+> **Fixed in PR #16.** Parser fully rewritten: normalises `\r\n`/`\r` → `\n`, dispatches
+> on `\n\n` event boundaries, concatenates multiple `data:` lines with `\n` per spec,
+> correctly handles `[DONE]` termination (previous nested-generator approach left the buffer
+> stale), and ignores `event:`/`id:`/`retry:`/comment fields. Tested across 11 scenarios
+> in `sseParser.test.ts`.
+
 ### 14. Fix `MessageResponse.task` return type
 
 `packages/js/src/MessageResponse.ts:44`
 
 The constructor throws on `undefined`, so `.task` can never be `undefined`. The return type
 `Corti.AgentsTask | undefined` is misleading. Change to `Corti.AgentsTask`.
+
+> **Fixed in PR #16.** Return type corrected to `Corti.AgentsTask`.
 
 ### 15. Make `AgentHandle.description` and `.systemPrompt` nullable
 
@@ -199,6 +250,8 @@ The constructor throws on `undefined`, so `.task` can never be `undefined`. The 
 Typed as `string` but the underlying Corti SDK types may allow `undefined`. Change to
 `string | undefined` or add runtime guards to avoid surprising users with empty-string
 values.
+
+> **Fixed in PR #16.** Both getters now return `string | undefined`.
 
 ### 16. Remove or clearly gate `connectors.a2a`
 
@@ -210,6 +263,10 @@ Options:
 - Remove from the public API entirely until supported (preferred for a clean v1)
 - Keep but gate behind an `@experimental` JSDoc tag with a clear error message
 
+> **Fixed in PR #16.** Removed entirely: `A2aConnector` interface, `connectors.a2a()`
+> factory, the `case "a2a"` throw in `connectorsToRequestFields`, and the export from
+> `index.ts`. `ConnectorDef` is now `McpConnector | RegistryConnector | CortiAgentConnector`.
+
 ### 17. Document the silent filter in `AgentsClient.list()`
 
 `packages/js/src/AgentsClient.ts:84`
@@ -220,6 +277,10 @@ Options:
 
 Add a comment explaining what agents with a `type` field represent and why they are
 excluded, or expose the unfiltered list as an option.
+
+> **Fixed in PR #16.** Explanatory comment added clarifying that entries with a top-level
+> `type` field are SDK-internal typed objects (not user-created agents) and are intentionally
+> excluded.
 
 ---
 
@@ -238,12 +299,16 @@ excluded, or expose the unfiltered list as an option.
 }
 ```
 
+> **Status:** Not addressed in PR #16.
+
 ### 19. Add dual CJS + ESM build (optional but high-impact)
 
 The package is ESM-only. Many Node.js projects — particularly older tooling, `ts-node` in
 CJS mode, and Jest environments — cannot consume ESM directly. A dual build using
 `tsconfig.cjs.json` + a `dist/cjs/` output, plus an `exports` map with `require` conditions,
 would remove the most common adoption friction.
+
+> **Status:** Not addressed in PR #16.
 
 ### 20. Add standard OSS files
 
@@ -253,11 +318,15 @@ would remove the most common adoption friction.
 | `CONTRIBUTING.md` | Setup, test commands, PR process, branch conventions |
 | `SECURITY.md` | Responsible disclosure contact and process |
 
+> **Status:** Not addressed in PR #16.
+
 ### 21. Add publish safety to the CI workflow
 
 The current `publish.yml` runs immediately on any `v*` tag. Add a dry-run step
 (`npm publish --dry-run`) before the real publish so the artifact can be inspected, and
 consider requiring a manual approval via a GitHub environment gate.
+
+> **Status:** Not addressed in PR #16.
 
 ---
 
@@ -283,19 +352,21 @@ Phase 4 — Ongoing OSS health
 
 - [ ] Rename package to `@corti/agent-sdk`
 - [ ] Fix repository/homepage/bugs URLs to org repo
-- [ ] Fix broken build script (`fs` is not a global)
+- [x] Fix broken build script (`fs` is not a global) — PR #16
 - [ ] Reconcile `@corti/sdk` peer dependency version across `package.json` + README
 - [ ] Confirm `@corti/sdk` is public on npm
 - [ ] Add `.github/workflows/ci.yml` (test on every PR)
-- [ ] Remove `_patchClientAgents` monkey-patch
-- [ ] Replace private `_options` access in `rpcTransport` with a stable URL resolution path
-- [ ] Fix `streamMessage` to return `AsyncGenerator` directly (not `Promise<AsyncIterable>`)
-- [ ] Add credential injection to `streamMessage`
-- [ ] Add structured error classes (`RpcError`, `HttpError`)
-- [ ] Add tests for `AgentContext`, `MessageResponse`, `workflow`, `connectors`, `rpcTransport`
-- [ ] Extract duplicated `randomUUID` to `utils.ts`
-- [ ] Fix SSE parser to use `\n\n` event delimiter
-- [ ] Fix `MessageResponse.task` return type
-- [ ] Remove or gate `connectors.a2a` behind experimental flag
+- [x] Remove `_patchClientAgents` monkey-patch — PR #16
+- [x] Replace private `_options` access with `client.agents.getCardUrl()` — PR #16
+- [x] Fix `streamMessage` to return `AsyncGenerator` directly — PR #16
+- [x] Add credential injection to `streamMessage` — PR #16
+- [x] Add structured error classes (`RpcError`, `HttpError`) — PR #16
+- [x] Add tests for `AgentContext`, `MessageResponse`, `workflow`, `connectors`, `rpcTransport` — PR #16
+- [x] Extract duplicated `randomUUID` to `utils.ts` — PR #16
+- [x] Fix SSE parser to use `\n\n` event delimiter — PR #16
+- [x] Fix `MessageResponse.task` return type — PR #16
+- [x] Make `AgentHandle.description` and `.systemPrompt` nullable — PR #16
+- [x] Remove `connectors.a2a` — PR #16
+- [x] Document `AgentsClient.list()` filter — PR #16
 - [ ] Add `author` and expanded `keywords` to `package.json`
 - [ ] Add `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`
