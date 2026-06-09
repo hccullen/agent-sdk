@@ -36,16 +36,18 @@ import type {
 export class AgentContext {
   private _contextId: string | undefined;
   private readonly _credentials: CredentialStore | undefined;
+  private readonly _baseUrl: string | undefined;
 
   constructor(
     private readonly _agentId: string,
     private readonly _client: CortiClient,
-    private readonly _baseUrl: string | undefined,
     initialContextId?: string,
     credentials?: CredentialStore,
+    baseUrl?: string,
   ) {
     this._contextId = initialContextId;
     this._credentials = credentials;
+    this._baseUrl = baseUrl;
   }
 
   /** The context (thread) ID once the first message has been sent. */

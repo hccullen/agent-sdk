@@ -40,7 +40,7 @@ Requirements:
 
 - Node.js **>= 18** (uses native `fetch` and `AsyncIterable`).
 - A Corti API tenant with credentials (`CORTI_CLIENT_ID`, `CORTI_CLIENT_SECRET`, `CORTI_TENANT_NAME`, `CORTI_ENVIRONMENT`).
-- `@corti/sdk` **>= 1.2.0** as a peer dependency.
+- `@corti/sdk` **>= 3.0.0** as a peer dependency.
 
 The package is ESM-only (`"type": "module"`). For CommonJS projects, use dynamic `import()` or set your project to ESM.
 
@@ -86,7 +86,6 @@ import { connectors } from "@newsioaps/agent-sdk";
 //   connectors.fromAgent({ agentId })           — wire another agent in
 //   connectors.registry({ name })               — pull a published Corti expert
 //   connectors.mcp({ mcpUrl, name?, authType?, token? })  — attach an MCP server
-//   connectors.a2a({ url })                     — attach an A2A endpoint
 
 // Composition primitives
 import { workflow, parallel, Workflow, Parallel } from "@newsioaps/agent-sdk";
@@ -97,7 +96,7 @@ import { stateGraph, agentNode, END, StateGraph } from "@newsioaps/agent-sdk";
 // Types
 import type {
   CreateAgentOptions, UpdateAgentOptions, Lifecycle,
-  ConnectorDef, McpConnector, RegistryConnector, CortiAgentConnector, A2aConnector,
+  ConnectorDef, McpConnector, RegistryConnector, CortiAgentConnector,
   Credential, CredentialStore, TokenCredential, OAuth2Credential,
   Part, TextPart, DataPart, FilePart,
   Artifact, Message, Task, TaskState, TaskStatus,
@@ -274,7 +273,6 @@ connectors.mcp({
   authType?: "bearer" | "oauth2" | "none",
   token?: string,                                             // shorthand for static auth
 })                                                            // McpConnector
-connectors.a2a({ url: string })                               // A2aConnector
 ```
 
 Typical registry experts (check availability with `getRegistryExperts()` below):
@@ -384,11 +382,10 @@ const agent = await agents.create({
 });
 
 const ctx = agent.createContext();
-const stream = await ctx.streamMessage([
-  { kind: "text", text: "Describe how photosynthesis works." },
-]);
 
-for await (const event of stream) {
+for await (const event of ctx.streamMessage([
+  { kind: "text", text: "Describe how photosynthesis works." },
+])) {
   // Status transitions: "submitted" → "working" → "completed" | "failed"
   if (event.statusUpdate) {
     process.stdout.write(`[${event.statusUpdate.status.state}] `);
@@ -399,7 +396,7 @@ for await (const event of stream) {
       if (p.kind === "text") process.stdout.write(p.text);
     }
   }
-  // event.artifact — emitted when the agent attaches structured outputs
+  // event.artifactUpdate — emitted when the agent attaches structured outputs
 }
 ```
 
@@ -518,7 +515,7 @@ All three live on `AgentContext` and send to the **same** thread (the `contextId
 | ---------------------------- | ------------------------------ | ------------------------------ | -------------------------------------------------------------------------------- |
 | `sendText(text, opts?)`      | `string`                       | `Promise<MessageResponse>`     | You only need to send plain text. Convenience wrapper.                           |
 | `sendMessage(parts, opts?)`  | `Part[]` (text / data / file)  | `Promise<MessageResponse>`     | You need to attach data, files, or mix part kinds in one turn.                   |
-| `streamMessage(parts)`       | `Part[]`                       | `Promise<AsyncIterable<StreamEvent>>` | You want incremental tokens / status updates as they arrive (UX, long replies). |
+| `streamMessage(parts)`       | `Part[]`                       | `AsyncGenerator<StreamEvent>` | You want incremental tokens / status updates as they arrive (UX, long replies). |
 
 Equivalences:
 
@@ -546,7 +543,7 @@ await ctx.sendMessage([
 
 `streamMessage` returns events incrementally; `sendMessage` waits for `completed`/`failed` and returns the final aggregate. Streaming has **no** buffered `MessageResponse` — assemble the text yourself by concatenating `event.message.parts`.
 
-> **Auth-required follow-up** is handled automatically by `sendText` / `sendMessage` (credentials forwarded as a DataPart) but **not** by `streamMessage`. If you need streaming + MCP auth, send a non-streaming first turn to satisfy auth, then stream subsequent turns on the same context.
+> **Auth-required follow-up** is handled automatically by `sendText` / `sendMessage` (credentials forwarded proactively on the first turn and re-sent if the agent replies `auth-required`). `streamMessage` also injects credentials proactively on the first call of a new context, but does **not** retry on `auth-required`. If you need streaming + MCP auth and the agent may return `auth-required`, send a non-streaming first turn to satisfy auth, then stream subsequent turns on the same context.
 
 ---
 
@@ -556,7 +553,7 @@ await ctx.sendMessage([
 
 | Method                        | Returns                       | Description                                            |
 | ----------------------------- | ----------------------------- | ------------------------------------------------------ |
-| `new AgentsClient(corti)`     | `AgentsClient`                | Wrap a `CortiClient`. Patches `corti.agents.create` to return `AgentHandle`. |
+| `new AgentsClient(corti)`     | `AgentsClient`                | Wrap a `CortiClient`. Accepts an optional `{ agentsBaseUrl }` for proxy deployments. |
 | `create(options)`             | `Promise<AgentHandle>`        | Create a new agent. Takes `CreateAgentOptions`.        |
 | `get(agentId)`                | `Promise<AgentHandle>`        | Fetch an existing agent by ID.                         |
 | `list()`                      | `Promise<AgentHandle[]>`      | List all agents in the tenant.                         |
@@ -583,7 +580,7 @@ await ctx.sendMessage([
 | `id`                                  | `string \| undefined`                         | The thread/context ID. `undefined` until the first turn completes. |
 | `sendText(text, opts?)`               | `Promise<MessageResponse>`                    | Send plain text. `opts.timeoutInSeconds` (default 60). |
 | `sendMessage(parts, opts?)`           | `Promise<MessageResponse>`                    | Send arbitrary `Part[]` (text/data/file).              |
-| `streamMessage(parts)`                | `Promise<AsyncIterable<StreamEvent>>`         | Stream incremental events for the reply.               |
+| `streamMessage(parts)`                | `AsyncGenerator<StreamEvent>`                 | Stream incremental events for the reply.               |
 
 ### `MessageResponse`
 
@@ -617,7 +614,6 @@ await ctx.sendMessage([
 | `connectors.fromAgent({ agentId })` | `CortiAgentConnector` | Wire another Corti agent in as a sub-agent.            |
 | `connectors.registry({ name })`     | `RegistryConnector`   | Use a published Corti expert by registry name.         |
 | `connectors.mcp({ mcpUrl, name?, authType?, token? })` | `McpConnector` | Attach an MCP server. `name` becomes the credential key. |
-| `connectors.a2a({ url })`           | `A2aConnector`        | Attach an A2A endpoint.                                |
 
 ---
 
@@ -628,7 +624,7 @@ await ctx.sendMessage([
 | `CreateAgentOptions`  | `{ name, description, systemPrompt?, connectors?, lifecycle? }`                                                             | Input to `agents.create()`.                      |
 | `UpdateAgentOptions`  | `{ name?, description?, systemPrompt?, connectors? }`                                                                       | All fields optional. `connectors` replaces all.  |
 | `Lifecycle`           | `"ephemeral"` \| `"persistent"`                                                                                             | Default: `"ephemeral"` (server GC).              |
-| `ConnectorDef`        | `McpConnector \| RegistryConnector \| CortiAgentConnector \| A2aConnector`                                                  | Use `connectors.*` helpers to build these.       |
+| `ConnectorDef`        | `McpConnector \| RegistryConnector \| CortiAgentConnector`                                                                  | Use `connectors.*` helpers to build these.       |
 | `Part`                | `TextPart \| DataPart \| FilePart`                                                                                          | Discriminated by `kind`.                         |
 | `TextPart`            | `{ kind: "text"; text: string }`                                                                                            |                                                  |
 | `DataPart`            | `{ kind: "data"; data: unknown }`                                                                                           | Used for structured payloads + auth credentials. |

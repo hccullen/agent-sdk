@@ -56,7 +56,7 @@ export class AgentHandle {
    * ```
    */
   createContext(opts?: { credentials?: CredentialStore }): AgentContext {
-    return new AgentContext(this._agent.id, this._client, this._baseUrl, undefined, opts?.credentials);
+    return new AgentContext(this._agent.id, this._client, undefined, opts?.credentials, this._baseUrl);
   }
 
   /**
@@ -83,7 +83,7 @@ export class AgentHandle {
    * ```
    */
   getContext(contextId: string, opts?: { credentials?: CredentialStore }): AgentContext {
-    return new AgentContext(this._agent.id, this._client, this._baseUrl, contextId, opts?.credentials);
+    return new AgentContext(this._agent.id, this._client, contextId, opts?.credentials, this._baseUrl);
   }
 
   /**
@@ -105,9 +105,9 @@ export class AgentHandle {
     const ctx = new AgentContext(
       this._agent.id,
       this._client,
-      this._baseUrl,
       undefined,
       opts?.credentials,
+      this._baseUrl,
     );
     const sendOpts =
       opts?.timeoutInSeconds !== undefined ? { timeoutInSeconds: opts.timeoutInSeconds } : undefined;

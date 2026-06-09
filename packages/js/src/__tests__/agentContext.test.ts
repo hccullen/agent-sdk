@@ -99,7 +99,7 @@ describe("AgentContext", () => {
 
     it("uses an explicit initial contextId from getContext", async () => {
       mockedRpcCall.mockResolvedValue(makeTask({ contextId: "pre-existing" }));
-      const ctx = new AgentContext("agent-1", fakeClient, undefined, "pre-existing");
+      const ctx = new AgentContext("agent-1", fakeClient, "pre-existing");
       await ctx.sendText("resume");
 
       const params = mockedRpcCall.mock.calls[0][3] as { message: Corti.AgentsMessage };
@@ -116,7 +116,7 @@ describe("AgentContext", () => {
 
     it("injects auth DataParts on the first message of a new context", async () => {
       mockedRpcCall.mockResolvedValue(makeTask());
-      const ctx = new AgentContext("agent-1", fakeClient, undefined, undefined, creds);
+      const ctx = new AgentContext("agent-1", fakeClient, undefined, creds);
       await ctx.sendText("Hello");
 
       const params = mockedRpcCall.mock.calls[0][3] as { message: Corti.AgentsMessage };
@@ -130,7 +130,7 @@ describe("AgentContext", () => {
         .mockResolvedValueOnce(makeTask({ contextId: "ctx-1" }))
         .mockResolvedValueOnce(makeTask({ contextId: "ctx-1" }));
 
-      const ctx = new AgentContext("agent-1", fakeClient, undefined, undefined, creds);
+      const ctx = new AgentContext("agent-1", fakeClient, undefined, creds);
       await ctx.sendText("first");
       await ctx.sendText("second");
 
@@ -147,7 +147,7 @@ describe("AgentContext", () => {
         .mockResolvedValueOnce(authRequired)
         .mockResolvedValueOnce(completed);
 
-      const ctx = new AgentContext("agent-1", fakeClient, undefined, undefined, creds);
+      const ctx = new AgentContext("agent-1", fakeClient, undefined, creds);
       const result = await ctx.sendText("Hello");
 
       expect(mockedRpcCall).toHaveBeenCalledTimes(2);
@@ -209,7 +209,7 @@ describe("AgentContext", () => {
       mockedRpcStream.mockReturnValue(gen() as never);
 
       const creds = { "my-mcp": { type: "token" as const, token: "tok_s" } };
-      const ctx = new AgentContext("agent-1", fakeClient, undefined, undefined, creds);
+      const ctx = new AgentContext("agent-1", fakeClient, undefined, creds);
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       for await (const _ of ctx.streamMessage([{ kind: "text", text: "Hi" }])) { /* drain */ }
