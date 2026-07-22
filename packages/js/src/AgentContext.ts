@@ -1,10 +1,7 @@
 import type { Corti, CortiClient } from "@corti/sdk";
-
-const randomUUID = (): string =>
-  (globalThis as unknown as { crypto: { randomUUID(): string } }).crypto.randomUUID();
-
 import { MessageResponse } from "./MessageResponse.js";
 import { rpcCall, rpcStream } from "./rpcTransport.js";
+import { randomUUID } from "./utils.js";
 import type {
   Credential,
   CredentialStore,
@@ -39,15 +36,18 @@ import type {
 export class AgentContext {
   private _contextId: string | undefined;
   private readonly _credentials: CredentialStore | undefined;
+  private readonly _baseUrl: string | undefined;
 
   constructor(
-    private readonly agentId: string,
-    private readonly client: CortiClient,
+    private readonly _agentId: string,
+    private readonly _client: CortiClient,
     initialContextId?: string,
-    credentials?: CredentialStore
+    credentials?: CredentialStore,
+    baseUrl?: string,
   ) {
     this._contextId = initialContextId;
     this._credentials = credentials;
+    this._baseUrl = baseUrl;
   }
 
   /** The context (thread) ID once the first message has been sent. */
@@ -61,7 +61,12 @@ export class AgentContext {
     }
     return {
       kind: "data",
-      data: { type: "credentials", mcp_name: mcpName, client_id: cred.clientId, client_secret: cred.clientSecret },
+      data: {
+        type: "credentials",
+        mcp_name: mcpName,
+        client_id: cred.clientId,
+        client_secret: cred.clientSecret,
+      },
     };
   }
 
@@ -70,27 +75,30 @@ export class AgentContext {
     return Object.entries(this._credentials).map(([name, cred]) => this._buildAuthPart(name, cred));
   }
 
+  private _buildMessageParams(parts: Part[]): object {
+    return {
+      message: {
+        role: "user",
+        parts,
+        messageId: randomUUID(),
+        kind: "message",
+        ...(this._contextId !== undefined && { contextId: this._contextId }),
+      },
+    };
+  }
+
   /** Send parts to the API via A2A JSON-RPC and capture contextId. */
   private async _doSend(
     parts: Part[],
-    opts?: { timeoutInSeconds?: number }
+    opts?: { timeoutInSeconds?: number },
   ): Promise<MessageResponse> {
     const task = await rpcCall<Corti.AgentsTask>(
-      this.client,
-      this.agentId,
+      this._client,
+      this._agentId,
       "message/send",
-      {
-        message: {
-          role: "user",
-          parts,
-          messageId: randomUUID(),
-          kind: "message",
-          ...(this._contextId !== undefined && { contextId: this._contextId }),
-        },
-      },
-      opts?.timeoutInSeconds !== undefined
-        ? { timeoutInSeconds: opts.timeoutInSeconds }
-        : undefined
+      this._buildMessageParams(parts),
+      this._baseUrl,
+      opts?.timeoutInSeconds !== undefined ? { timeoutInSeconds: opts.timeoutInSeconds } : undefined,
     );
 
     if (this._contextId === undefined && task?.contextId) {
@@ -112,13 +120,12 @@ export class AgentContext {
    */
   async sendMessage(
     parts: Part[],
-    opts?: { timeoutInSeconds?: number }
+    opts?: { timeoutInSeconds?: number },
   ): Promise<MessageResponse> {
     // Proactively include auth DataParts on the first message of a new context.
     const isNewContext = this._contextId === undefined;
-    const allParts: Part[] = isNewContext && this._credentials
-      ? [...this._buildAuthParts(), ...parts]
-      : parts;
+    const allParts: Part[] =
+      isNewContext && this._credentials ? [...this._buildAuthParts(), ...parts] : parts;
 
     const result = await this._doSend(allParts, opts);
 
@@ -140,10 +147,7 @@ export class AgentContext {
    * console.log(r.status);   // "completed"
    * ```
    */
-  async sendText(
-    text: string,
-    opts?: { timeoutInSeconds?: number }
-  ): Promise<MessageResponse> {
+  async sendText(text: string, opts?: { timeoutInSeconds?: number }): Promise<MessageResponse> {
     const part: Corti.AgentsTextPart = { kind: "text", text };
     return this.sendMessage([part], opts);
   }
@@ -151,37 +155,34 @@ export class AgentContext {
   /**
    * Send a message and receive the agent's response as an async stream of events.
    *
+   * Credentials are injected proactively on the first call of a new context,
+   * mirroring the behaviour of `sendMessage`.
+   *
    * @example
    * ```ts
-   * const stream = await ctx.streamMessage([{ kind: "text", text: "Hello!" }]);
-   * for await (const event of stream) {
+   * for await (const event of ctx.streamMessage([{ kind: "text", text: "Hello!" }])) {
    *   if (event.statusUpdate) console.log(event.statusUpdate.status.state);
    *   if (event.message)      console.log(event.message.parts);
    * }
    * ```
    */
-  async streamMessage(parts: Part[]): Promise<AsyncIterable<StreamEvent>> {
+  async *streamMessage(parts: Part[]): AsyncGenerator<StreamEvent> {
+    const isNewContext = this._contextId === undefined;
+    const allParts: Part[] =
+      isNewContext && this._credentials ? [...this._buildAuthParts(), ...parts] : parts;
+
     const stream = rpcStream<StreamEvent>(
-      this.client,
-      this.agentId,
+      this._client,
+      this._agentId,
       "message/stream",
-      {
-        message: {
-          role: "user",
-          parts,
-          messageId: randomUUID(),
-          kind: "message",
-          ...(this._contextId !== undefined && { contextId: this._contextId }),
-        },
-      }
+      this._buildMessageParams(allParts),
+      this._baseUrl,
     );
 
-    return this._wrapStream(stream);
+    yield* this._wrapStream(stream);
   }
 
-  private async *_wrapStream(
-    inner: AsyncIterable<unknown>
-  ): AsyncGenerator<StreamEvent> {
+  private async *_wrapStream(inner: AsyncIterable<unknown>): AsyncGenerator<StreamEvent> {
     for await (const rawEvent of inner) {
       const event = normalizeStreamEvent(rawEvent);
       if (this._contextId === undefined) {
@@ -209,10 +210,15 @@ function normalizeStreamEvent(raw: unknown): StreamEvent {
     return obj as StreamEvent;
   }
   switch (obj.kind) {
-    case "task":            return { task: obj as unknown as Corti.AgentsTask };
-    case "status-update":   return { statusUpdate: obj as unknown as TaskStatusUpdateEvent };
-    case "artifact-update": return { artifactUpdate: obj as unknown as TaskArtifactUpdateEvent };
-    case "message":         return { message: obj as unknown as Corti.AgentsMessage };
-    default:                return obj as StreamEvent;
+    case "task":
+      return { task: obj as unknown as Corti.AgentsTask };
+    case "status-update":
+      return { statusUpdate: obj as unknown as TaskStatusUpdateEvent };
+    case "artifact-update":
+      return { artifactUpdate: obj as unknown as TaskArtifactUpdateEvent };
+    case "message":
+      return { message: obj as unknown as Corti.AgentsMessage };
+    default:
+      return obj as StreamEvent;
   }
 }

@@ -5,12 +5,6 @@ import type { CreateAgentOptions } from "./types.js";
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-function hasEnhancedFields(
-  req: CreateAgentOptions | Corti.AgentsCreateAgent
-): req is CreateAgentOptions {
-  return "connectors" in req || "lifecycle" in req;
-}
-
 function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
   return {
     name: opts.name,
@@ -25,35 +19,27 @@ function toSdkRequest(opts: CreateAgentOptions): Corti.AgentsCreateAgent {
 
 // ── AgentsClient ─────────────────────────────────────────────────────────────
 
+export interface AgentsClientOptions {
+  /**
+   * Override the agents API base URL (e.g. `"https://api.eu.corti.app"`).
+   *
+   * When omitted the SDK reads the URL from the `CortiClient`'s configuration.
+   * Provide this if you are proxying requests or if URL auto-resolution fails.
+   */
+  agentsBaseUrl?: string;
+}
+
 export class AgentsClient {
-  private readonly client: CortiClient;
+  private readonly _client: CortiClient;
+  private readonly _baseUrl: string | undefined;
 
-  private static readonly _PATCH_KEY = "__corti_agent_sdk_patched__";
-
-  constructor(client: CortiClient) {
-    this.client = client;
-    this._patchClientAgents();
+  constructor(client: CortiClient, opts?: AgentsClientOptions) {
+    this._client = client;
+    this._baseUrl = opts?.agentsBaseUrl;
   }
 
-  private _patchClientAgents(): void {
-    const agents = this.client.agents as unknown as Record<string, unknown>;
-    if (agents[AgentsClient._PATCH_KEY]) return;
-    agents[AgentsClient._PATCH_KEY] = true;
-
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const self = this;
-    const originalCreate = (agents["create"] as (req: Corti.AgentsCreateAgent) => Promise<Corti.AgentsAgent>).bind(agents);
-
-    agents["create"] = async (
-      request: CreateAgentOptions | Corti.AgentsCreateAgent,
-      _options?: unknown
-    ): Promise<AgentHandle> => {
-      const sdkRequest = hasEnhancedFields(request)
-        ? toSdkRequest(request)
-        : (request as Corti.AgentsCreateAgent);
-      const agent = await originalCreate(sdkRequest);
-      return new AgentHandle(agent as Corti.AgentsAgent, self.client);
-    };
+  private _wrap(agent: Corti.AgentsAgent): AgentHandle {
+    return new AgentHandle(agent, this._client, this._baseUrl);
   }
 
   // ── Typed entry points ─────────────────────────────────────────────────────
@@ -61,31 +47,38 @@ export class AgentsClient {
   /**
    * Create a new agent and return a typed `AgentHandle`.
    *
-   * This is the recommended entry point for TypeScript consumers.
+   * @example
+   * ```ts
+   * const agent = await agents.create({
+   *   name: "my-agent",
+   *   description: "Does X",
+   *   systemPrompt: "You are …",
+   * });
+   * ```
    */
   async create(options: CreateAgentOptions): Promise<AgentHandle> {
-    // Delegates to the patched client.agents.create so the implementation
-    // lives in one place.
-    return (
-      this.client.agents as unknown as {
-        create(r: CreateAgentOptions): Promise<AgentHandle>;
-      }
-    ).create(options);
+    const raw = await this._client.agents.create(toSdkRequest(options));
+    return this._wrap(raw as Corti.AgentsAgent);
   }
 
   async get(agentId: string): Promise<AgentHandle> {
-    const agent = await this.client.agents.get(agentId);
-    return new AgentHandle(agent as Corti.AgentsAgent, this.client);
+    const raw = await this._client.agents.get(agentId);
+    return this._wrap(raw as Corti.AgentsAgent);
   }
 
   async list(): Promise<AgentHandle[]> {
-    const agents = await this.client.agents.list();
+    const agents = await this._client.agents.list();
+    // The SDK list response may include typed system entries (e.g. pagination
+    // cursors or sentinel objects that carry a `type` discriminant).  Only
+    // plain AgentsAgent objects — which have no top-level `type` field — are
+    // user-created agents; the rest are filtered out.
     return agents
       .filter((a): a is Corti.AgentsAgent => !("type" in a))
-      .map((a) => new AgentHandle(a, this.client));
+      .map((a) => this._wrap(a));
   }
 
+  /** Wrap a raw `Corti.AgentsAgent` you already hold into an `AgentHandle`. */
   wrap(agent: Corti.AgentsAgent): AgentHandle {
-    return new AgentHandle(agent, this.client);
+    return this._wrap(agent);
   }
 }

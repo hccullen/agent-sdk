@@ -8,12 +8,13 @@ import type { CredentialStore, Part, UpdateAgentOptions } from "./types.js";
  * A handle to a Corti agent that enriches the raw SDK agent with
  * conversation-management helpers.
  *
- * Returned by `AgentsClient.create()` (and the patched `client.agents.create()`).
+ * Returned by `AgentsClient.create()`, `.get()`, and `.list()`.
  */
 export class AgentHandle {
   constructor(
     private readonly _agent: Corti.AgentsAgent,
-    private readonly client: CortiClient
+    private readonly _client: CortiClient,
+    private readonly _baseUrl?: string,
   ) {}
 
   get id(): string {
@@ -24,11 +25,11 @@ export class AgentHandle {
     return this._agent.name;
   }
 
-  get description(): string {
+  get description(): string | undefined {
     return this._agent.description;
   }
 
-  get systemPrompt(): string {
+  get systemPrompt(): string | undefined {
     return this._agent.systemPrompt;
   }
 
@@ -55,7 +56,7 @@ export class AgentHandle {
    * ```
    */
   createContext(opts?: { credentials?: CredentialStore }): AgentContext {
-    return new AgentContext(this._agent.id, this.client, undefined, opts?.credentials);
+    return new AgentContext(this._agent.id, this._client, undefined, opts?.credentials, this._baseUrl);
   }
 
   /**
@@ -82,7 +83,7 @@ export class AgentHandle {
    * ```
    */
   getContext(contextId: string, opts?: { credentials?: CredentialStore }): AgentContext {
-    return new AgentContext(this._agent.id, this.client, contextId, opts?.credentials);
+    return new AgentContext(this._agent.id, this._client, contextId, opts?.credentials, this._baseUrl);
   }
 
   /**
@@ -99,18 +100,17 @@ export class AgentHandle {
    */
   async run(
     input: string | Part[],
-    opts?: { credentials?: CredentialStore; timeoutInSeconds?: number }
+    opts?: { credentials?: CredentialStore; timeoutInSeconds?: number },
   ): Promise<MessageResponse> {
     const ctx = new AgentContext(
       this._agent.id,
-      this.client,
+      this._client,
       undefined,
-      opts?.credentials
+      opts?.credentials,
+      this._baseUrl,
     );
     const sendOpts =
-      opts?.timeoutInSeconds !== undefined
-        ? { timeoutInSeconds: opts.timeoutInSeconds }
-        : undefined;
+      opts?.timeoutInSeconds !== undefined ? { timeoutInSeconds: opts.timeoutInSeconds } : undefined;
     return typeof input === "string" ? ctx.sendText(input, sendOpts) : ctx.sendMessage(input, sendOpts);
   }
 
@@ -131,12 +131,13 @@ export class AgentHandle {
   async update(opts: UpdateAgentOptions): Promise<AgentHandle> {
     // When `connectors` is provided, semantics is "replace entirely" — we must
     // send both `experts` and `mcpServers` so either side clears if it's empty.
-    const connectorFields = opts.connectors !== undefined
-      ? (() => {
-          const f = connectorsToRequestFields(opts.connectors);
-          return { experts: f.experts ?? [], mcpServers: f.mcpServers ?? [] };
-        })()
-      : undefined;
+    const connectorFields =
+      opts.connectors !== undefined
+        ? (() => {
+            const f = connectorsToRequestFields(opts.connectors);
+            return { experts: f.experts ?? [], mcpServers: f.mcpServers ?? [] };
+          })()
+        : undefined;
 
     const body: Corti.AgentsUpdateAgent = {
       ...(opts.name !== undefined && { name: opts.name }),
@@ -145,8 +146,8 @@ export class AgentHandle {
       ...(connectorFields ?? {}),
     };
 
-    const updated = await this.client.agents.update(this._agent.id, body);
-    return new AgentHandle(updated as Corti.AgentsAgent, this.client);
+    const updated = await this._client.agents.update(this._agent.id, body);
+    return new AgentHandle(updated as Corti.AgentsAgent, this._client, this._baseUrl);
   }
 
   /**
@@ -154,13 +155,13 @@ export class AgentHandle {
    * Useful after updates made via `client.agents.update()`.
    */
   async refresh(): Promise<AgentHandle> {
-    const updated = await this.client.agents.get(this._agent.id);
+    const updated = await this._client.agents.get(this._agent.id);
     const agent = !("type" in updated) ? (updated as Corti.AgentsAgent) : this._agent;
-    return new AgentHandle(agent, this.client);
+    return new AgentHandle(agent, this._client, this._baseUrl);
   }
 
   /** Delete this agent. After this call the handle should no longer be used. */
   async delete(): Promise<void> {
-    await this.client.agents.delete(this._agent.id);
+    await this._client.agents.delete(this._agent.id);
   }
 }
