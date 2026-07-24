@@ -1,5 +1,12 @@
 import createClient, { type Middleware } from "openapi-fetch";
 import type { paths } from "./gen/api-v2.js";
+import { AgentsResource } from "./agents.js";
+import { ContextsResource } from "./contexts.js";
+import { RegistryResource } from "./registry.js";
+import { UsageResource } from "./usage.js";
+import { FeedbackResource } from "./feedback.js";
+import { AgentCardResource } from "./agentCard.js";
+import { ModelsResource } from "./models.js";
 
 const REGION_URLS: Record<string, string> = {
   eu: "https://api.eu.corti.app",
@@ -27,8 +34,15 @@ export interface CortiClientOptions {
 
 export class CortiClient {
   readonly raw: ReturnType<typeof createClient<paths>>;
-
   readonly baseUrl: string;
+
+  readonly agents: AgentsResource;
+  readonly contexts: ContextsResource;
+  readonly registry: RegistryResource;
+  readonly usage: UsageResource;
+  readonly feedback: FeedbackResource;
+  readonly agentCard: AgentCardResource;
+  readonly models: ModelsResource;
 
   constructor(opts: CortiClientOptions) {
     const base = opts.baseUrl ?? REGION_URLS[opts.region ?? "eu"] ?? REGION_URLS.eu;
@@ -58,5 +72,13 @@ export class CortiClient {
     };
 
     this.raw.use(authMiddleware);
+
+    this.agents = new AgentsResource(this);
+    this.contexts = new ContextsResource(this);
+    this.registry = new RegistryResource(this);
+    this.usage = new UsageResource(this);
+    this.feedback = new FeedbackResource(this);
+    this.agentCard = new AgentCardResource(this);
+    this.models = new ModelsResource(this);
   }
 }
