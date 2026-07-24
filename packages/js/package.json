@@ -1,7 +1,7 @@
 {
-  "name": "@newsioaps/agent-sdk",
-  "version": "0.3.1",
-  "description": "Developer-friendly wrapper for building agents with the Corti SDK",
+  "name": "@corti/agent-sdk",
+  "version": "1.0.0-beta.1",
+  "description": "Type-safe SDK for the Corti Agent API v2, built on openapi-ts",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,7 +26,7 @@
     "type": "git",
     "url": "git+https://github.com/hccullen/agent-sdk.git"
   },
-  "homepage": "https://hccullen.github.io/agent-sdk",
+  "homepage": "https://github.com/hccullen/agent-sdk",
   "bugs": {
     "url": "https://github.com/hccullen/agent-sdk/issues"
   },
@@ -41,15 +41,18 @@
     "corti",
     "agents",
     "ai",
-    "sdk"
+    "sdk",
+    "a2a",
+    "mcp",
+    "workflow",
+    "state-machine",
+    "multi-agent",
+    "agentic",
+    "llm"
   ],
+  "author": "Corti <developer@corti.ai>",
   "license": "MIT",
-  "peerDependencies": {
-    "@corti/sdk": ">=3.0.0"
-  },
   "devDependencies": {
-    "@corti/sdk": "3.0.0",
-    "@types/node": "^18.0.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
