@@ -1,145 +1,94 @@
-import type { Corti } from "@corti/sdk";
+import type { components } from "./gen/api-v2.js";
 
-// ── Lifecycle ────────────────────────────────────────────────────────────────
+export type {
+  paths,
+  components,
+  operations,
+} from "./gen/api-v2.js";
 
-/** Controls whether an agent persists or is cleaned up automatically. */
-export type Lifecycle = "ephemeral" | "persistent";
+export type AgentID = components["schemas"]["CommonAgentIDValue"];
+export type ConnectorID = components["schemas"]["CommonConnectorIDValue"];
+export type ContextID = components["schemas"]["CommonContextIDValue"];
+export type TaskID = components["schemas"]["CommonTaskIDValue"];
+export type MessageID = components["schemas"]["CommonMessageIDValue"];
+export type ArtifactID = components["schemas"]["CommonArtifactIDValue"];
+export type UserID = components["schemas"]["AgentsUserIDValue"];
 
-// ── Connector definitions ────────────────────────────────────────────────────
+export type Visibility = components["schemas"]["AgentsVisibility"];
+export type Lifecycle = components["schemas"]["AgentsLifecycle"];
 
-/** An MCP server attached directly to the agent. */
-export interface McpConnector {
-  type: "mcp";
-  /** Full URL of the MCP server. */
-  mcpUrl: string;
-  /** Human-readable name; auto-derived from the URL if omitted. */
+export type Agent = components["schemas"]["AgentsResponse"];
+export type AgentCreate = components["schemas"]["AgentsCreateRequest"];
+export type AgentPatch = components["schemas"]["AgentsPatchRequest"];
+export type AgentListResponse = components["schemas"]["AgentsListResponse"];
+
+export type ConnectorType = components["schemas"]["CommonConnectorType"];
+export type ConnectorResponse = components["schemas"]["CommonConnectorResponse"];
+export type ConnectorCreate = components["schemas"]["CommonConnectorCreateRequest"];
+export type ConnectorPatch = components["schemas"]["ConnectorsPatchRequest"];
+export type ConnectorAuth = components["schemas"]["CommonConnectorAuth"];
+export type ConnectorListResponse = components["schemas"]["ConnectorsListResponse"];
+
+export type RegistryConnector = components["schemas"]["RegistryConnectorResponse"];
+export type RegistryConnectorListResponse = components["schemas"]["RegistryConnectorListResponse"];
+
+export type Role = components["schemas"]["CommonRole"];
+export type Part = components["schemas"]["CommonPart"];
+export type Message = components["schemas"]["CommonMessage"];
+export type Task = components["schemas"]["CommonTaskResponse"];
+export type TaskState = components["schemas"]["CommonTaskState"];
+export type TaskStatus = components["schemas"]["CommonTaskStatus"];
+export type TaskListResponse = components["schemas"]["CommonTaskListResponse"];
+export type Artifact = components["schemas"]["CommonArtifactResponse"];
+export type Usage = components["schemas"]["CommonUsage"];
+
+export type SendMessageRequest = components["schemas"]["A2ASendMessageRequest"];
+export type SendMessageResponse = components["schemas"]["A2ASendMessageResponse"];
+export type StreamResponse = components["schemas"]["A2AStreamResponse"];
+
+export type Context = components["schemas"]["Contexts"];
+export type ContextDetailResponse = components["schemas"]["ContextsDetailResponse"];
+export type ContextListResponse = components["schemas"]["ContextsListResponse"];
+export type ContextTraceResponse = components["schemas"]["ContextsTraceResponse"];
+
+export type AgentCard = components["schemas"]["AgentCardResponse"];
+
+export type FeedbackCreateRequest = components["schemas"]["FeedbackCreateRequest"];
+export type FeedbackResponse = components["schemas"]["FeedbackResponse"];
+
+export type UsageReportResponse = components["schemas"]["UsageReportResponse"];
+export type UsageGranularity = components["schemas"]["UsageGranularity"];
+
+export type ModelResponse = components["schemas"]["ModelsResponse"];
+export type ModelsListResponse = components["schemas"]["ModelsListResponse"];
+
+export type ErrorResponse = components["schemas"]["CommonErrorResponse"];
+export type A2AErrorResponse = components["schemas"]["A2AErrorResponse"];
+
+export type TextPart = { text: string };
+export type FilePart = {
+  file: {
+    name?: string;
+    mimeType?: string;
+    uri?: string;
+    bytes?: string;
+  };
+};
+export type DataPart = { data: Record<string, unknown> };
+
+export function textPart(text: string): TextPart {
+  return { text };
+}
+
+export function filePart(opts: {
   name?: string;
-  /** Transport protocol. Defaults to "sse". */
-  transport?: "sse" | "streamable_http" | "stdio";
-  /**
-   * Authentication scheme the MCP server expects. Defaults to "none".
-   * - "none":     server is unauthenticated.
-   * - "bearer":   static bearer token — either baked in via `token`, or
-   *               forwarded at runtime through the context's `credentials` map.
-   * - "inherit":  reuses the Corti Agent API bearer token (the one used by
-   *               `CortiClient`) on outgoing MCP calls.
-   * - "oauth2.0": OAuth 2.0 client credentials (streamable_http only); the
-   *               clientId/clientSecret are passed via the `credentials` map.
-   * See https://docs.corti.ai/agentic/mcp-authentication
-   */
-  authType?: "none" | "bearer" | "inherit" | "oauth2.0";
-  /** Bearer token baked into the agent. Implies `authType: "bearer"` when set. */
-  token?: string;
+  mimeType?: string;
+  uri?: string;
+  bytes?: string;
+}): FilePart {
+  return { file: opts };
 }
 
-/** A named expert from the Corti registry (e.g. "@corti/medical-coding"). */
-export interface RegistryConnector {
-  type: "registry";
-  /** Registry package name, e.g. "@corti/medical-coding". */
-  name: string;
-  /** Additional instructions appended to the expert's default system prompt. */
-  systemPrompt?: string;
-  /** Expert-specific configuration passed through to the registry expert. */
-  config?: Record<string, unknown>;
-}
-
-/** Another Corti agent referenced by ID. */
-export interface CortiAgentConnector {
-  type: "cortiAgent";
-  agentId: string;
-}
-
-export type ConnectorDef = McpConnector | RegistryConnector | CortiAgentConnector;
-
-// ── Agent creation options ───────────────────────────────────────────────────
-
-export interface UpdateAgentOptions {
-  name?: string;
-  description?: string;
-  systemPrompt?: string;
-  /** Replace the agent's connectors entirely. Omit to leave connectors unchanged. */
-  connectors?: ConnectorDef[];
-}
-
-export interface CreateAgentOptions {
-  /** Slug-like name, unique within the tenant. */
-  name: string;
-  description: string;
-  systemPrompt?: string;
-  /**
-   * "ephemeral" (default) – agent is auto-deleted periodically and not listed.
-   * "persistent"          – agent persists and appears in agent listings.
-   */
-  lifecycle?: Lifecycle;
-  /** MCPs, registry experts, and agent references to attach to this agent. */
-  connectors?: ConnectorDef[];
-}
-
-// ── Credentials ──────────────────────────────────────────────────────────────
-
-/** Bearer-token credential for one MCP server (auth type "bearer"). */
-export interface TokenCredential {
-  type: "token";
-  token: string;
-}
-
-/** OAuth 2.0 client-credentials for one MCP server (auth type "oauth2.0"). */
-export interface OAuth2Credential {
-  type: "credentials";
-  clientId: string;
-  clientSecret: string;
-}
-
-export type Credential = TokenCredential | OAuth2Credential;
-
-/**
- * Map of MCP server name → credential.
- * Pass to `createContext()` or `run()` to authenticate MCP tool calls.
- * Credentials are forwarded as DataParts on the first message of each context.
- */
-export type CredentialStore = Record<string, Credential>;
-
-// ── Re-exports of SDK types used at the boundary ────────────────────────────
-export type Part = Corti.AgentsPart;
-export type TextPart = Corti.AgentsTextPart;
-export type FilePart = Corti.AgentsFilePart;
-export type DataPart = Corti.AgentsDataPart;
-
-// ── A2A v1 output types ───────────────────────────────────────────────────────
-
-export type Task       = Corti.AgentsTask;
-export type Artifact   = Corti.AgentsArtifact;
-export type Message    = Corti.AgentsMessage;
-export type TaskStatus = Corti.AgentsTaskStatus;
-export type TaskState  = Corti.AgentsTaskStatusState;
-
-// ── A2A streaming event types ────────────────────────────────────────────────
-// Defined locally (not in the SDK ≥1.0.0) to describe the wire shape of
-// `message/stream` JSON-RPC events.
-
-export interface TaskStatusUpdateEvent {
-  taskId: string;
-  contextId: string;
-  kind: "status-update";
-  status: Corti.AgentsTaskStatus;
-  final: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-export interface TaskArtifactUpdateEvent {
-  taskId: string;
-  contextId: string;
-  kind: "artifact-update";
-  artifact: Corti.AgentsArtifact;
-  append?: boolean;
-  lastChunk?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-/** Wrapped event shape yielded by `AgentContext.streamMessage()`. */
-export interface StreamEvent {
-  message?: Corti.AgentsMessage;
-  task?: Corti.AgentsTask;
-  statusUpdate?: TaskStatusUpdateEvent;
-  artifactUpdate?: TaskArtifactUpdateEvent;
+export function dataPart(data: Record<string, unknown>): DataPart {
+  return { data };
 }
