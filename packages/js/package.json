@@ -31,6 +31,7 @@
     "url": "https://github.com/hccullen/agent-sdk/issues"
   },
   "scripts": {
+    "generate": "openapi-typescript ./openapi/agent-api-v2.yml -o ./src/gen/api-v2.d.ts --default-non-nullable false",
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "test": "vitest run",
@@ -49,7 +50,11 @@
   "devDependencies": {
     "@corti/sdk": "3.0.0",
     "@types/node": "^18.0.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
   }
 }
