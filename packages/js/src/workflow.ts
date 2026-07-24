@@ -1,0 +1,141 @@
+import { AgentHandle } from "./handle.js";
+import { MessageResponse } from "./response.js";
+import type { Part } from "./types.js";
+
+export interface Runnable {
+  run(input: string | Part[]): Promise<MessageResponse>;
+}
+
+export interface WorkflowStep {
+  agent: Runnable;
+  when?: (prev: MessageResponse) => boolean;
+  transform?: (prev: MessageResponse) => string | Part[];
+  retries?: number;
+  retryDelay?: number;
+}
+
+export interface WorkflowResult {
+  output: MessageResponse;
+  steps: MessageResponse[];
+  stoppedEarly: boolean;
+}
+
+type WorkflowStepDef = AgentHandle | Parallel | WorkflowStep;
+
+function parallelToRunnable(p: Parallel): Runnable {
+  return {
+    run: async (input: string | Part[]) => {
+      const { fulfilled } = await p.run(input);
+      if (fulfilled.length === 0) {
+        throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
+      }
+      return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
+    },
+  };
+}
+
+function normaliseWorkflow(step: WorkflowStepDef): WorkflowStep {
+  if (step instanceof AgentHandle) return { agent: step };
+  if (step instanceof Parallel) return { agent: parallelToRunnable(step) };
+  if (step.agent instanceof Parallel) return { ...step, agent: parallelToRunnable(step.agent) };
+  return step;
+}
+
+const _delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export class Workflow {
+  private readonly _steps: WorkflowStep[];
+
+  constructor(steps: WorkflowStepDef[]) {
+    if (steps.length === 0) throw new Error("[AgentSDK] Workflow must have at least one step.");
+    this._steps = steps.map(normaliseWorkflow);
+  }
+
+  async run(input: string | Part[]): Promise<WorkflowResult> {
+    const executed: MessageResponse[] = [];
+    let current: string | Part[] = input;
+    let stoppedEarly = false;
+
+    for (let i = 0; i < this._steps.length; i++) {
+      const step = this._steps[i];
+      const isFirst = i === 0;
+
+      if (!isFirst && step.when !== undefined && !step.when(executed[executed.length - 1])) {
+        continue;
+      }
+
+      const stepInput: string | Part[] =
+        !isFirst && step.transform !== undefined
+          ? step.transform(executed[executed.length - 1])
+          : current;
+
+      const maxAttempts = 1 + (step.retries ?? 0);
+      const retryMs = step.retryDelay ?? 1000;
+      let response!: MessageResponse;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        response = await step.agent.run(stepInput);
+        if (response.status !== "failed" || attempt + 1 >= maxAttempts) break;
+        if (retryMs > 0) await _delay(retryMs);
+      }
+
+      executed.push(response);
+      current = response.text ?? "";
+
+      if (response.status === "failed") {
+        stoppedEarly = true;
+        break;
+      }
+    }
+
+    if (executed.length === 0) {
+      throw new Error("[AgentSDK] All workflow steps were skipped — no output produced.");
+    }
+    return { output: executed[executed.length - 1], steps: executed, stoppedEarly };
+  }
+}
+
+export function workflow(steps: WorkflowStepDef[]): Workflow {
+  return new Workflow(steps);
+}
+
+export type ParallelStep = AgentHandle | { agent: AgentHandle; input?: string | Part[] };
+
+export interface ParallelResult {
+  results: PromiseSettledResult<MessageResponse>[];
+  fulfilled: MessageResponse[];
+  rejected: unknown[];
+}
+
+export class Parallel {
+  private readonly _steps: ParallelStep[];
+
+  constructor(steps: ParallelStep[]) {
+    if (steps.length === 0) throw new Error("[AgentSDK] Parallel must have at least one step.");
+    this._steps = steps;
+  }
+
+  async run(input: string | Part[]): Promise<ParallelResult> {
+    const promises = this._steps.map((step) => {
+      const agent = step instanceof AgentHandle ? step : step.agent;
+      const stepInput =
+        !(step instanceof AgentHandle) && step.input !== undefined ? step.input : input;
+      return agent.run(stepInput);
+    });
+
+    const results = await Promise.allSettled(promises);
+    const fulfilled: MessageResponse[] = [];
+    const rejected: unknown[] = [];
+
+    for (const r of results) {
+      if (r.status === "fulfilled") fulfilled.push(r.value);
+      else rejected.push(r.reason);
+    }
+
+    return { results, fulfilled, rejected };
+  }
+}
+
+export function parallel(steps: ParallelStep[]): Parallel {
+  return new Parallel(steps);
+}
