@@ -9,7 +9,7 @@ import type {
   Part,
   StreamResponse,
 } from "./types.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 
 export class AgentHandle {
   private _agent: Agent;
@@ -99,7 +99,7 @@ export class AgentHandle {
       },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return new AgentHandle(data!, this._client);
   }
@@ -110,18 +110,18 @@ export class AgentHandle {
       { params: { path: { agentId: this._agent.id } } },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return new AgentHandle(data!, this._client);
   }
 
   async delete(): Promise<void> {
-    const { response } = await this._client.raw.DELETE(
+    const { error, response } = await this._client.raw.DELETE(
       "/v2/agentic/agents/{agentId}",
       { params: { path: { agentId: this._agent.id } } },
     );
-    if (!response.ok) {
-      await throwFromResponse(response, false);
+    if (error || !response.ok) {
+      throwFromFetchError(error, response, false);
     }
   }
 }

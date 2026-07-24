@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 import type { FeedbackCreateRequest, FeedbackResponse } from "./types.js";
 
 export class FeedbackResource {
@@ -17,7 +17,7 @@ export class FeedbackResource {
         body,
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 }

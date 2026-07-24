@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError, throwFromResponse } from "./errors.js";
 import { makeAbortController, parseA2AStream } from "./streaming.js";
 import type { AbortOptions } from "./streaming.js";
 import { MessageResponse } from "./response.js";
@@ -79,7 +79,7 @@ export class AgentContext {
       );
 
       if (response.error || !response.response.ok) {
-        await throwFromResponse(response.response, true);
+        throwFromFetchError(response.error, response.response, true);
       }
 
       const result = response.data as SendMessageResponse;
@@ -153,7 +153,7 @@ export class AgentContext {
         },
       );
       if (error || !response.ok) {
-        await throwFromResponse(response, true);
+        throwFromFetchError(error, response, true);
       }
       return data!;
     } finally {
@@ -172,7 +172,7 @@ export class AgentContext {
         },
       );
       if (error || !response.ok) {
-        await throwFromResponse(response, true);
+        throwFromFetchError(error, response, true);
       }
       return data!;
     } finally {

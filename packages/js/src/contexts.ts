@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 import type {
   ContextDetailResponse,
   ContextListResponse,
@@ -25,7 +25,7 @@ export class ContextsResource {
       "/v2/agentic/contexts",
       { params: { query: params } },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
@@ -42,16 +42,16 @@ export class ContextsResource {
         },
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
   async delete(contextId: string): Promise<void> {
-    const { response } = await this._client.raw.DELETE(
+    const { error, response } = await this._client.raw.DELETE(
       "/v2/agentic/contexts/{contextId}",
       { params: { path: { contextId } } },
     );
-    if (!response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
   }
 
   async getTrace(
@@ -67,7 +67,7 @@ export class ContextsResource {
         },
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
@@ -84,7 +84,7 @@ export class ContextsResource {
         },
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
@@ -95,7 +95,7 @@ export class ContextsResource {
         params: { path: { contextId, taskId } },
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
@@ -110,7 +110,7 @@ export class ContextsResource {
         params: { path: { contextId, taskId, artifactId } },
       },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 }

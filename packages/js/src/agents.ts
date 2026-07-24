@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 import type {
   Agent,
   AgentCreate,
@@ -27,7 +27,7 @@ export class AgentsResource {
       { body },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return data!;
   }
@@ -38,7 +38,7 @@ export class AgentsResource {
       { params: { path: { agentId } } },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return data!;
   }
@@ -49,7 +49,7 @@ export class AgentsResource {
       { params: { query: params } },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return data!;
   }
@@ -64,18 +64,18 @@ export class AgentsResource {
       },
     );
     if (error || !response.ok) {
-      await throwFromResponse(response, false);
+      throwFromFetchError(error, response, false);
     }
     return data!;
   }
 
   async delete(agentId: string): Promise<void> {
-    const { response } = await this._client.raw.DELETE(
+    const { error, response } = await this._client.raw.DELETE(
       "/v2/agentic/agents/{agentId}",
       { params: { path: { agentId } } },
     );
-    if (!response.ok) {
-      await throwFromResponse(response, false);
+    if (error || !response.ok) {
+      throwFromFetchError(error, response, false);
     }
   }
 }

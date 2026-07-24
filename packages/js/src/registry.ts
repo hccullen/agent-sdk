@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 import type {
   RegistryConnectorListResponse,
   RegistryConnector,
@@ -17,7 +17,7 @@ export class RegistryResource {
       "/v2/agentic/registry/connectors",
       { params: { query: params } },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 
@@ -26,7 +26,7 @@ export class RegistryResource {
       "/v2/agentic/registry/connectors/{connectorId}",
       { params: { path: { connectorId } } },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 }

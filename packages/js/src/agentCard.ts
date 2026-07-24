@@ -1,5 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromResponse } from "./errors.js";
+import { throwFromFetchError } from "./errors.js";
 import type { AgentCard } from "./types.js";
 
 export class AgentCardResource {
@@ -10,7 +10,7 @@ export class AgentCardResource {
       "/v2/agentic/agents/{agentId}/.well-known/agent-card.json",
       { params: { path: { agentId } } },
     );
-    if (error || !response.ok) await throwFromResponse(response, false);
+    if (error || !response.ok) throwFromFetchError(error, response, false);
     return data!;
   }
 }

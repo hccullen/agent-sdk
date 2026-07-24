@@ -76,3 +76,25 @@ export async function throwFromResponse(response: Response, isA2A: boolean): Pro
 
   throw new HttpError(status, `HTTP ${status}`, body);
 }
+
+export function throwFromFetchError(
+  error: unknown,
+  response: Response,
+  isA2A: boolean,
+): never {
+  const status = response.status;
+
+  if (isA2A) {
+    const a2aErr = error as A2AErrorResponse;
+    if (a2aErr?.error?.code && a2aErr?.error?.status) {
+      throw new A2AError(a2aErr.error);
+    }
+  } else {
+    const mgmtErr = error as CommonErrorResponse;
+    if (mgmtErr?.error?.code) {
+      throw new ManagementError(mgmtErr.error);
+    }
+  }
+
+  throw new HttpError(status, `HTTP ${status}`, error);
+}

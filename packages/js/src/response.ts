@@ -53,7 +53,7 @@ export class MessageResponse {
   get status(): "completed" | "failed" | "working" | "submitted" | "canceled" | "input-required" | undefined {
     const state = this.state;
     if (!state) return undefined;
-    return state.replace("TASK_STATE_", "").toLowerCase() as
+    return state.replace("TASK_STATE_", "").toLowerCase().replace(/_/g, "-") as
       | "completed"
       | "failed"
       | "working"
