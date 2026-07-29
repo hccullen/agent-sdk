@@ -17,7 +17,7 @@ function randomId(): string {
 
 export interface SendMessageOptions extends AbortOptions {
   historyLength?: number;
-  blocking?: boolean;
+  returnImmediately?: boolean;
   acceptedOutputModes?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -50,7 +50,8 @@ export class AgentContext {
     const configuration: NonNullable<SendMessageRequest["configuration"]> = {};
     if (opts?.historyLength !== undefined)
       configuration.historyLength = opts.historyLength;
-    if (opts?.blocking !== undefined) configuration.blocking = opts.blocking;
+    if (opts?.returnImmediately !== undefined)
+      configuration.returnImmediately = opts.returnImmediately;
     if (opts?.acceptedOutputModes !== undefined)
       configuration.acceptedOutputModes = opts.acceptedOutputModes;
 
@@ -128,8 +129,7 @@ export class AgentContext {
         if (this._contextId === undefined) {
           const cid =
             event.task?.contextId ??
-            event.statusUpdate?.contextId ??
-            event.artifactUpdate?.contextId;
+            event.statusUpdate?.contextId;
           if (cid) this._contextId = cid;
         }
         yield event;

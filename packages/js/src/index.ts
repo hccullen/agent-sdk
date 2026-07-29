@@ -20,7 +20,6 @@ export { RegistryResource } from "./registry.js";
 export { UsageResource } from "./usage.js";
 export { FeedbackResource } from "./feedback.js";
 export { AgentCardResource } from "./agentCard.js";
-export { ModelsResource } from "./models.js";
 
 export { Workflow, Parallel, workflow, parallel } from "./workflow.js";
 export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow.js";
@@ -77,12 +76,12 @@ export type {
   AgentCard,
   FeedbackCreateRequest,
   FeedbackResponse,
+  FeedbackListResponse,
   UsageReportResponse,
   UsageGranularity,
-  ModelResponse,
-  ModelsListResponse,
   ErrorResponse,
   A2AErrorResponse,
+  PageToken,
   TextPart,
   FilePart,
   DataPart,

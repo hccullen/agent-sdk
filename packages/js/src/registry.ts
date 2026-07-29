@@ -11,7 +11,7 @@ export class RegistryResource {
   async list(params?: {
     q?: string;
     pageSize?: number;
-    pageOffset?: number;
+    pageToken?: string;
   }): Promise<RegistryConnectorListResponse> {
     const { data, error, response } = await this._client.raw.GET(
       "/v2/agentic/registry/connectors",

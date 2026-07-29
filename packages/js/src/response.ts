@@ -9,16 +9,16 @@ type SendMessageResponse = components["schemas"]["A2ASendMessageResponse"];
 
 export class MessageResponse {
   private readonly _task: Task | undefined;
-  private readonly _msg: Message | undefined;
+  private readonly _message: Message | undefined;
 
   constructor(response: SendMessageResponse) {
     this._task = response.task;
-    this._msg = response.msg;
+    this._message = response.message;
   }
 
   static fromText(text: string): MessageResponse {
     return new MessageResponse({
-      msg: {
+      message: {
         role: "ROLE_AGENT",
         parts: [{ text }],
       },
@@ -34,7 +34,7 @@ export class MessageResponse {
   }
 
   get message(): Message | undefined {
-    if (this._msg) return this._msg;
+    if (this._message) return this._message;
     return this._task?.status?.message;
   }
 
@@ -50,7 +50,7 @@ export class MessageResponse {
     return this._task?.status?.state;
   }
 
-  get status(): "completed" | "failed" | "working" | "submitted" | "canceled" | "input-required" | undefined {
+  get status(): "completed" | "failed" | "working" | "submitted" | "canceled" | "input-required" | "rejected" | "auth-required" | undefined {
     const state = this.state;
     if (!state) return undefined;
     return state.replace("TASK_STATE_", "").toLowerCase().replace(/_/g, "-") as
@@ -59,7 +59,9 @@ export class MessageResponse {
       | "working"
       | "submitted"
       | "canceled"
-      | "input-required";
+      | "input-required"
+      | "rejected"
+      | "auth-required";
   }
 
   get text(): string | null {
@@ -85,7 +87,7 @@ export class MessageResponse {
 
   get raw(): SendMessageResponse {
     if (this._task) return { task: this._task };
-    if (this._msg) return { msg: this._msg };
+    if (this._message) return { message: this._message };
     return {};
   }
 }

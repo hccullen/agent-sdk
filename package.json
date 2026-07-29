@@ -9,5 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @corti/agent-sdk"
+  },
+  "overrides": {
+    "@corti/sdk": "3.0.0"
   }
 }

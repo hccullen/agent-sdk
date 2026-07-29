@@ -121,7 +121,7 @@ describe("MessageResponse", () => {
   describe("from a message", () => {
     it("extracts text from the message", () => {
       const r = new MessageResponse({
-        msg: {
+        message: {
           role: "ROLE_AGENT",
           parts: [{ text: "Direct reply" }],
           messageId: "msg.2",

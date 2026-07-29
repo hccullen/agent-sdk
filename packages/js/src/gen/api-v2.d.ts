@@ -16,6 +16,7 @@ export interface paths {
          * @description Lists agents visible to the caller. `private` agents are visible only to
          *     their creator/service principal; `unlisted` agents are omitted (fetch by
          *     ID instead); `public` agents are listed tenant-wide.
+         *     The `visibility`, `lifecycle`, `label`, and `q` filter parameters are accepted but not yet honored by the server; the response is unfiltered.
          */
         get: operations["AgentsList"];
         put?: never;
@@ -89,7 +90,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -103,10 +104,10 @@ export interface paths {
         /**
          * A2A JSON-RPC binding
          * @description The `JSONRPC` protocol binding for A2A v1.0. Accepts a single JSON-RPC 2.0
-         *     request whose `method` is one of `message/send`, `message/stream`,
-         *     `tasks/get`, `tasks/list`, `tasks/cancel`, or `tasks/subscribe`.
+         *     request whose `method` is one of `SendMessage`, `SendStreamingMessage`,
+         *     `GetTask`, `ListTasks`, `CancelTask`, or `SubscribeToTask`.
          *
-         *     Streaming methods (`message/stream`, `tasks/subscribe`) respond with
+         *     Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) respond with
          *     `text/event-stream`; all others respond with a single JSON-RPC response.
          */
         post: operations["A2AJsonRpc"];
@@ -120,7 +121,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -133,7 +134,7 @@ export interface paths {
         put?: never;
         /**
          * Send a message (A2A REST)
-         * @description The `HTTP+JSON` binding of A2A `message/send`.
+         * @description The `HTTP+JSON` binding of A2A `SendMessage`.
          */
         post: operations["A2ASendMessage"];
         delete?: never;
@@ -146,7 +147,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -159,7 +160,7 @@ export interface paths {
         put?: never;
         /**
          * Stream a message (A2A REST)
-         * @description The `HTTP+JSON` binding of A2A `message/stream`. Responds with a
+         * @description The `HTTP+JSON` binding of A2A `SendStreamingMessage`. Responds with a
          *     `text/event-stream` of `Task`, `statusUpdate`, and `artifactUpdate` events.
          */
         post: operations["A2AStreamMessage"];
@@ -173,7 +174,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -196,7 +197,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -221,7 +222,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -246,7 +247,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -339,7 +340,12 @@ export interface paths {
         delete: operations["ConnectorsRemove"];
         options?: never;
         head?: never;
-        /** Update an agent-scoped connector (partial) */
+        /**
+         * Update an agent-scoped connector (partial)
+         * @description Partially updates an agent-scoped connector using JSON Merge Patch
+         *     (RFC 7386). `type` is immutable.
+         *     **Future scope**:  not yet implemented; the server returns `501`.
+         */
         patch: operations["ConnectorsUpdate"];
         trace?: never;
     };
@@ -350,7 +356,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List contexts */
+        /**
+         * List contexts
+         * @description Lists contexts matching the filters.
+         *     **Future scope**: not yet implemented; the server currently returns an empty page and ignores all parameters.
+         */
         get: operations["ContextsList"];
         put?: never;
         post?: never;
@@ -520,54 +530,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v2/agentic/models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List available models
-         * @description Lists the models available for the `Agent.model` field, including the
-         *     tenant default.
-         *
-         *     🔮 **Future scope** — not yet implemented.
-         */
-        get: operations["ModelsList"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v2/agentic/models/{modelId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Model identifier (e.g. `corti-default`). */
-                modelId: string;
-            };
-            cookie?: never;
-        };
-        /**
-         * Get a model
-         * @description Returns the details of a single model.
-         *
-         *     🔮 **Future scope** — not yet implemented.
-         */
-        get: operations["ModelsGet"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v2/agentic/contexts/{contextId}/tasks/{taskId}/feedback": {
         parameters: {
             query?: never;
@@ -580,7 +542,11 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List feedback for a task
+         * @description Returns all feedback resources submitted for the task by the authenticated user, newest-first. The task must exist, belong to the supplied context, and belong to the authenticated customer. Feedback is scoped to the calling user via row-level security, so the response contains only that user's feedback.
+         */
+        get: operations["FeedbackList"];
         put?: never;
         /**
          * Submit feedback for a task
@@ -590,7 +556,11 @@ export interface paths {
          *     resources may be submitted for the same task or message.
          */
         post: operations["FeedbackCreate"];
-        delete?: never;
+        /**
+         * Delete all feedback for a task
+         * @description Soft-deletes every feedback resource the authenticated user submitted for the task. The task must exist, belong to the supplied context, and belong to the authenticated customer. Idempotent: deleting when there is no feedback returns `204`.
+         */
+        delete: operations["FeedbackDelete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -709,14 +679,7 @@ export interface components {
             systemPrompt?: string | null;
             /**
              * @description Model identifier. Tenant default if omitted or `null`.
-             *
-             *     ⚠️ **Open question** — in the current implementation a model is
-             *     configured per *expert*, not per *agent* (`Expert.modelName`), and an
-             *     `Agent` has no model field at all. The desired end state is that
-             *     there is **no distinction between an expert and an agent**, so `model`
-             *     lives uniformly on this resource. Until that convergence lands, the
-             *     precedence of an agent-level `model` over a connector/expert-level
-             *     override is undecided and MUST be resolved before this field ships.
+             *     **Open question** — in the current implementation a model is configured per *expert*, not per *agent* (`Expert.modelName`), and an `Agent` has no model field at all. The desired end state is that there is **no distinction between an expert and an agent**, so `model` lives uniformly on this resource. Until that convergence lands, the precedence of an agent-level `model` over a connector/expert-level override is undecided and MUST be resolved before this field ships.
              * @example corti-default
              */
             model?: string | null;
@@ -738,7 +701,7 @@ export interface components {
             /** @description Principal (user or service principal) that created the agent. */
             readonly createdBy: components["schemas"]["AgentsUserIDValue"];
         };
-        /** @description Request body for creating an agent. */
+        /** @description Request body for creating an agent. The server currently ignores `visibility` and `labels`; they are accepted but not persisted. */
         AgentsCreateRequest: {
             /**
              * @description Human-readable, unique-per-tenant agent name.
@@ -772,8 +735,8 @@ export interface components {
             labels?: components["schemas"]["AgentsLabels"];
         };
         /**
-         * @description JSON Merge Patch body. Omitted fields are unchanged; `null` clears;
-         *     `connectors` is replaced wholesale.
+         * @description JSON Merge Patch body. Omitted fields are unchanged; `null` clears; `connectors` is replaced wholesale.
+         *     Note: the server currently honors only `name`, `description`, `systemPrompt`, `model`, and `connectors`. `visibility`, `lifecycle`, and `labels` are accepted but not yet persisted.
          */
         AgentsPatchRequest: {
             /**
@@ -837,7 +800,7 @@ export interface components {
              *     ]
              */
             agents: components["schemas"]["AgentsResponse"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
+            nextPageToken?: components["schemas"]["CommonNextPageToken"];
             totalSize?: components["schemas"]["CommonTotalSize"];
         };
         /**
@@ -857,7 +820,7 @@ export interface components {
             readonly id: components["schemas"]["CommonConnectorIDValue"];
             type: components["schemas"]["CommonConnectorType"];
             /**
-             * @description Whether the connector is active for invocations.
+             * @description Whether the connector is active for invocations. Only `schema` connectors return this field today; `mcp`, `registry`, `agent`, and `a2a` connectors omit it (treat as enabled).
              * @default true
              */
             enabled?: boolean;
@@ -992,7 +955,7 @@ export interface components {
              * @default true
              */
             enabled?: boolean;
-            /** @description Connector-specific configuration validated against the registry schema. */
+            /** @description Connector-specific configuration validated against the registry schema. Not yet persisted — the server currently drops `config` for registry connectors on create. */
             config?: {
                 [key: string]: unknown;
             };
@@ -1153,6 +1116,7 @@ export interface components {
         };
         /**
          * @description A discoverable, pre-built connector offered by the platform registry.
+         *     Only `id`, `type`, `name`, `title`, `description`, and `configSchema` are populated by the server today. `version`, `provider`, `capabilities`, `tags`, and `documentationUrl` are declared for forward compatibility but are not yet returned.
          * @example {
          *       "id": "@dedalus/coding-expert",
          *       "type": "registry",
@@ -1291,11 +1255,11 @@ export interface components {
              *     ]
              */
             connectors: components["schemas"]["RegistryConnectorResponse"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
+            nextPageToken?: components["schemas"]["CommonNextPageToken"];
             totalSize?: components["schemas"]["CommonTotalSize"];
         };
         /**
-         * @description The size of each usage reporting bucket.
+         * @description The size of each usage reporting bucket. Only `day` is currently honored; `minute`, `hour`, and `week` are accepted but produce daily buckets (the server always returns `day`).
          * @default day
          * @enum {string}
          */
@@ -1375,7 +1339,7 @@ export interface components {
             /** @description One entry per period with activity, ordered oldest first. */
             buckets: components["schemas"]["UsageBucket"][];
         };
-        /** @description Lightweight context metadata, as returned in list responses. */
+        /** @description Lightweight context metadata, as returned in list responses. Contexts are not first-class CRUD resources: there is no explicit create or update endpoint — a context is created implicitly on the first message send (or reused by client-supplied contextId), and list is not yet implemented. */
         Contexts: {
             id: components["schemas"]["CommonContextIDValue"];
             agentId?: components["schemas"]["CommonAgentIDValue"];
@@ -1393,7 +1357,7 @@ export interface components {
             updatedAt?: string;
             /**
              * Format: date-time
-             * @description When the context expires; `null` means it does not expire.
+             * @description When the context expires; `null` means it does not expire. Not yet implemented — the server always returns `null` and performs no TTL-based cleanup.
              */
             expiresAt?: string | null;
         };
@@ -1467,7 +1431,7 @@ export interface components {
              *     ]
              */
             contexts: components["schemas"]["Contexts"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
+            nextPageToken?: components["schemas"]["CommonNextPageToken"];
             totalSize?: components["schemas"]["CommonTotalSize"];
         };
         /**
@@ -1496,7 +1460,7 @@ export interface components {
              *     ]
              */
             traces: components["schemas"]["ContextsTraceItem"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
+            nextPageToken?: components["schemas"]["CommonNextPageToken"];
             totalSize?: components["schemas"]["CommonTotalSize"];
         };
         /** @description A single trace with its inlined OpenInference spans. */
@@ -1578,24 +1542,22 @@ export interface components {
         CommonRole: "ROLE_USER" | "ROLE_AGENT";
         /** @description A single content part of a message or artifact. */
         CommonPart: {
-            /** @description Plain-text content part. */
+            /** @description The string content of the `text` part. */
             text?: string;
-            /** @description File content part with name, MIME type, URI, or inline base64 bytes. */
-            file?: {
-                /** @description File name. */
-                name?: string;
-                /** @description File MIME type. */
-                mimeType?: string;
-                /**
-                 * Format: uri
-                 * @description File source URI.
-                 */
-                uri?: string;
-                /** @description Inline file content as base64-encoded bytes. */
-                bytes?: string;
-            };
-            /** @description Structured data content part (free-form JSON). */
+            /** @description Arbitrary structured `data` as a JSON value (object, array, string, number, boolean, or null). */
             data?: {
+                [key: string]: unknown;
+            };
+            /** @description An optional `filename` for the file (e.g., `document.pdf`). */
+            filename?: string;
+            /** @description The `media_type` (MIME type) of the part content (e.g., `text/plain`, `application/json`, `image/png`). */
+            mediaType?: string;
+            /** @description The `raw` byte content of a file. Encoded as a base64 string. */
+            raw?: string;
+            /** @description A `url` pointing to the file's content. */
+            url?: string;
+            /** @description Optional metadata associated with this part. */
+            metadata?: {
                 [key: string]: unknown;
             };
         } & {
@@ -1635,6 +1597,14 @@ export interface components {
              * @example icd10-result
              */
             name?: string;
+            /** @description A human-readable description of the artifact. */
+            description?: string;
+            /** @description URIs of extensions that contributed to this artifact. */
+            extensions?: string[];
+            /** @description Optional metadata included with the artifact. */
+            metadata?: {
+                [key: string]: unknown;
+            };
             /**
              * @description Content parts of the artifact.
              * @example [
@@ -1649,7 +1619,7 @@ export interface components {
          * @description The lifecycle state of a task.
          * @enum {string}
          */
-        CommonTaskState: "TASK_STATE_SUBMITTED" | "TASK_STATE_WORKING" | "TASK_STATE_COMPLETED" | "TASK_STATE_FAILED" | "TASK_STATE_CANCELED" | "TASK_STATE_INPUT_REQUIRED";
+        CommonTaskState: "TASK_STATE_SUBMITTED" | "TASK_STATE_WORKING" | "TASK_STATE_COMPLETED" | "TASK_STATE_FAILED" | "TASK_STATE_CANCELED" | "TASK_STATE_INPUT_REQUIRED" | "TASK_STATE_REJECTED" | "TASK_STATE_AUTH_REQUIRED";
         /** @description A task's current state, with an optional status message and timestamp. */
         CommonTaskStatus: {
             state: components["schemas"]["CommonTaskState"];
@@ -1702,7 +1672,7 @@ export interface components {
              */
             artifacts?: components["schemas"]["CommonArtifactResponse"][];
             /**
-             * @description Task metadata, including `$usage` token/credit accounting.
+             * @description Task metadata, including `$usage` token/credit accounting. Not yet exposed through the REST binding (deferred); only the JSON-RPC binding populates this field.
              * @example {
              *       "$usage": {
              *         "model": "corti-default",
@@ -1717,6 +1687,8 @@ export interface components {
         };
         /** @description A page of tasks. */
         CommonTaskListResponse: {
+            /** @description The page size used for this response. */
+            pageSize?: number;
             /**
              * @description Tasks on the current page.
              * @example [
@@ -1730,16 +1702,16 @@ export interface components {
              *     ]
              */
             tasks: components["schemas"]["CommonTaskResponse"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
+            nextPageToken?: components["schemas"]["CommonNextPageToken"];
             totalSize?: components["schemas"]["CommonTotalSize"];
         };
         /** @description Per-request options controlling how a message is processed. */
         A2ASendMessageConfiguration: {
             /**
-             * @description When `false`, return as soon as the task is submitted.
-             * @default true
+             * @description If `true`, return as soon as the task is submitted, even if processing is still in progress. If `false` (default), wait until the task reaches a terminal (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) or interrupted (`INPUT_REQUIRED`, `AUTH_REQUIRED`) state.
+             * @default false
              */
-            blocking?: boolean;
+            returnImmediately?: boolean;
             /** @description Maximum number of prior messages to include as context. */
             historyLength?: number;
             /** @description Output media types the caller accepts. */
@@ -1759,23 +1731,23 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
+            /** @description Optional. Opaque routing identifier. Must match the `tenant` value from the selected `AgentInterface` in the Agent Card when that field is set. */
+            tenant?: string;
         };
-        /** @description Exactly one of `task` or `msg` is present. */
+        /** @description Exactly one of `task` or `message` is present. */
         A2ASendMessageResponse: {
             task?: components["schemas"]["CommonTaskResponse"];
-            msg?: components["schemas"]["CommonMessage"];
+            message?: components["schemas"]["CommonMessage"];
         } & (unknown | unknown);
         /** @description A single A2A streaming event. Exactly one field is present. */
         A2AStreamResponse: {
             task?: components["schemas"]["CommonTaskResponse"];
-            msg?: components["schemas"]["CommonMessage"];
-            /** @description Incremental task status update. */
+            message?: components["schemas"]["CommonMessage"];
+            /** @description Incremental task status update. There is no `final` flag; clients infer finality from the task state (TASK_STATE_COMPLETED, TASK_STATE_FAILED, TASK_STATE_CANCELED, TASK_STATE_REJECTED are terminal). */
             statusUpdate?: {
                 taskId?: components["schemas"]["CommonTaskIDValue"];
                 contextId?: components["schemas"]["CommonContextIDValue"];
                 status?: components["schemas"]["CommonTaskStatus"];
-                /** @description Whether this is the final status update for the task. */
-                final?: boolean;
                 /** @description Free-form metadata for this update. */
                 metadata?: {
                     [key: string]: unknown;
@@ -1784,13 +1756,12 @@ export interface components {
             /** @description Incremental artifact update. */
             artifactUpdate?: {
                 taskId?: components["schemas"]["CommonTaskIDValue"];
-                contextId?: components["schemas"]["CommonContextIDValue"];
                 artifact?: components["schemas"]["CommonArtifactResponse"];
                 /** @description Whether this is the last chunk of the artifact. */
                 lastChunk?: boolean;
             };
         } & (unknown | unknown | unknown | unknown);
-        /** @description A single Server-Sent Event frame (W3C SSE wire format). */
+        /** @description A single Server-Sent Event frame (W3C SSE wire format). The server currently writes only `id` and `data` lines; `event` and `retry` are declared for forward compatibility but not sent. */
         A2ASSEEvent: {
             /** @description SSE payload (JSON-encoded). */
             data: string;
@@ -1827,6 +1798,16 @@ export interface components {
              */
             description?: string;
             /**
+             * Format: uri
+             * @description A URL providing additional documentation about the agent.
+             */
+            documentationUrl?: string;
+            /**
+             * Format: uri
+             * @description Optional URL to an icon for the agent.
+             */
+            iconUrl?: string;
+            /**
              * @description Agent card version (SemVer).
              * @example 2.0.0
              */
@@ -1842,10 +1823,8 @@ export interface components {
                 /** @description Whether the agent supports streaming responses. */
                 streaming?: boolean;
                 /**
-                 * @description Whether the agent can push task updates to a client-supplied
-                 *     webhook. 🔮 **Future scope** — the `tasks/pushNotificationConfig/*`
-                 *     management endpoints are not yet implemented; expect this to be
-                 *     `false` until they ship.
+                 * @description Whether the agent can push task updates to a client-supplied webhook.
+                 *     **Future scope**: the `tasks/pushNotificationConfig/*` management endpoints are not yet implemented. Expect this to be `false` until they ship.
                  */
                 pushNotifications?: boolean;
             };
@@ -1879,6 +1858,25 @@ export interface components {
                  */
                 url?: string;
             };
+            /** @description Security requirements for contacting the agent. */
+            securityRequirements?: {
+                [key: string]: unknown;
+            }[];
+            /** @description The security scheme details used for authenticating with this agent. */
+            securitySchemes?: {
+                [key: string]: unknown;
+            };
+            /** @description JSON Web Signatures (JWS, RFC 7515) computed for this agent card. */
+            signatures?: {
+                /** @description Base64url-encoded protected JWS header. */
+                protected: string;
+                /** @description Unprotected JWS header values. */
+                header?: {
+                    [key: string]: unknown;
+                };
+                /** @description Base64url-encoded signature. */
+                signature: string;
+            }[];
             /**
              * @description Skills the agent exposes.
              * @example [
@@ -1943,11 +1941,11 @@ export interface components {
              */
             id: string | number;
             /**
-             * @description JSON-RPC method name.
-             * @example message/send
+             * @description JSON-RPC method name (PascalCase on the wire).
+             * @example SendMessage
              * @enum {string}
              */
-            method: "message/send" | "message/stream" | "tasks/get" | "tasks/list" | "tasks/cancel" | "tasks/subscribe";
+            method: "SendMessage" | "SendStreamingMessage" | "GetTask" | "ListTasks" | "CancelTask" | "SubscribeToTask";
             /**
              * @description JSON-RPC params object.
              * @example {
@@ -2138,6 +2136,11 @@ export interface components {
              */
             readonly createdAt: string;
         };
+        /** @description All feedback resources for a task, newest-first. Feedback is scoped to the authenticated user via row-level security. */
+        FeedbackListResponse: {
+            /** @description Feedback resources for the task. */
+            feedbacks: components["schemas"]["FeedbackResponse"][];
+        };
         /**
          * @description Corti management-plane error envelope, used by all non-A2A endpoints.
          *
@@ -2148,6 +2151,11 @@ export interface components {
          *       a generic `500` carrying a `requestId` for support reference.
          *     - **Validation** — a single `PublicError` whose `details.validationErrors`
          *       lists the offending fields.
+         *
+         *     Field names use camelCase on the wire (e.g. `requestId`, `howToFix`).
+         *     The free-form `details` object may carry arbitrary caller-defined keys.
+         *
+         *     Rate limiting (HTTP 429) is not yet implemented; the server does not emit a 429 response.
          * @example {
          *       "error": {
          *         "code": "ASSIGNMENT_CONFLICT",
@@ -2330,87 +2338,10 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** @description Opaque cursor to request the next page, or `null` if there are no more pages. */
+        CommonNextPageToken: string | null;
         /**
-         * @description A model available for the `Agent.model` field.
-         *     🔮 **Future scope** — declared for forward compatibility.
-         * @example {
-         *       "id": "corti-default",
-         *       "displayName": "Corti Default",
-         *       "description": "The default reasoning model.",
-         *       "provider": "corti",
-         *       "contextWindow": 200000,
-         *       "maxOutputTokens": 8192,
-         *       "inputModes": [
-         *         "text/plain"
-         *       ],
-         *       "outputModes": [
-         *         "text/plain"
-         *       ],
-         *       "default": true,
-         *       "deprecated": false
-         *     }
-         */
-        ModelsResponse: {
-            /**
-             * @description Stable model identifier; use as an `Agent.model` value.
-             * @example corti-default
-             */
-            id: string;
-            /**
-             * @description Human-readable name for UIs.
-             * @example Corti Default
-             */
-            displayName?: string;
-            /** @description Human-readable model description. */
-            description?: string;
-            /**
-             * @description Upstream provider or family.
-             * @example corti
-             * @example anthropic
-             * @example openai
-             */
-            provider?: string;
-            /**
-             * Format: int64
-             * @description Maximum context length in tokens.
-             */
-            contextWindow?: number;
-            /**
-             * Format: int64
-             * @description Maximum tokens the model will generate in one response.
-             */
-            maxOutputTokens?: number;
-            /** @description Accepted input media types. */
-            inputModes?: string[];
-            /** @description Produced output media types. */
-            outputModes?: string[];
-            /** @description Whether this is the tenant default applied when `Agent.model` is omitted. */
-            default?: boolean;
-            /** @description Whether the model is deprecated and scheduled for removal. */
-            deprecated?: boolean;
-        };
-        /** @description A page of models. 🔮 **Future scope.** */
-        ModelsListResponse: {
-            /**
-             * @description Models on the current page.
-             * @example [
-             *       {
-             *         "id": "corti-default",
-             *         "default": true
-             *       }
-             *     ]
-             */
-            models: components["schemas"]["ModelsResponse"][];
-            nextPageOffset?: components["schemas"]["CommonNextPageOffset"];
-            totalSize?: components["schemas"]["CommonTotalSize"];
-        };
-        /**
-         * @description Offset to use for the next page, or `null` if there are no more pages.
-         * @example 20
-         */
-        CommonNextPageOffset: number | null;
-        /**
-         * @description Total number of items matching the query, when known.
+         * @description Total number of items matching the query, when known. Not currently populated by the server; treat as absent.
          * @example 42
          */
         CommonTotalSize: number;
@@ -2511,9 +2442,9 @@ export interface components {
         ArtifactId: components["schemas"]["CommonArtifactIDValue"];
         /** @description Maximum number of items per page. */
         PageSize: number;
-        /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-        PageOffset: number;
-        /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+        /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+        PageToken: string;
+        /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
         A2AVersionHeader: string;
     };
     requestBodies: never;
@@ -2530,8 +2461,8 @@ export interface operations {
             query?: {
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
                 /** @description Filter by one or more visibility levels. */
                 visibility?: components["schemas"]["AgentsVisibility"][];
                 /** @description Filter by lifecycle. */
@@ -2721,6 +2652,7 @@ export interface operations {
                     "application/json": components["schemas"]["AgentCardResponse"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -2728,7 +2660,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -2746,8 +2678,8 @@ export interface operations {
         responses: {
             /**
              * @description A single JSON-RPC response (non-streaming methods), or an
-             *     `text/event-stream` for the streaming methods (`message/stream`,
-             *     `tasks/subscribe`) where each event's `data` is a JSON-encoded
+             *     `text/event-stream` for the streaming methods (`SendStreamingMessage`,
+             *     `SubscribeToTask`) where each event's `data` is a JSON-encoded
              *     `JSONRPCResponse`.
              */
             200: {
@@ -2789,7 +2721,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -2837,7 +2769,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -2896,13 +2828,13 @@ export interface operations {
             query?: {
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
                 /** @description Restrict to tasks within this context. */
                 contextId?: string;
             };
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -2946,7 +2878,7 @@ export interface operations {
                 historyLength?: number;
             };
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -2987,7 +2919,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -3037,7 +2969,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send this on every A2A request. This surface implements `1.0` only; an absent header is treated as `1.0`. Patch versions MUST NOT be sent and are not considered during negotiation. */
+                /** @description A2A protocol version in `Major.Minor` form (A2A §3.6). Optional; defaults to `1.0` when absent. This surface implements `1.0` only. Patch versions MUST NOT be sent and are not considered during negotiation. */
                 "A2A-Version"?: components["parameters"]["A2AVersionHeader"];
             };
             path: {
@@ -3050,11 +2982,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /**
-             * @description An SSE stream of task events. Each event's `data` is a JSON-encoded
-             *     `StreamResponse`. On resubscription, supply the last seen event id
-             *     via the `Last-Event-ID` request header to resume without gaps.
-             */
+            /** @description An SSE stream of task events. Each event's `data` is a JSON-encoded `StreamResponse`. The server writes event ids but does not yet read the `Last-Event-ID` request header, so resumption without gaps is not implemented. */
             200: {
                 headers: {
                     "A2A-Version": components["headers"]["A2AVersion"];
@@ -3063,8 +2991,8 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "event": "message",
-                     *       "data": "{\"statusUpdate\":{\"taskId\":\"task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62\",\"contextId\":\"ctx.0192f4c8-3d6b-7c4f-a02b-4d9e7f3c8b51\",\"status\":{\"state\":\"TASK_STATE_COMPLETED\",\"timestamp\":\"2026-05-19T12:00:01Z\"},\"final\":true}}"
+                     *       "id": "task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62",
+                     *       "data": "{\"statusUpdate\":{\"taskId\":\"task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62\",\"contextId\":\"ctx.0192f4c8-3d6b-7c4f-a02b-4d9e7f3c8b51\",\"status\":{\"state\":\"TASK_STATE_COMPLETED\",\"timestamp\":\"2026-05-19T12:00:01Z\"}}}"
                      *     }
                      */
                     "text/event-stream": components["schemas"]["A2AStreamEventResponse"];
@@ -3305,6 +3233,15 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description Not yet implemented. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommonErrorResponse"];
+                };
+            };
         };
     };
     ContextsList: {
@@ -3318,8 +3255,8 @@ export interface operations {
                 to?: string;
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
             };
             header?: never;
             path?: never;
@@ -3404,8 +3341,8 @@ export interface operations {
             query?: {
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
             };
             header?: never;
             path: {
@@ -3456,8 +3393,8 @@ export interface operations {
             query?: {
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
             };
             header?: never;
             path: {
@@ -3575,12 +3512,15 @@ export interface operations {
     RegistryList: {
         parameters: {
             query?: {
-                /** @description Free-text search over name and description. */
+                /**
+                 * @description Free-text search over name and description.
+                 *     **Future scope**: not yet implemented; the server ignores this parameter and returns the unfiltered page.
+                 */
                 q?: string;
                 /** @description Maximum number of items per page. */
                 pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
+                /** @description Opaque cursor from a prior response's `nextPageToken`. Omit on the first request. */
+                pageToken?: components["parameters"]["PageToken"];
             };
             header?: never;
             path?: never;
@@ -3636,21 +3576,21 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    ModelsList: {
+    FeedbackList: {
         parameters: {
-            query?: {
-                /** @description Maximum number of items per page. */
-                pageSize?: components["parameters"]["PageSize"];
-                /** @description Opaque cursor from a prior response's `nextPageOffset`. */
-                pageOffset?: components["parameters"]["PageOffset"];
-            };
+            query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description Context identifier (prefixed UUIDv7). */
+                contextId: components["parameters"]["ContextId"];
+                /** @description Task identifier (prefixed UUIDv7). */
+                taskId: components["parameters"]["TaskId"];
+            };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description A page of models. */
+            /** @description A list of feedback resources. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3658,39 +3598,22 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "models": [
+                     *       "feedbacks": [
                      *         {
-                     *           "id": "corti-default",
-                     *           "default": true
+                     *           "id": "fb.0192f4c8-9a3b-7e2f-9c4d-5a6b7c8d9e0f",
+                     *           "taskId": "task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62",
+                     *           "rating": {
+                     *             "scale": "binary",
+                     *             "value": 1
+                     *           },
+                     *           "normalizedScore": 1,
+                     *           "labels": [],
+                     *           "createdAt": "2026-05-19T12:00:00Z"
                      *         }
                      *       ]
                      *     }
                      */
-                    "application/json": components["schemas"]["ModelsListResponse"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    ModelsGet: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Model identifier (e.g. `corti-default`). */
-                modelId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The model. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelsResponse"];
+                    "application/json": components["schemas"]["FeedbackListResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -3744,6 +3667,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    FeedbackDelete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Context identifier (prefixed UUIDv7). */
+                contextId: components["parameters"]["ContextId"];
+                /** @description Task identifier (prefixed UUIDv7). */
+                taskId: components["parameters"]["TaskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feedback deleted, or there was no feedback to delete. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

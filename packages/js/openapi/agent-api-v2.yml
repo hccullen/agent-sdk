@@ -42,14 +42,6 @@ tags:
     }
   - { name: Artifacts, description: Retrieve artifacts produced by tasks. }
   - {
-      name: Models,
-      description: "Discover the models available for the `Agent.model` field.
-
-        🔮 **Future scope** — declared for forward compatibility; not yet implemented.
-
-        ",
-    }
-  - {
       name: Feedback,
       description: Collect human or automated feedback on tasks and messages.,
     }
@@ -94,10 +86,12 @@ paths:
 
         ID instead); `public` agents are listed tenant-wide.
 
+        The `visibility`, `lifecycle`, `label`, and `q` filter parameters are
+        accepted but not yet honored by the server; the response is unfiltered.
         "
       parameters:
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
         - name: visibility
           in: query
           description: Filter by one or more visibility levels.
@@ -232,7 +226,6 @@ paths:
         `.well-known` location for agent discovery.
 
         "
-      security: []
       responses:
         "200":
           description: The agent card.
@@ -243,6 +236,7 @@ paths:
               schema: { $ref: "#/components/schemas/AgentCardResponse" }
               examples:
                 card: { $ref: "#/components/examples/AgentCardExample" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v2/agentic/agents/{agentId}/a2a:
     parameters:
@@ -255,12 +249,12 @@ paths:
       description:
         "The `JSONRPC` protocol binding for A2A v1.0. Accepts a single JSON-RPC 2.0
 
-        request whose `method` is one of `message/send`, `message/stream`,
+        request whose `method` is one of `SendMessage`, `SendStreamingMessage`,
 
-        `tasks/get`, `tasks/list`, `tasks/cancel`, or `tasks/subscribe`.
+        `GetTask`, `ListTasks`, `CancelTask`, or `SubscribeToTask`.
 
 
-        Streaming methods (`message/stream`, `tasks/subscribe`) respond with
+        Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) respond with
 
         `text/event-stream`; all others respond with a single JSON-RPC response.
 
@@ -273,11 +267,11 @@ paths:
             schema: { $ref: "#/components/schemas/A2AJSONRPCRequest" }
             examples:
               messageSend:
-                summary: message/send
+                summary: SendMessage
                 value:
                   jsonrpc: "2.0"
                   id: "1"
-                  method: message/send
+                  method: SendMessage
                   params:
                     message:
                       role: ROLE_USER
@@ -289,9 +283,9 @@ paths:
           description:
             "A single JSON-RPC response (non-streaming methods), or an
 
-            `text/event-stream` for the streaming methods (`message/stream`,
+            `text/event-stream` for the streaming methods (`SendStreamingMessage`,
 
-            `tasks/subscribe`) where each event's `data` is a JSON-encoded
+            `SubscribeToTask`) where each event's `data` is a JSON-encoded
 
             `JSONRPCResponse`.
 
@@ -333,7 +327,7 @@ paths:
       tags: [A2A]
       operationId: A2ASendMessage
       summary: Send a message (A2A REST)
-      description: The `HTTP+JSON` binding of A2A `message/send`.
+      description: The `HTTP+JSON` binding of A2A `SendMessage`.
       requestBody:
         required: true
         description: The message to send to the agent.
@@ -372,7 +366,7 @@ paths:
       operationId: A2AStreamMessage
       summary: Stream a message (A2A REST)
       description:
-        "The `HTTP+JSON` binding of A2A `message/stream`. Responds with a
+        "The `HTTP+JSON` binding of A2A `SendStreamingMessage`. Responds with a
 
         `text/event-stream` of `Task`, `statusUpdate`, and `artifactUpdate` events.
 
@@ -425,7 +419,7 @@ paths:
       summary: List tasks (A2A REST)
       parameters:
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
         - name: contextId
           in: query
           description: Restrict to tasks within this context.
@@ -532,11 +526,9 @@ paths:
         "200":
           description:
             "An SSE stream of task events. Each event's `data` is a JSON-encoded
-
-            `StreamResponse`. On resubscription, supply the last seen event id
-
-            via the `Last-Event-ID` request header to resume without gaps.
-
+            `StreamResponse`. The server writes event ids but does not yet read
+            the `Last-Event-ID` request header, so resumption without gaps is
+            not implemented.
             "
           headers:
             A2A-Version: { $ref: "#/components/headers/A2AVersion" }
@@ -545,8 +537,8 @@ paths:
               schema: { $ref: "#/components/schemas/A2AStreamEventResponse" }
               example:
                 {
-                  event: message,
-                  data: '{"statusUpdate":{"taskId":"task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62","contextId":"ctx.0192f4c8-3d6b-7c4f-a02b-4d9e7f3c8b51","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-05-19T12:00:01Z"},"final":true}}',
+                  id: task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62,
+                  data: '{"statusUpdate":{"taskId":"task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62","contextId":"ctx.0192f4c8-3d6b-7c4f-a02b-4d9e7f3c8b51","status":{"state":"TASK_STATE_COMPLETED","timestamp":"2026-05-19T12:00:01Z"}}}',
                 }
         "401": { $ref: "#/components/responses/A2AUnauthorized" }
         "404": { $ref: "#/components/responses/A2ANotFound" }
@@ -689,6 +681,14 @@ paths:
       tags: [Connectors]
       operationId: ConnectorsUpdate
       summary: Update an agent-scoped connector (partial)
+      description:
+        "Partially updates an agent-scoped connector using JSON Merge Patch
+
+        (RFC 7386). `type` is immutable.
+
+        **Future scope**:  not yet implemented; the server returns `501`.
+        "
+      x-status: planned
       requestBody:
         required: true
         description: The connector fields to change, as a JSON Merge Patch (RFC 7386).
@@ -712,6 +712,11 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "501":
+          description: Not yet implemented.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommonErrorResponse" }
     delete:
       tags: [Connectors]
       operationId: ConnectorsRemove
@@ -725,6 +730,11 @@ paths:
       tags: [Contexts]
       operationId: ContextsList
       summary: List contexts
+      description: "Lists contexts matching the filters.
+
+        **Future scope**: not yet implemented; the server currently returns an empty page and ignores all parameters.
+        "
+      x-status: planned
       parameters:
         - name: agentId
           in: query
@@ -739,7 +749,7 @@ paths:
           description: Exclusive upper bound on `createdAt` (RFC 3339).
           schema: { type: string, format: date-time }
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
       responses:
         "200":
           description: A page of contexts.
@@ -806,7 +816,7 @@ paths:
         "
       parameters:
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
       responses:
         "200":
           description: OpenInference trace JSON (paginated).
@@ -848,7 +858,7 @@ paths:
       summary: List tasks within a context
       parameters:
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
       responses:
         "200":
           description: A page of tasks.
@@ -932,10 +942,14 @@ paths:
       parameters:
         - name: q
           in: query
-          description: Free-text search over name and description.
+          x-status: planned
+          description: "Free-text search over name and description.
+
+            **Future scope**: not yet implemented; the server ignores this parameter and returns the unfiltered page.
+            "
           schema: { type: string, maxLength: 256 }
         - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
+        - { $ref: "#/components/parameters/PageToken" }
       responses:
         "200":
           description: A page of registry connectors.
@@ -972,58 +986,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RegistryConnectorResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /v2/agentic/models:
-    get:
-      tags: [Models]
-      operationId: ModelsList
-      summary: List available models
-      description:
-        "Lists the models available for the `Agent.model` field, including the
-
-        tenant default.
-
-
-        🔮 **Future scope** — not yet implemented.
-
-        "
-      x-status: planned
-      parameters:
-        - { $ref: "#/components/parameters/PageSize" }
-        - { $ref: "#/components/parameters/PageOffset" }
-      responses:
-        "200":
-          description: A page of models.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ModelsListResponse" }
-              example: { models: [{ id: corti-default, default: true }] }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-  /v2/agentic/models/{modelId}:
-    parameters:
-      - name: modelId
-        in: path
-        required: true
-        description: Model identifier (e.g. `corti-default`).
-        schema: { type: string }
-    get:
-      tags: [Models]
-      operationId: ModelsGet
-      summary: Get a model
-      description: "Returns the details of a single model.
-
-
-        🔮 **Future scope** — not yet implemented.
-
-        "
-      x-status: planned
-      responses:
-        "200":
-          description: The model.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ModelsResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v2/agentic/contexts/{contextId}/tasks/{taskId}/feedback:
@@ -1078,6 +1040,56 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/UnprocessableEntity" }
+    get:
+      tags: [Feedback]
+      operationId: FeedbackList
+      summary: List feedback for a task
+      description:
+        "Returns all feedback resources submitted for the task by the
+        authenticated user, newest-first. The task must exist, belong to the
+        supplied context, and belong to the authenticated customer. Feedback is
+        scoped to the calling user via row-level security, so the response
+        contains only that user's feedback.
+
+        "
+      responses:
+        "200":
+          description: A list of feedback resources.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeedbackListResponse" }
+              example:
+                {
+                  feedbacks:
+                    [
+                      {
+                        id: fb.0192f4c8-9a3b-7e2f-9c4d-5a6b7c8d9e0f,
+                        taskId: task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62,
+                        rating: { scale: binary, value: 1 },
+                        normalizedScore: 1.0,
+                        labels: [],
+                        createdAt: "2026-05-19T12:00:00Z",
+                      },
+                    ],
+                }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Feedback]
+      operationId: FeedbackDelete
+      summary: Delete all feedback for a task
+      description:
+        "Soft-deletes every feedback resource the authenticated user submitted
+        for the task. The task must exist, belong to the supplied context, and
+        belong to the authenticated customer. Idempotent: deleting when there is
+        no feedback returns `204`.
+
+        "
+      responses:
+        "204":
+          description: Feedback deleted, or there was no feedback to delete.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     bearerAuth:
@@ -1131,21 +1143,21 @@ components:
       required: false
       description: Maximum number of items per page.
       schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-    PageOffset:
-      name: pageOffset
+    PageToken:
+      name: pageToken
       in: query
       required: false
-      description: Opaque cursor from a prior response's `nextPageOffset`.
-      schema: { type: integer, minimum: 0, maximum: 2147483647 }
+      description: Opaque cursor from a prior response's `nextPageToken`. Omit on the first request.
+      schema: { type: string }
     A2AVersionHeader:
       name: A2A-Version
       in: header
       required: false
       description:
-        "A2A protocol version in `Major.Minor` form (A2A §3.6). Clients MUST send
-        this on every A2A request. This surface implements `1.0` only; an absent
-        header is treated as `1.0`. Patch versions MUST NOT be sent and are not
-        considered during negotiation."
+        "A2A protocol version in `Major.Minor` form (A2A §3.6). Optional;
+        defaults to `1.0` when absent. This surface implements `1.0` only.
+        Patch versions MUST NOT be sent and are not considered during
+        negotiation."
       schema: { type: string, pattern: ^\d+\.\d+$, default: "1.0" }
   headers:
     A2AVersion:
@@ -1310,22 +1322,14 @@ components:
           type: [string, "null"]
           description: "Model identifier. Tenant default if omitted or `null`.
 
-
-            ⚠️ **Open question** — in the current implementation a model is
-
+            **Open question** — in the current implementation a model is
             configured per *expert*, not per *agent* (`Expert.modelName`), and an
-
             `Agent` has no model field at all. The desired end state is that
-
             there is **no distinction between an expert and an agent**, so `model`
-
             lives uniformly on this resource. Until that convergence lands, the
-
             precedence of an agent-level `model` over a connector/expert-level
-
-            override is undecided and MUST be resolved before this field ships.
-
-            "
+          override is undecided and MUST be resolved before this field ships.
+          "
           examples: [corti-default]
           x-open-question: expert-vs-agent-model-placement
         visibility: { $ref: "#/components/schemas/AgentsVisibility" }
@@ -1375,7 +1379,10 @@ components:
           createdBy: usr.0192f4c8-8bc0-7194-8570-92e3ce81d0a6
     AgentsCreateRequest:
       type: object
-      description: Request body for creating an agent.
+      description:
+        "Request body for creating an agent. The server currently ignores
+        `visibility` and `labels`; they are accepted but not persisted.
+        "
       required: [name]
       properties:
         name:
@@ -1420,9 +1427,11 @@ components:
       type: object
       description:
         "JSON Merge Patch body. Omitted fields are unchanged; `null` clears;
-
         `connectors` is replaced wholesale.
 
+        Note: the server currently honors only `name`, `description`,
+        `systemPrompt`, `model`, and `connectors`. `visibility`, `lifecycle`,
+        and `labels` are accepted but not yet persisted.
         "
       required: []
       properties:
@@ -1485,7 +1494,7 @@ components:
                 },
               ],
             ]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
+        nextPageToken: { $ref: "#/components/schemas/CommonNextPageToken" }
         totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
     CommonConnectorType:
       type: string
@@ -1521,7 +1530,11 @@ components:
           {
             type: boolean,
             default: true,
-            description: Whether the connector is active for invocations.,
+            description:
+              "Whether the connector is active for invocations. Only `schema`
+              connectors return this field today; `mcp`, `registry`, `agent`,
+              and `a2a` connectors omit it (treat as enabled).
+              ",
           }
     CommonRegistryConnectorProvisioned:
       description: A connector provisioned from a registry entry.
@@ -1696,7 +1709,10 @@ components:
           {
             type: object,
             additionalProperties: true,
-            description: Connector-specific configuration validated against the registry schema.,
+            description: "Connector-specific configuration validated against the
+              registry schema. Not yet persisted — the server currently drops
+              `config` for registry connectors on create.
+              ",
           }
       additionalProperties: false
     CommonMcpConnectorCreate:
@@ -1872,7 +1888,14 @@ components:
             ]
     RegistryConnectorResponse:
       type: object
-      description: A discoverable, pre-built connector offered by the platform registry.
+      description:
+        "A discoverable, pre-built connector offered by the platform registry.
+
+        Only `id`, `type`, `name`, `title`, `description`, and `configSchema`
+        are populated by the server today. `version`, `provider`,
+        `capabilities`, `tags`, and `documentationUrl` are declared for forward
+        compatibility but are not yet returned.
+        "
       required: [id, type, name]
       properties:
         id:
@@ -2011,11 +2034,15 @@ components:
                 },
               ],
             ]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
+        nextPageToken: { $ref: "#/components/schemas/CommonNextPageToken" }
         totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
     UsageGranularity:
       type: string
-      description: The size of each usage reporting bucket.
+      description:
+        "The size of each usage reporting bucket. Only `day` is currently
+        honored; `minute`, `hour`, and `week` are accepted but produce daily
+        buckets (the server always returns `day`).
+        "
       enum: [minute, hour, day, week]
       default: day
     UsageMetrics:
@@ -2097,7 +2124,13 @@ components:
               }
     Contexts:
       type: object
-      description: Lightweight context metadata, as returned in list responses.
+      description:
+        "Lightweight context metadata, as returned in list responses. Contexts
+        are not first-class CRUD resources: there is no explicit create or
+        update endpoint — a context is created implicitly on the first
+        message send (or reused by client-supplied contextId), and list is
+        not yet implemented.
+        "
       required: [id]
       properties:
         id: { $ref: "#/components/schemas/CommonContextIDValue" }
@@ -2124,7 +2157,11 @@ components:
         expiresAt:
           type: [string, "null"]
           format: date-time
-          description: When the context expires; `null` means it does not expire.
+          description:
+            "When the context expires; `null` means it does not expire. Not
+            yet implemented — the server always returns `null` and performs no
+            TTL-based cleanup.
+            "
     ContextsDetailResponse:
       description:
         "A context together with its tasks. Returned by `GET /contexts/{id}`.
@@ -2186,7 +2223,7 @@ components:
           items: { $ref: "#/components/schemas/Contexts" }
           description: Contexts on the current page.
           examples: [[{ id: ctx.0192f4c8-3d6b-7c4f-a02b-4d9e7f3c8b51 }]]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
+        nextPageToken: { $ref: "#/components/schemas/CommonNextPageToken" }
         totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
     ContextsTraceResponse:
       type: object
@@ -2224,7 +2261,7 @@ components:
                 },
               ],
             ]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
+        nextPageToken: { $ref: "#/components/schemas/CommonNextPageToken" }
         totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
     ContextsTraceItem:
       type: object
@@ -2322,25 +2359,44 @@ components:
       description: A single content part of a message or artifact.
       required: []
       properties:
-        text: { type: string, description: Plain-text content part. }
-        file:
-          type: object
-          properties:
-            name: { type: string, description: File name. }
-            mimeType: { type: string, description: File MIME type. }
-            uri: { type: string, format: uri, description: File source URI. }
-            bytes:
-              {
-                type: string,
-                contentEncoding: base64,
-                description: Inline file content as base64-encoded bytes.,
-              }
-          description: File content part with name, MIME type, URI, or inline base64 bytes.
+        text:
+          {
+            type: string,
+            description: "The string content of the `text` part.",
+          }
         data:
           {
             type: object,
             additionalProperties: true,
-            description: Structured data content part (free-form JSON).,
+            description: "Arbitrary structured `data` as a JSON value (object, array, string, number, boolean, or null).",
+          }
+        filename:
+          {
+            type: string,
+            description: "An optional `filename` for the file (e.g., `document.pdf`).",
+          }
+        mediaType:
+          {
+            type: string,
+            description: "The `media_type` (MIME type) of the part content (e.g., `text/plain`, `application/json`, `image/png`).",
+          }
+        raw:
+          {
+            type: string,
+            contentEncoding: base64,
+            pattern: "^[A-Za-z0-9+/]*={0,2}$",
+            description: "The `raw` byte content of a file. Encoded as a base64 string.",
+          }
+        url:
+          {
+            type: string,
+            description: "A `url` pointing to the file's content.",
+          }
+        metadata:
+          {
+            type: object,
+            additionalProperties: true,
+            description: "Optional metadata associated with this part.",
           }
       additionalProperties: true
     CommonMessage:
@@ -2393,6 +2449,21 @@ components:
             description: Optional artifact name.,
             examples: [icd10-result],
           }
+        description:
+          {
+            type: string,
+            description: A human-readable description of the artifact.,
+          }
+        extensions:
+          type: array
+          description: URIs of extensions that contributed to this artifact.
+          items: { type: string, format: uri }
+        metadata:
+          {
+            type: object,
+            additionalProperties: true,
+            description: Optional metadata included with the artifact.,
+          }
         parts:
           type: array
           items: { $ref: "#/components/schemas/CommonPart" }
@@ -2409,6 +2480,8 @@ components:
           TASK_STATE_FAILED,
           TASK_STATE_CANCELED,
           TASK_STATE_INPUT_REQUIRED,
+          TASK_STATE_REJECTED,
+          TASK_STATE_AUTH_REQUIRED,
         ]
     CommonTaskStatus:
       type: object
@@ -2472,7 +2545,11 @@ components:
         metadata:
           {
             $ref: "#/components/schemas/CommonTaskMetadata",
-            description: "Task metadata, including `$usage` token/credit accounting.",
+            description:
+              "Task metadata, including `$usage` token/credit accounting.
+              Not yet exposed through the REST binding (deferred); only the
+              JSON-RPC binding populates this field.
+              ",
             example:
               {
                 $usage:
@@ -2490,6 +2567,12 @@ components:
       description: A page of tasks.
       required: [tasks]
       properties:
+        pageSize:
+          {
+            type: integer,
+            minimum: 1,
+            description: The page size used for this response.,
+          }
         tasks:
           type: array
           items: { $ref: "#/components/schemas/CommonTaskResponse" }
@@ -2504,18 +2587,18 @@ components:
                 },
               ],
             ]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
+        nextPageToken: { $ref: "#/components/schemas/CommonNextPageToken" }
         totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
     A2ASendMessageConfiguration:
       type: object
       description: Per-request options controlling how a message is processed.
       required: []
       properties:
-        blocking:
+        returnImmediately:
           {
             type: boolean,
-            default: true,
-            description: "When `false`, return as soon as the task is submitted.",
+            default: false,
+            description: "If `true`, return as soon as the task is submitted, even if processing is still in progress. If `false` (default), wait until the task reaches a terminal (`COMPLETED`, `FAILED`, `CANCELED`, `REJECTED`) or interrupted (`INPUT_REQUIRED`, `AUTH_REQUIRED`) state.",
           }
         historyLength:
           {
@@ -2542,46 +2625,45 @@ components:
             description: Free-form request metadata.,
             examples: [{ requestSource: mobile, traceId: trace.abc123 }],
           }
+        tenant:
+          {
+            type: string,
+            description: "Optional. Opaque routing identifier. Must match the `tenant` value from the selected `AgentInterface` in the Agent Card when that field is set.",
+          }
     A2ASendMessageResponse:
       type: object
-      description: Exactly one of `task` or `msg` is present.
+      description: Exactly one of `task` or `message` is present.
       required: []
       properties:
         task: { $ref: "#/components/schemas/CommonTaskResponse" }
-        msg: { $ref: "#/components/schemas/CommonMessage" }
+        message: { $ref: "#/components/schemas/CommonMessage" }
       oneOf:
         - required: [task]
-        - required: [msg]
+        - required: [message]
     A2AStreamResponse:
       type: object
       description: A single A2A streaming event. Exactly one field is present.
       required: []
       properties:
         task: { $ref: "#/components/schemas/CommonTaskResponse" }
-        msg: { $ref: "#/components/schemas/CommonMessage" }
+        message: { $ref: "#/components/schemas/CommonMessage" }
         statusUpdate:
           type: object
           properties:
             taskId: { $ref: "#/components/schemas/CommonTaskIDValue" }
             contextId: { $ref: "#/components/schemas/CommonContextIDValue" }
             status: { $ref: "#/components/schemas/CommonTaskStatus" }
-            final:
-              {
-                type: boolean,
-                description: Whether this is the final status update for the task.,
-              }
             metadata:
               {
                 type: object,
                 additionalProperties: true,
                 description: Free-form metadata for this update.,
               }
-          description: Incremental task status update.
+          description: "Incremental task status update. There is no `final` flag; clients infer finality from the task state (TASK_STATE_COMPLETED, TASK_STATE_FAILED, TASK_STATE_CANCELED, TASK_STATE_REJECTED are terminal)."
         artifactUpdate:
           type: object
           properties:
             taskId: { $ref: "#/components/schemas/CommonTaskIDValue" }
-            contextId: { $ref: "#/components/schemas/CommonContextIDValue" }
             artifact: { $ref: "#/components/schemas/CommonArtifactResponse" }
             lastChunk:
               {
@@ -2591,12 +2673,12 @@ components:
           description: Incremental artifact update.
       oneOf:
         - required: [task]
-        - required: [msg]
+        - required: [message]
         - required: [statusUpdate]
         - required: [artifactUpdate]
     A2ASSEEvent:
       type: object
-      description: A single Server-Sent Event frame (W3C SSE wire format).
+      description: "A single Server-Sent Event frame (W3C SSE wire format). The server currently writes only `id` and `data` lines; `event` and `retry` are declared for forward compatibility but not sent."
       required: [data]
       properties:
         data:
@@ -2665,6 +2747,18 @@ components:
             description: Agent description.,
             examples: [Returns ICD-10 codes for a clinical encounter.],
           }
+        documentationUrl:
+          {
+            type: string,
+            format: uri,
+            description: A URL providing additional documentation about the agent.,
+          }
+        iconUrl:
+          {
+            type: string,
+            format: uri,
+            description: Optional URL to an icon for the agent.,
+          }
         version:
           {
             type: string,
@@ -2683,14 +2777,10 @@ components:
               {
                 type: boolean,
                 description:
-                  "Whether the agent can push task updates to a client-supplied
+                  "Whether the agent can push task updates to a client-supplied webhook.
 
-                  webhook. 🔮 **Future scope** — the `tasks/pushNotificationConfig/*`
-
-                  management endpoints are not yet implemented; expect this to be
-
-                  `false` until they ship.
-
+                  **Future scope**: the `tasks/pushNotificationConfig/*` management endpoints are not yet implemented.
+                  Expect this to be `false` until they ship.
                   ",
               }
           description: Agent capability flags (streaming, push notifications).
@@ -2718,6 +2808,39 @@ components:
               }
           description: Publishing organization and URL.
           example: { organization: Corti, url: "https://corti.ai" }
+        securityRequirements:
+          type: array
+          description: Security requirements for contacting the agent.
+          items:
+            {
+              type: object,
+              additionalProperties: true,
+              description: A map of security schemes to the required scopes.,
+            }
+        securitySchemes:
+          type: object
+          description: The security scheme details used for authenticating with this agent.
+          additionalProperties: true
+        signatures:
+          type: array
+          description: "JSON Web Signatures (JWS, RFC 7515) computed for this agent card."
+          items:
+            type: object
+            required: [protected, signature]
+            properties:
+              protected:
+                {
+                  type: string,
+                  description: Base64url-encoded protected JWS header.,
+                }
+              header:
+                {
+                  type: object,
+                  additionalProperties: true,
+                  description: Unprotected JWS header values.,
+                }
+              signature:
+                { type: string, description: Base64url-encoded signature. }
         skills:
           type: array
           items:
@@ -2795,15 +2918,15 @@ components:
           type: string
           enum:
             [
-              message/send,
-              message/stream,
-              tasks/get,
-              tasks/list,
-              tasks/cancel,
-              tasks/subscribe,
+              SendMessage,
+              SendStreamingMessage,
+              GetTask,
+              ListTasks,
+              CancelTask,
+              SubscribeToTask,
             ]
-          description: JSON-RPC method name.
-          examples: [message/send]
+          description: JSON-RPC method name (PascalCase on the wire).
+          examples: [SendMessage]
         params:
           {
             type: object,
@@ -3082,9 +3205,18 @@ components:
             description: When the feedback was created.,
             example: "2026-05-19T12:00:00Z",
           }
+    FeedbackListResponse:
+      type: object
+      description: All feedback resources for a task, newest-first. Feedback is scoped to the authenticated user via row-level security.
+      required: [feedbacks]
+      properties:
+        feedbacks:
+          type: array
+          items: { $ref: "#/components/schemas/FeedbackResponse" }
+          description: Feedback resources for the task.
     CommonErrorResponse:
       type: object
-      description: "Corti management-plane error envelope, used by all non-A2A endpoints.\n\n- **Standard** — when the error chain contains at least one `PublicError`,\n  `code` and `message` come from the outermost `PublicError` and `details`\n  is merged across the whole chain (outer values take precedence).\n- **Fallback** — when the chain contains no `PublicError`, the response is\n  a generic `500` carrying a `requestId` for support reference.\n- **Validation** — a single `PublicError` whose `details.validationErrors`\n  lists the offending fields.\n"
+      description: "Corti management-plane error envelope, used by all non-A2A endpoints.\n\n- **Standard** — when the error chain contains at least one `PublicError`,\n  `code` and `message` come from the outermost `PublicError` and `details`\n  is merged across the whole chain (outer values take precedence).\n- **Fallback** — when the chain contains no `PublicError`, the response is\n  a generic `500` carrying a `requestId` for support reference.\n- **Validation** — a single `PublicError` whose `details.validationErrors`\n  lists the offending fields.\n\nField names use camelCase on the wire (e.g. `requestId`, `howToFix`).\nThe free-form `details` object may carry arbitrary caller-defined keys.\n\nRate limiting (HTTP 429) is not yet implemented; the server does not emit a 429 response.\n"
       required: [error]
       properties:
         error:
@@ -3277,92 +3409,13 @@ components:
       properties:
         $usage: { $ref: "#/components/schemas/CommonUsage" }
       additionalProperties: true
-    ModelsResponse:
-      type: object
-      description: "A model available for the `Agent.model` field.
-
-        🔮 **Future scope** — declared for forward compatibility.
-
-        "
-      required: [id]
-      properties:
-        id:
-          type: string
-          description: Stable model identifier; use as an `Agent.model` value.
-          examples: [corti-default]
-        displayName:
-          type: string
-          description: Human-readable name for UIs.
-          examples: [Corti Default]
-        description:
-          { type: string, description: Human-readable model description. }
-        provider:
-          type: string
-          description: Upstream provider or family.
-          examples: [corti, anthropic, openai]
-        contextWindow:
-          {
-            type: integer,
-            format: int64,
-            minimum: 0,
-            description: Maximum context length in tokens.,
-          }
-        maxOutputTokens:
-          {
-            type: integer,
-            format: int64,
-            minimum: 0,
-            description: Maximum tokens the model will generate in one response.,
-          }
-        inputModes:
-          type: array
-          description: Accepted input media types.
-          items: { type: string }
-        outputModes:
-          type: array
-          description: Produced output media types.
-          items: { type: string }
-        default:
-          {
-            type: boolean,
-            description: Whether this is the tenant default applied when `Agent.model` is omitted.,
-          }
-        deprecated:
-          {
-            type: boolean,
-            description: Whether the model is deprecated and scheduled for removal.,
-          }
-      examples:
-        - id: corti-default
-          displayName: Corti Default
-          description: The default reasoning model.
-          provider: corti
-          contextWindow: 200000
-          maxOutputTokens: 8192
-          inputModes: [text/plain]
-          outputModes: [text/plain]
-          default: true
-          deprecated: false
-    ModelsListResponse:
-      type: object
-      description: A page of models. 🔮 **Future scope.**
-      required: [models]
-      properties:
-        models:
-          type: array
-          items: { $ref: "#/components/schemas/ModelsResponse" }
-          description: Models on the current page.
-          examples: [[{ id: corti-default, default: true }]]
-        nextPageOffset: { $ref: "#/components/schemas/CommonNextPageOffset" }
-        totalSize: { $ref: "#/components/schemas/CommonTotalSize" }
-    CommonNextPageOffset:
-      type: [integer, "null"]
-      description: Offset to use for the next page, or `null` if there are no more pages.
-      example: 20
+    CommonNextPageToken:
+      type: ["string", "null"]
+      description: Opaque cursor to request the next page, or `null` if there are no more pages.
     CommonTotalSize:
       {
         type: integer,
-        description: "Total number of items matching the query, when known.",
+        description: "Total number of items matching the query, when known. Not currently populated by the server; treat as absent.",
         example: 42,
       }
   examples:
@@ -3404,8 +3457,8 @@ components:
       value:
         name: coder
         description: Returns ICD-10 codes for a clinical encounter.
-        version: 2.0.0
-        capabilities: { streaming: true }
+        version: 0.1.0
+        capabilities: { streaming: true, pushNotifications: false }
         defaultInputModes: [text/plain]
         defaultOutputModes: [text/plain]
         provider: { organization: Corti, url: "https://corti.ai" }
@@ -3427,7 +3480,7 @@ components:
             }
     SendMessageResponseExample:
       summary: Completed task
-      description: A blocking message/send that resolves to a completed task with one artifact.
+      description: A non-streaming SendMessage (returnImmediately=false) that resolves to a completed task with one artifact.
       value:
         task:
           id: task.0192f4c8-4e7c-7d50-b13c-5eaf8a4d9c62

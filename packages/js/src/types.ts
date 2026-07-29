@@ -55,40 +55,38 @@ export type AgentCard = components["schemas"]["AgentCardResponse"];
 
 export type FeedbackCreateRequest = components["schemas"]["FeedbackCreateRequest"];
 export type FeedbackResponse = components["schemas"]["FeedbackResponse"];
+export type FeedbackListResponse = components["schemas"]["FeedbackListResponse"];
 
 export type UsageReportResponse = components["schemas"]["UsageReportResponse"];
 export type UsageGranularity = components["schemas"]["UsageGranularity"];
 
-export type ModelResponse = components["schemas"]["ModelsResponse"];
-export type ModelsListResponse = components["schemas"]["ModelsListResponse"];
-
 export type ErrorResponse = components["schemas"]["CommonErrorResponse"];
 export type A2AErrorResponse = components["schemas"]["A2AErrorResponse"];
 
+export type PageToken = components["parameters"]["PageToken"];
+
 export type TextPart = { text: string };
-export type FilePart = {
-  file: {
-    name?: string;
-    mimeType?: string;
-    uri?: string;
-    bytes?: string;
-  };
-};
 export type DataPart = { data: Record<string, unknown> };
+export type FilePart = {
+  filename?: string;
+  mediaType?: string;
+  raw?: string;
+  url?: string;
+};
 
 export function textPart(text: string): TextPart {
   return { text };
 }
 
-export function filePart(opts: {
-  name?: string;
-  mimeType?: string;
-  uri?: string;
-  bytes?: string;
-}): FilePart {
-  return { file: opts };
-}
-
 export function dataPart(data: Record<string, unknown>): DataPart {
   return { data };
+}
+
+export function filePart(opts: {
+  filename?: string;
+  mediaType?: string;
+  raw?: string;
+  url?: string;
+}): FilePart {
+  return opts;
 }

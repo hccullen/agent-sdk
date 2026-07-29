@@ -11,7 +11,7 @@ import type {
 
 export interface ListAgentsParams {
   pageSize?: number;
-  pageOffset?: number;
+  pageToken?: string;
   visibility?: Visibility[];
   lifecycle?: Lifecycle;
   label?: string[];

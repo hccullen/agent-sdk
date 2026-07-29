@@ -52,7 +52,16 @@
   ],
   "author": "Corti <developer@corti.ai>",
   "license": "MIT",
+  "peerDependencies": {
+    "@corti/sdk": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@corti/sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@corti/sdk": "3.0.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"

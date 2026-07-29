@@ -66,11 +66,6 @@ describe("CortiClient", () => {
       const c = makeClient();
       expect(c.agentCard).toBeDefined();
     });
-
-    it("exposes models resource", () => {
-      const c = makeClient();
-      expect(c.models).toBeDefined();
-    });
   });
 
   describe("auth middleware", () => {
@@ -79,6 +74,29 @@ describe("CortiClient", () => {
       expect(c.raw).toBeDefined();
       expect(typeof c.raw.GET).toBe("function");
       expect(typeof c.raw.POST).toBe("function");
+    });
+  });
+
+  describe("sdkClient auth", () => {
+    it("accepts an sdkClient with getAuthHeaders", () => {
+      const sdkClient = {
+        getAuthHeaders: () =>
+          Promise.resolve(
+            new Headers({
+              Authorization: "Bearer sdk-token",
+              "Tenant-Name": "sdk-tenant",
+            }),
+          ),
+      };
+      const c = new CortiClient({ sdkClient });
+      expect(c.baseUrl).toBe("https://api.eu.corti.app");
+      expect(c.raw).toBeDefined();
+    });
+
+    it("throws when no auth source is provided", () => {
+      expect(() => new CortiClient({} as CortiClientOptions)).toThrow(
+        "sdkClient",
+      );
     });
   });
 });

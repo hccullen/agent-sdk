@@ -14,7 +14,7 @@ export interface ListContextsParams {
   from?: string;
   to?: string;
   pageSize?: number;
-  pageOffset?: number;
+  pageToken?: string;
 }
 
 export class ContextsResource {
@@ -56,7 +56,7 @@ export class ContextsResource {
 
   async getTrace(
     contextId: string,
-    params?: { pageSize?: number; pageOffset?: number },
+    params?: { pageSize?: number; pageToken?: string },
   ): Promise<ContextTraceResponse> {
     const { data, error, response } = await this._client.raw.GET(
       "/v2/agentic/contexts/{contextId}/trace",
@@ -73,7 +73,7 @@ export class ContextsResource {
 
   async listTasks(
     contextId: string,
-    params?: { pageSize?: number; pageOffset?: number },
+    params?: { pageSize?: number; pageToken?: string },
   ): Promise<TaskListResponse> {
     const { data, error, response } = await this._client.raw.GET(
       "/v2/agentic/contexts/{contextId}/tasks",
