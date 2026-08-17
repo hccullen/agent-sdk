@@ -21,7 +21,17 @@ defineProps<{
   line-height: 1.6;
   color: #b8c2d4;
   overflow-x: auto;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
   margin: 1rem 0;
+}
+@media (max-width: 768px) {
+  .output-block {
+    margin: 1rem -1.5rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    font-size: 0.78rem;
+  }
 }
 </style>

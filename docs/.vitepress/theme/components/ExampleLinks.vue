@@ -10,7 +10,7 @@
 <style scoped>
 .example-links {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
   gap: 0.6rem;
   margin: 0.75rem 0 0;
 }
