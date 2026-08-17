@@ -400,7 +400,7 @@ const mockClient = {
 } as unknown as CortiClient;
 ```
 
-## Final file inventory
+## Final file inventory (v1)
 
 | File | Action | Est. LOC |
 |---|---|---|
@@ -412,24 +412,397 @@ const mockClient = {
 
 For context: current `stateGraph.ts` is 94 lines. This is ~4.5x that, covering parser + CEL adapter + compiler + executor + types.
 
+### Projected file inventory (after Phase 2/3)
+
+| File | Action | Est. LOC delta |
+|---|---|---|
+| `packages/js/src/declarativeGraph.ts` | Edit | +150 (new node types) |
+| `packages/js/src/__tests__/declarativeGraph.test.ts` | Edit | +200 (new test cases) |
+| `packages/js/src/index.ts` | Edit | +5 (new type exports) |
+| `packages/js/src/mcpTools.ts` | New (Phase 3) | ~80 (MCP tool-call resource, blocked on API) |
+| **Total** | | **~435 additional** |
+
 ## What's NOT in v1 (deferred)
 
 | Feature | Reason | When |
 |---|---|---|
 | YAML authoring | Avoid `js-yaml` dep in v1 | Phase 2 |
 | Python SDK | Needs rebuild regardless | Separate effort |
-| `tool_call` node type | MCP integration is separate concern | Phase 3 |
-| `parallel` node type | Fan-out execution model | Phase 3 |
-| `interrupt` node type | Human-in-the-loop needs persistence | Phase 3 |
-| `subworkflow` node type | Needs workflow registry | Phase 3 |
-| `set_state` node type | Pure state transform, easy to add | Phase 2 |
-| `http_call` node type | HTTP endpoint calls | Phase 3 |
-| `wait` node type | Duration/signal delays | Phase 3 |
+| Additional node types | See [Phase 2/3 node types](#phase-2--3-additional-node-types) below | Phase 2/3 |
 | Backward-compat bridge (`stateGraphToDefinition`) | Needs `agentNode()` to store config metadata | Phase 2 |
 | JSON Schema validation (ajv) | Hand-written validation is enough for 3 node types | When node types grow |
 | Checkpoint/resume | Needs persistence layer | Phase 3+ |
 | State schema runtime validation | CEL type-checking covers most cases | When needed |
 | Graph structure analysis (dead-ends, unreachable nodes) | Basic validation in v1, deeper analysis later | Phase 2 |
+
+## Phase 2 / 3: Additional node types
+
+### Design principles
+
+1. Every new node type follows the existing pattern: a `config` object, CEL expressions for dynamic values, `route_from` for agent-decided routing, and static edges for default routing.
+2. The executor `while`-loop stays the same — each node type is a new branch in the `switch on node.type`. No structural changes to the executor.
+3. The parser's `validNodeTypes` set grows by one per new type. Each type adds a focused validation function.
+4. `route_from` is available on all non-terminal node types (anything that's not `end`).
+
+### `set_state` — Pure state transform (Phase 2)
+
+**Purpose**: Transform state via CEL expressions without calling an agent or making I/O requests. Replaces the most common use case for custom code nodes: "set field X to an expression of state fields."
+
+**Config**:
+```typescript
+{ id: string; type: "set_state"; config: SetStateConfig }
+
+interface SetStateConfig {
+  set: Record<string, string>;  // state field → CEL expression (evaluated against {state})
+  route_from?: string;
+}
+```
+
+**Example**:
+```json
+{
+  "id": "enrich",
+  "type": "set_state",
+  "config": {
+    "set": {
+      "full_text": "state.note + ' — severity: ' + state.severity",
+      "word_count": "state.note.size()"
+    }
+  }
+}
+```
+
+**Executor behavior**:
+- For each `(field, expr)` in `set`: evaluate CEL against `{state}`, write to `state[field]`
+- Routing: `route_from` if present, else static edge
+- No I/O, no agent call
+
+**Compilation**: Pre-compile all `set` CEL expressions + `route_from` (if present)
+
+**Complexity**: Low — same as `switch` minus the routing logic. ~20 LOC in executor, ~10 LOC in compiler.
+
+### `http_call` — HTTP endpoint call (Phase 2)
+
+**Purpose**: Call any HTTP endpoint and map the response into state. Covers webhooks, external APIs, database lookups via REST — anything with a URL.
+
+**Config**:
+```typescript
+{ id: string; type: "http_call"; config: HttpCallConfig; retry?: RetryPolicy; timeout?: string }
+
+interface HttpCallConfig {
+  url: string;                      // CEL expression → URL string
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  headers?: Record<string, string>; // header name → CEL expression
+  body?: string;                    // CEL expression → JSON-serialisable value
+  output: Record<string, string>;   // state field → CEL expression (evaluated against {state, response})
+  route_from?: string;
+}
+```
+
+**Response binding** (available in `output` CEL expressions):
+```typescript
+{
+  status: number,                    // HTTP status code
+  headers: Record<string, string>,   // response headers
+  body: unknown                       // parsed JSON body (or raw text if not JSON)
+}
+```
+
+**Example**:
+```json
+{
+  "id": "lookup-patient",
+  "type": "http_call",
+  "config": {
+    "url": "'https://api.example.com/patients/' + state.patientId",
+    "method": "GET",
+    "headers": { "Authorization": "'Bearer ' + state.token" },
+    "output": {
+      "patient_name": "response.body.name",
+      "patient_age": "response.body.age"
+    }
+  }
+}
+```
+
+**Executor behavior**:
+1. Evaluate `url`, `method`, `headers`, `body` CEL expressions against `{state}`
+2. Make HTTP request (using the same `fetch` available to the SDK)
+3. Parse response — JSON if `Content-Type: application/json`, else raw text
+4. For each `(field, expr)` in `output`: evaluate CEL against `{state, response}`, write to `state[field]`
+5. Routing: `route_from` if present, else static edge
+
+**Compilation**: Pre-compile `url`, `headers`, `body`, all `output`, `route_from` CEL expressions
+
+**Complexity**: Medium — needs HTTP fetch logic, response parsing, error handling for non-2xx responses. ~40 LOC in executor, ~15 LOC in compiler.
+
+**Risk**: Network failures, timeouts. Mitigation: `retry` policy (already in the type system) + `timeout` field.
+
+### `interrupt` — Human-in-the-loop (Phase 3)
+
+**Purpose**: Pause execution, ask a human for input, resume with their answer. Two modes: callback (simple, in-process) and checkpoint (durable, cross-session).
+
+#### Mode 1: Callback (Phase 3a)
+
+**Config**:
+```typescript
+{ id: string; type: "interrupt"; config: InterruptConfig }
+
+interface InterruptConfig {
+  prompt: string;     // CEL expression → prompt string (what to ask the human)
+  field: string;      // state field to store the human's answer
+  route_from?: string; // CEL expression → next node (evaluated after resume)
+}
+```
+
+**Runner API**:
+```typescript
+async function runWorkflow(
+  compiled: CompiledGraph,
+  initialState: AnyState,
+  opts?: {
+    maxIterations?: number;
+    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+  },
+): Promise<StateGraphResult<AnyState>>;
+```
+
+**Executor behavior**:
+1. Evaluate `prompt` CEL against `{state}` → prompt string
+2. Call `opts.onInterrupt(node.id, prompt, state)` → human answer
+3. Store answer in `state[field]`
+4. Routing: `route_from` if present, else static edge
+
+**Example**:
+```json
+{
+  "id": "review",
+  "type": "interrupt",
+  "config": {
+    "prompt": "'Review these codes: ' + state.codes + '. Approve?'",
+    "field": "approved",
+    "route_from": "state.approved == 'yes' ? 'finalize' : '__end__'"
+  }
+}
+```
+
+**Runner usage**:
+```typescript
+const result = await runWorkflow(compiled, { note: "asthma" }, {
+  onInterrupt: async (node, prompt, state) => {
+    const answer = await showUserPrompt(prompt); // your UI code
+    return answer;
+  },
+});
+```
+
+**Compilation**: Pre-compile `prompt` and `route_from` CEL expressions
+
+**Complexity**: Low-medium — ~15 LOC in executor. The complexity is in the caller's `onInterrupt` implementation, not the engine.
+
+#### Mode 2: Checkpoint/resume (Phase 3b)
+
+**Purpose**: Durable interrupts that survive process restarts. The executor yields a checkpoint, the caller persists it, and a later process resumes with the human's answer.
+
+**Runner API**:
+```typescript
+interface WorkflowInterrupt {
+  kind: "interrupt";
+  node: string;
+  prompt: string;
+  state: AnyState;
+  checkpoint: string;  // opaque token encoding position + state
+}
+
+interface StateGraphResult<S> {
+  state: S;
+  steps: StateGraphStep<S>[];
+  iterations: number;
+  terminatedBy: "end" | "maxIterations" | "noEdge" | "interrupted";
+}
+
+async function* runWorkflowInteractive(
+  compiled: CompiledGraph,
+  initialState: AnyState,
+  opts?: { maxIterations?: number },
+): AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>>;
+
+async function resumeWorkflow(
+  compiled: CompiledGraph,
+  checkpoint: string,
+  interruptResult: unknown,
+): Promise<AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>>>;
+```
+
+**Checkpoint format** (base64-encoded JSON):
+```typescript
+{ nodeId: string; state: AnyState; steps: StateGraphStep[]; iterations: number }
+```
+
+**Complexity**: High — requires serialising/resuming executor state, changing the return type, adding `resumeWorkflow`. ~80 LOC. Blocked on a persistence story (where to store checkpoints).
+
+**Decision**: Phase 3a (callback) ships first. Phase 3b (checkpoint) waits until we have a use case that needs cross-session persistence.
+
+### `tool_call` — MCP tool invocation (Phase 3)
+
+**Purpose**: Call a specific tool on an MCP connector attached to an agent. Unlike `agent_call` (which sends a message and gets a response), `tool_call` invokes a named tool directly.
+
+**Config**:
+```typescript
+{ id: string; type: "tool_call"; config: ToolCallConfig; retry?: RetryPolicy; timeout?: string }
+
+interface ToolCallConfig {
+  agent: string;      // agent ID (whose connector to use)
+  connector: string;  // connector name (which MCP server)
+  tool: string;       // tool name
+  input: string;      // CEL expression → tool input (object)
+  output: Record<string, string>;   // state field → CEL expression (evaluated against {state, response})
+  route_from?: string;
+}
+```
+
+**Response binding**:
+```typescript
+{
+  result: unknown,    // tool output
+  error: string | null // error message if tool failed
+}
+```
+
+**Executor behavior**:
+1. Evaluate `input` CEL against `{state}` → tool input object
+2. Invoke the MCP tool via the agent's connector
+3. For each `(field, expr)` in `output`: evaluate CEL against `{state, response}`, write to `state[field]`
+4. Routing: `route_from` if present, else static edge
+
+**Compilation**: Pre-compile `input`, all `output`, `route_from` CEL. Resolve agent + connector at compile time (eager fetch, same as `agent_call`).
+
+**Complexity**: Medium — depends on MCP tool invocation API. The A2A protocol supports tool calling, but the SDK doesn't yet expose it directly. Needs investigation of the MCP tool call endpoint.
+
+**Blocker**: The SDK needs an MCP tool-call resource first. This is a separate effort.
+
+### `parallel` — Fan-out execution (Phase 3)
+
+**Purpose**: Run multiple branches concurrently, merge results, continue.
+
+**Config**:
+```typescript
+{ id: string; type: "parallel"; config: ParallelConfig }
+
+interface ParallelConfig {
+  branches: {
+    name: string;       // branch identifier
+    node: string;       // entry node for this branch
+    input: string;      // CEL expression → branch initial state
+  }[];
+  join: "all" | "any";  // wait for all branches or first success
+  output: Record<string, string>;  // state field → CEL expression (evaluated against {state, results})
+  route_from?: string;
+}
+```
+
+**Results binding**:
+```typescript
+{
+  results: Record<string, unknown>  // branch name → final state of that branch
+}
+```
+
+**Executor behavior**:
+1. For each branch: evaluate `input` CEL against `{state}` → branch initial state
+2. Run all branches concurrently (each is a sub-execution of the graph from `node` to `__end__`)
+3. Wait for `all` or `any` to complete
+4. Evaluate `output` CEL expressions against `{state, results}` → merge into state
+5. Routing: `route_from` if present, else static edge
+
+**Complexity**: High — requires recursive sub-execution, concurrent branch management, merge strategy. ~100 LOC. Changes to `CompiledGraph` to support nested graphs.
+
+**Risk**: Branch failure handling, what happens to in-flight branches when `join: "any"` completes. Needs careful error semantics.
+
+### `subworkflow` — Run another workflow (Phase 3)
+
+**Purpose**: Invoke another workflow definition as a node, merge its output into state.
+
+**Config**:
+```typescript
+{ id: string; type: "subworkflow"; config: SubworkflowConfig; retry?: RetryPolicy; timeout?: string }
+
+interface SubworkflowConfig {
+  workflow: string;   // workflow ID (from a registry) or inline definition
+  input: string;       // CEL expression → subworkflow initial state
+  output: Record<string, string>;  // state field → CEL expression (evaluated against {state, result})
+  route_from?: string;
+}
+```
+
+**Result binding**:
+```typescript
+{
+  state: AnyState,       // final state of subworkflow
+  iterations: number,    // iterations subworkflow took
+  terminatedBy: string   // how subworkflow ended
+}
+```
+
+**Compilation**: If `workflow` is an inline definition, compile it recursively. If it's an ID, fetch from a workflow registry (doesn't exist yet — needs a `WorkflowsResource`).
+
+**Complexity**: Medium — recursive `compileWorkflow` + `runWorkflow` call. ~30 LOC. Blocked on workflow registry for the ID case.
+
+**Blocker**: No workflow registry exists in the SDK or API. Inline definitions work without one, but the ID case needs a `WorkflowsResource`.
+
+### `wait` — Delay (Phase 3)
+
+**Purpose**: Pause execution for a duration or until a timestamp.
+
+**Config**:
+```typescript
+{ id: string; type: "wait"; config: WaitConfig }
+
+interface WaitConfig {
+  duration?: string;   // CEL expression → seconds to wait
+  until?: string;       // CEL expression → ISO 8601 timestamp to wait until
+  route_from?: string;
+}
+```
+
+**Executor behavior**:
+1. Evaluate `duration` or `until` CEL against `{state}`
+2. `await sleep(durationSeconds)` or `await sleep(untilTimestamp - now)`
+3. No state changes (delta = {})
+4. Routing: `route_from` if present, else static edge
+
+**Complexity**: Low — ~10 LOC. Standard `setTimeout` wrapper.
+
+**Risk**: Long waits block the event loop. Mitigation: document that `wait` is for short delays; for long pauses use `interrupt` + checkpoint.
+
+### Implementation order
+
+| Phase | Node type | Complexity | Blocked by |
+|---|---|---|---|
+| 2 | `set_state` | Low | Nothing |
+| 2 | `http_call` | Medium | Nothing |
+| 3a | `interrupt` (callback) | Low-medium | Nothing |
+| 3 | `tool_call` | Medium | MCP tool-call API in SDK |
+| 3 | `parallel` | High | Nothing (but needs careful design) |
+| 3 | `subworkflow` | Medium | Workflow registry for ID case |
+| 3 | `wait` | Low | Nothing |
+| 3b | `interrupt` (checkpoint) | High | Persistence layer |
+| - | Backward-compat bridge | Medium | `agentNode()` config metadata |
+| - | JSON Schema validation (ajv) | Low | >6 node types (justifies the dep) |
+
+### Impact on existing code
+
+Adding a new node type touches:
+
+1. **`WorkflowNode` union** — add the new variant
+2. **`CompiledNode`** — add new optional fields for pre-compiled expressions
+3. **`parseWorkflowDefinition`** — add type to `validNodeTypes`, add config validation for the new type
+4. **`compileWorkflow`** — add a branch to pre-compile the new type's CEL expressions
+5. **`runWorkflow`** — add a branch in the `switch on node.type`
+6. **`index.ts`** — export new config type
+7. **Tests** — add test cases for the new type
+
+Each new type is additive — no existing tests or behavior change. The `validNodeTypes` set is the gatekeeper.
 
 ## Complexity assessment
 
@@ -442,3 +815,11 @@ For context: current `stateGraph.ts` is 94 lines. This is ~4.5x that, covering p
 | Graph structure validation | Medium | Reachability, dead-end detection | Standard algorithms, well-understood |
 | Agent resolution | Medium | `client.agents.get()` is async, needs to fit in compile step | `compileWorkflow` is async — natural fit |
 | `response` binding for CEL | Low-medium | Need to expose `MessageResponse` fields cleanly | Thin wrapper object |
+| `set_state` node | Low | None — pure CEL evaluation | — |
+| `http_call` node | Medium | Network failures, timeout, non-JSON responses | `retry` policy + `timeout` field |
+| `interrupt` (callback) | Low-medium | Caller must implement `onInterrupt` | Document the contract clearly |
+| `interrupt` (checkpoint) | High | Serialising/resuming executor state, persistence | Phase 3b — wait for persistence story |
+| `tool_call` node | Medium | MCP tool-call API not yet in SDK | Blocked on MCP tool-call resource |
+| `parallel` node | High | Branch failure, join semantics, concurrent state | Careful design + dedicated test suite |
+| `subworkflow` node | Medium | Workflow registry doesn't exist | Inline definitions work without registry |
+| `wait` node | Low | Blocks event loop on long waits | Document short-delay only; use `interrupt` for long pauses |
