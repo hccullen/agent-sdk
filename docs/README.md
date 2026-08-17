@@ -1,30 +1,35 @@
 # docs/
 
-A single-page static documentation site for `@newsioaps/agent-sdk`.
+VitePress-powered documentation site for `@corti/agent-sdk`.
 
 ## View locally
 
-Any static server works — two one-liners:
-
 ```bash
-# Python
-python3 -m http.server -d docs 8000
-
-# Node (npx, no install)
-npx --yes serve docs
+npm run docs:dev
 ```
 
-Then open http://localhost:8000.
+Then open http://localhost:5173.
+
+## Build
+
+```bash
+npm run docs:build
+```
+
+Output is written to `docs/.vitepress/dist/`.
+
+## Preview the built site
+
+```bash
+npm run docs:preview
+```
 
 ## Deploy
 
-The folder is self-contained (HTML + CSS + tiny JS, no build step). Drop it
-on any static host — GitHub Pages, Netlify, Cloudflare Pages, S3, etc.
+The build output is static HTML + JS. Drop `docs/.vitepress/dist/` on any
+static host — GitHub Pages, Netlify, Cloudflare Pages, S3, etc.
 
-GitHub Pages:
-
-1. In repo settings → Pages, source = `main` branch, folder = `/docs`.
-2. The site is served at `https://<org>.github.io/<repo>/`.
-
-Content lives in `index.html`. Syntax highlighting is provided by Prism via
-CDN; swap the theme stylesheet in `<head>` for a different palette.
+Content lives in Markdown files: `index.md` (main docs), `examples/*.md`
+(TypeScript examples), and `python/*.md` (Python SDK docs). The VitePress
+config is in `.vitepress/config.mts`. Custom Vue components and theme
+overrides are in `.vitepress/theme/`.

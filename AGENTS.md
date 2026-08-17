@@ -91,5 +91,7 @@ neither `auth_type` nor `token` is provided.
 
 1. Make changes in the TypeScript SDK.
 2. Port the identical change to the Python SDK (or vice-versa).
-3. Update `docs/08-python.html` if the public API surface changes.
+3. Update the relevant Markdown docs in `docs/` if the public API surface changes
+   (e.g. `docs/index.md`, `docs/examples/*.md`, `docs/python/*.md`).
 4. Run `cd packages/js && npm run build` and `cd packages/python && python -c "import corti_agent_sdk"` to verify both compile.
+5. Run `npm run docs:build` to verify the docs site builds.

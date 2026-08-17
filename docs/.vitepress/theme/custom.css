@@ -1,0 +1,159 @@
+:root {
+  --vp-c-brand-1: #f05a28;
+  --vp-c-brand-2: #f05a28;
+  --vp-c-brand-3: #f99470;
+  --vp-c-brand-light: #f99470;
+  --vp-c-brand-lighter: #fbbfa0;
+  --vp-c-brand-dark: #f05a28;
+  --vp-c-brand-darker: #d04a18;
+  --vp-c-brand-next: #f99470;
+
+  --vp-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+}
+
+.dark {
+  --vp-bg: #0d0f14;
+  --vp-bg-alt: #141820;
+  --vp-c-bg: #0d0f14;
+  --vp-c-bg-alt: #141820;
+  --vp-c-bg-elv: #1a1f2b;
+  --vp-c-bg-soft: #141820;
+  --vp-c-gutter: #242a38;
+  --vp-c-border: #242a38;
+  --vp-c-divider: #242a38;
+  --vp-c-text-1: #e6e9f0;
+  --vp-c-text-2: #9aa3b2;
+  --vp-c-text-3: #6a7282;
+
+  --vp-code-bg: #1e2330;
+  --vp-code-block-bg: #1e2330;
+
+  --vp-sidebar-bg: #0d0f14;
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-border: transparent;
+}
+
+:root:not(.dark) {
+  --vp-c-brand-1: #f05a28;
+  --vp-c-brand-2: #e04e1e;
+  --vp-c-brand-3: #d04a18;
+}
+
+body {
+  background: var(--vp-c-bg);
+}
+
+/* Tighter code blocks */
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.vp-doc div[class*="language-"] button.copy {
+  border-color: var(--vp-c-border);
+}
+
+/* Inline code */
+.vp-doc :not(pre) > code {
+  background: rgba(240, 90, 40, 0.1);
+  color: var(--vp-c-brand-3);
+  font-size: 0.875em;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  font-weight: 400;
+}
+
+/* Tables */
+.vp-doc table {
+  display: table;
+  width: 100%;
+  overflow: hidden;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.vp-doc thead {
+  background: var(--vp-c-bg-alt);
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: none;
+  border-bottom: 1px solid var(--vp-c-border);
+  padding: 0.65rem 0.9rem;
+  vertical-align: top;
+}
+
+.vp-doc tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vp-doc tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Custom containers — match the callout style */
+.vp-doc .vp-custom-block {
+  border-radius: 6px;
+  border-left-width: 3px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.vp-doc .vp-custom-block-info {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .vp-custom-block-info strong {
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc .vp-custom-block-tip {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-elv);
+}
+
+/* Sidebar */
+.VPSidebar {
+  background: var(--vp-c-bg);
+  border-right: 1px solid var(--vp-c-border);
+}
+
+/* Nav */
+.VPNav {
+  background: rgba(13, 15, 20, 0.85);
+  backdrop-filter: saturate(180%) blur(10px);
+}
+
+/* Heading anchors */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h1 {
+  font-size: 2.25rem;
+  line-height: 1.15;
+}
+
+.vp-doc h2 {
+  font-size: 1.6rem;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--vp-c-border);
+  padding-top: 2rem;
+}
+
+.vp-doc h3 {
+  font-size: 1.15rem;
+  margin-top: 1.75rem;
+}
+
+.vp-doc p {
+  line-height: 1.6;
+}
