@@ -1,4 +1,6 @@
 import { parse, plan, celEnv, isCelError, isCelMap, isCelList } from "@bufbuild/cel";
+import yaml from "js-yaml";
+import { Ajv } from "ajv";
 import type { Agent, Part } from "./types.js";
 import type { CortiClient } from "./client.js";
 import { AgentHandle } from "./handle.js";
@@ -250,6 +252,25 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
   }
 
   return d as unknown as WorkflowDefinition;
+}
+
+export function parseYamlDefinition(input: string): WorkflowDefinition {
+  const parsed = yaml.load(input);
+  return parseWorkflowDefinition(parsed as object);
+}
+
+export function validateStateSchema(
+  state: AnyState,
+  schema: object,
+): { valid: boolean; errors: string[] } {
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  const validate = ajv.compile(schema);
+  const valid = validate(state);
+  if (valid) return { valid: true, errors: [] };
+  const errors = (validate.errors ?? []).map(
+    (e: { instancePath: string; message?: string }) => `${e.instancePath || "/"}: ${e.message ?? "validation error"}`,
+  );
+  return { valid: false, errors };
 }
 
 export async function compileWorkflow(

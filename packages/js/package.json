@@ -62,12 +62,15 @@
   },
   "devDependencies": {
     "@corti/sdk": "3.0.0",
+    "@types/js-yaml": "^4.0.9",
     "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "@bufbuild/cel": "^0.6.0",
+    "ajv": "^8.20.0",
+    "js-yaml": "^4.2.0",
     "openapi-fetch": "^0.17.0"
   }
 }

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   parseWorkflowDefinition,
+  parseYamlDefinition,
   compileWorkflow,
   runWorkflow,
   executeWorkflow,
   analyzeGraphStructure,
   runWorkflowInteractive,
   resumeWorkflow,
+  validateStateSchema,
 } from "../declarativeGraph.js";
 import type { WorkflowDefinition } from "../declarativeGraph.js";
 import type { CortiClient } from "../client.js";
@@ -1658,5 +1660,115 @@ describe("DeclarativeGraph", () => {
         await gen.next();
       })(),
     ).rejects.toThrow();
+  });
+
+  it("parseYamlDefinition parses YAML config into WorkflowDefinition", () => {
+    const yamlStr = `
+document:
+  name: yaml-test
+  version: "1.0.0"
+nodes:
+  - id: enrich
+    type: set_state
+    config:
+      set:
+        label: "'hello'"
+  - id: __end__
+    type: end
+edges:
+  - source: __start__
+    target: enrich
+  - source: enrich
+    target: __end__
+`;
+    const def = parseYamlDefinition(yamlStr);
+    expect(def.document.name).toBe("yaml-test");
+    expect(def.nodes).toHaveLength(2);
+    expect(def.nodes[0].id).toBe("enrich");
+    expect(def.nodes[0].type).toBe("set_state");
+    expect(def.edges).toHaveLength(2);
+  });
+
+  it("parseYamlDefinition rejects invalid YAML structure", () => {
+    expect(() => parseYamlDefinition("not: valid: yaml:")).toThrow();
+  });
+
+  it("parseYamlDefinition produces output equivalent to JSON", () => {
+    const yamlStr = `
+document:
+  name: equiv
+  version: "1.0.0"
+nodes:
+  - id: a
+    type: set_state
+    config:
+      set:
+        x: "1"
+  - id: __end__
+    type: end
+edges:
+  - source: __start__
+    target: a
+  - source: a
+    target: __end__
+`;
+    const yamlDef = parseYamlDefinition(yamlStr);
+    const jsonDef = parseWorkflowDefinition({
+      document: { name: "equiv", version: "1.0.0" },
+      nodes: [
+        { id: "a", type: "set_state", config: { set: { x: "1" } } },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "a" },
+        { source: "a", target: "__end__" },
+      ],
+    });
+    expect(yamlDef).toEqual(jsonDef);
+  });
+
+  it("validateStateSchema accepts valid state", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        note: { type: "string" },
+        severity: { type: "string" },
+      },
+      required: ["note"],
+    };
+    const result = validateStateSchema({ note: "asthma", severity: "urgent" }, schema);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("validateStateSchema rejects missing required field", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        note: { type: "string" },
+      },
+      required: ["note"],
+    };
+    const result = validateStateSchema({}, schema);
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]).toContain("note");
+  });
+
+  it("validateStateSchema rejects wrong type", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        count: { type: "number" },
+      },
+    };
+    const result = validateStateSchema({ count: "not a number" }, schema);
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("validateStateSchema accepts empty schema", () => {
+    const result = validateStateSchema({ anything: true }, {});
+    expect(result.valid).toBe(true);
   });
 });
