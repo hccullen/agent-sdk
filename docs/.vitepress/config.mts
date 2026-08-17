@@ -58,6 +58,46 @@ export default defineConfig({
     },
 
     sidebar: {
+      "/": [
+        {
+          text: "Getting started",
+          items: [
+            { text: "Introduction", link: "/#corti-agent-sdk" },
+            { text: "Install", link: "/#install" },
+            { text: "Quick start", link: "/#quick-start" },
+          ],
+        },
+        {
+          text: "Concepts",
+          items: [
+            { text: "Agents", link: "/#agents" },
+            { text: "Connectors", link: "/#connectors" },
+            { text: "Contexts & threads", link: "/#contexts-threads" },
+            { text: "Response shape", link: "/#response-shape" },
+            { text: "Agent lifecycle", link: "/#agent-lifecycle" },
+          ],
+        },
+        {
+          text: "Composition",
+          items: [
+            { text: "Workflows", link: "/#workflows" },
+            { text: "Parallel fan-out", link: "/#parallel-fan-out" },
+            { text: "State graph", link: "/#state-graph" },
+            { text: "Declarative workflows", link: "/#declarative-workflows" },
+            { text: "Streaming", link: "/#streaming" },
+            { text: "Credentials", link: "/#credentials" },
+          ],
+        },
+        {
+          text: "Reference",
+          items: [
+            { text: "API reference", link: "/#api-reference" },
+            { text: "Examples", link: "/#examples" },
+            { text: "Python SDK", link: "/python/" },
+          ],
+        },
+      ],
+
       "/examples/": [
         {
           text: "TypeScript examples",
