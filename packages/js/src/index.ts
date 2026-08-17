@@ -28,7 +28,7 @@ export { END, StateGraph, agentNode, stateGraph } from "./stateGraph.js";
 export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph.js";
 
 export { parseWorkflowDefinition, compileWorkflow, runWorkflow, executeWorkflow } from "./declarativeGraph.js";
-export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, SwitchConfig } from "./declarativeGraph.js";
+export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, SwitchConfig, SetStateConfig, HttpCallConfig, InterruptConfig } from "./declarativeGraph.js";
 
 export { CortiError, ManagementError, A2AError, HttpError } from "./errors.js";
 

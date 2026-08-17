@@ -550,4 +550,392 @@ describe("DeclarativeGraph", () => {
     expect(result.iterations).toBe(1);
     expect(result.terminatedBy).toBe("end");
   });
+
+  it("set_state transforms state via CEL expressions", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "set-state", version: "1.0.0" },
+      nodes: [
+        {
+          id: "enrich",
+          type: "set_state",
+          config: {
+            set: {
+              full_text: "state.note + ' — severity: ' + state.severity",
+              upper_note: "state.note",
+            },
+          },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "enrich" },
+        { source: "enrich", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const result = await runWorkflow(compiled, { note: "asthma", severity: "urgent" });
+
+    expect(result.state.full_text).toBe("asthma — severity: urgent");
+    expect(result.state.upper_note).toBe("asthma");
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("set_state supports route_from", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "set-state-route", version: "1.0.0" },
+      nodes: [
+        {
+          id: "decide",
+          type: "set_state",
+          config: {
+            set: { tier: "'A'" },
+            route_from: "state.tier == 'A' ? 'process' : '__end__'",
+          },
+        },
+        {
+          id: "process",
+          type: "set_state",
+          config: { set: { processed: "true" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [{ source: "__start__", target: "decide" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const result = await runWorkflow(compiled, {});
+
+    expect(result.state.tier).toBe("A");
+    expect(result.state.processed).toBe(true);
+    expect(result.iterations).toBe(2);
+  });
+
+  it("http_call makes an HTTP request and maps response into state", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "http", version: "1.0.0" },
+      nodes: [
+        {
+          id: "lookup",
+          type: "http_call",
+          config: {
+            url: "'https://api.example.com/patients/' + state.patientId",
+            method: "GET",
+            headers: { Authorization: "'Bearer ' + state.token" },
+            output: {
+              patient_name: "response.body.name",
+              patient_age: "response.body.age",
+            },
+          },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "lookup" },
+        { source: "lookup", target: "__end__" },
+      ],
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        forEach: (cb: (value: string, key: string) => void) => {
+          cb("application/json", "content-type");
+        },
+        get: (name: string) => (name === "content-type" ? "application/json" : null),
+      },
+      json: async () => ({ name: "John Doe", age: 42 }),
+      text: async () => JSON.stringify({ name: "John Doe", age: 42 }),
+    }) as unknown as typeof fetch;
+
+    try {
+      const client = mockClient();
+      const compiled = await compileWorkflow(def, client);
+      const result = await runWorkflow(compiled, { patientId: "123", token: "abc" });
+
+      expect(result.state.patient_name).toBe("John Doe");
+      expect(result.state.patient_age).toBe(42);
+      expect(result.iterations).toBe(1);
+      expect(result.terminatedBy).toBe("end");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "https://api.example.com/patients/123",
+        expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer abc" } }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("http_call throws on non-2xx response", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "http-fail", version: "1.0.0" },
+      nodes: [
+        {
+          id: "fail",
+          type: "http_call",
+          config: {
+            url: "'https://api.example.com/missing'",
+            method: "GET",
+            output: {},
+          },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "fail" },
+        { source: "fail", target: "__end__" },
+      ],
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: {
+        forEach: () => {},
+        get: () => "text/plain",
+      },
+      json: async () => ({}),
+      text: async () => "Not Found",
+    }) as unknown as typeof fetch;
+
+    try {
+      const client = mockClient();
+      const compiled = await compileWorkflow(def, client);
+      await expect(runWorkflow(compiled, {})).rejects.toThrow("404");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("http_call supports POST with body", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "http-post", version: "1.0.0" },
+      nodes: [
+        {
+          id: "create",
+          type: "http_call",
+          config: {
+            url: "'https://api.example.com/items'",
+            method: "POST",
+            body: "{\"name\": state.itemName}",
+            output: { created_id: "response.body.id" },
+          },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "create" },
+        { source: "create", target: "__end__" },
+      ],
+    };
+
+    const originalFetch = globalThis.fetch;
+    let capturedBody: string | undefined;
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
+      capturedBody = opts.body as string;
+      return Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: {
+          forEach: (cb: (value: string, key: string) => void) => {
+            cb("application/json", "content-type");
+          },
+          get: (name: string) => (name === "content-type" ? "application/json" : null),
+        },
+        json: async () => ({ id: "new-123" }),
+        text: async () => '{"id":"new-123"}',
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      const client = mockClient();
+      const compiled = await compileWorkflow(def, client);
+      const result = await runWorkflow(compiled, { itemName: "widget" });
+
+      expect(result.state.created_id).toBe("new-123");
+      expect(JSON.parse(capturedBody!)).toEqual({ name: "widget" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("interrupt pauses and resumes with onInterrupt callback", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "hitl", version: "1.0.0" },
+      nodes: [
+        {
+          id: "review",
+          type: "interrupt",
+          config: {
+            prompt: "'Review: ' + state.codes + '. Approve?'",
+            field: "approved",
+            route_from: "state.approved == 'yes' ? 'finalize' : '__end__'",
+          },
+        },
+        {
+          id: "finalize",
+          type: "set_state",
+          config: { set: { status: "'finalized'" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [{ source: "__start__", target: "review" }, { source: "finalize", target: "__end__" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+
+    const onInterrupt = vi.fn().mockResolvedValue("yes");
+    const result = await runWorkflow(compiled, { codes: "J45.909" }, { onInterrupt });
+
+    expect(onInterrupt).toHaveBeenCalledWith("review", "Review: J45.909. Approve?", { codes: "J45.909" });
+    expect(result.state.approved).toBe("yes");
+    expect(result.state.status).toBe("finalized");
+    expect(result.iterations).toBe(2);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("interrupt routes to end when human says no", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "hitl-no", version: "1.0.0" },
+      nodes: [
+        {
+          id: "review",
+          type: "interrupt",
+          config: {
+            prompt: "'Approve?'",
+            field: "approved",
+            route_from: "state.approved == 'yes' ? 'finalize' : '__end__'",
+          },
+        },
+        {
+          id: "finalize",
+          type: "set_state",
+          config: { set: { status: "'finalized'" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [{ source: "__start__", target: "review" }, { source: "finalize", target: "__end__" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+
+    const result = await runWorkflow(compiled, {}, { onInterrupt: async () => "no" });
+
+    expect(result.state.approved).toBe("no");
+    expect(result.state.status).toBeUndefined();
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("interrupt throws when onInterrupt is not provided", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "hitl-no-cb", version: "1.0.0" },
+      nodes: [
+        {
+          id: "ask",
+          type: "interrupt",
+          config: { prompt: "'Approve?'", field: "approved" },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "ask" },
+        { source: "ask", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+
+    await expect(runWorkflow(compiled, {})).rejects.toThrow("onInterrupt");
+  });
+
+  it("combined workflow: agent_call → set_state → http_call → interrupt → end", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        forEach: (cb: (value: string, key: string) => void) => {
+          cb("application/json", "content-type");
+        },
+        get: (name: string) => (name === "content-type" ? "application/json" : null),
+      },
+      json: async () => ({ validated: true }),
+      text: async () => '{"validated":true}',
+    }) as unknown as typeof fetch;
+
+    try {
+      const def: WorkflowDefinition = {
+        document: { name: "combined", version: "1.0.0" },
+        nodes: [
+          {
+            id: "triage",
+            type: "agent_call",
+            config: {
+              agent: "agent-triage",
+              input: "state.note",
+              output: { severity: "response.text" },
+            },
+          },
+          {
+            id: "enrich",
+            type: "set_state",
+            config: {
+              set: { label: "state.severity + ' priority'" },
+            },
+          },
+          {
+            id: "validate",
+            type: "http_call",
+            config: {
+              url: "'https://api.example.com/validate'",
+              method: "POST",
+              body: "{\"severity\": state.severity}",
+              output: { validated: "response.body.validated" },
+            },
+          },
+          {
+            id: "review",
+            type: "interrupt",
+            config: {
+              prompt: "'Severity: ' + state.severity + '. Validated: ' + (state.validated ? 'yes' : 'no') + '. Approve?'",
+              field: "approved",
+              route_from: "state.approved == 'yes' ? '__end__' : '__end__'",
+            },
+          },
+          { id: "__end__", type: "end" },
+        ],
+        edges: [
+          { source: "__start__", target: "triage" },
+          { source: "triage", target: "enrich" },
+          { source: "enrich", target: "validate" },
+          { source: "validate", target: "review" },
+        ],
+      };
+
+      const client = mockClient({ "agent-triage": "urgent" });
+      const compiled = await compileWorkflow(def, client);
+      const result = await runWorkflow(compiled, { note: "asthma" }, {
+        onInterrupt: async () => "yes",
+      });
+
+      expect(result.state.severity).toBe("urgent");
+      expect(result.state.label).toBe("urgent priority");
+      expect(result.state.validated).toBe(true);
+      expect(result.state.approved).toBe("yes");
+      expect(result.iterations).toBe(4);
+      expect(result.terminatedBy).toBe("end");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

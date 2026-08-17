@@ -1,4 +1,4 @@
-import { parse, plan, celEnv, isCelError } from "@bufbuild/cel";
+import { parse, plan, celEnv, isCelError, isCelMap, isCelList } from "@bufbuild/cel";
 import type { Agent, Part } from "./types.js";
 import type { CortiClient } from "./client.js";
 import { AgentHandle } from "./handle.js";
@@ -18,6 +18,9 @@ export interface WorkflowDefinition {
 export type WorkflowNode =
   | { id: string; type: "agent_call"; config: AgentCallConfig; retry?: RetryPolicy; timeout?: string }
   | { id: string; type: "switch"; config: SwitchConfig }
+  | { id: string; type: "set_state"; config: SetStateConfig }
+  | { id: string; type: "http_call"; config: HttpCallConfig; retry?: RetryPolicy; timeout?: string }
+  | { id: string; type: "interrupt"; config: InterruptConfig }
   | { id: string; type: "end" };
 
 export interface AgentCallConfig {
@@ -32,6 +35,26 @@ export interface SwitchConfig {
   default: string;
 }
 
+export interface SetStateConfig {
+  set: Record<string, string>;
+  route_from?: string;
+}
+
+export interface HttpCallConfig {
+  url: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  headers?: Record<string, string>;
+  body?: string;
+  output: Record<string, string>;
+  route_from?: string;
+}
+
+export interface InterruptConfig {
+  prompt: string;
+  field: string;
+  route_from?: string;
+}
+
 export interface RetryPolicy {
   max_attempts: number;
   backoff_coefficient?: number;
@@ -41,12 +64,17 @@ type CompiledCel = (bindings?: Record<string, unknown>) => unknown;
 
 interface CompiledNode {
   id: string;
-  type: "agent_call" | "switch" | "end";
-  config: AgentCallConfig | SwitchConfig | Record<string, never>;
+  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "end";
+  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | Record<string, never>;
   inputExpr?: CompiledCel;
   outputExprs?: Map<string, CompiledCel>;
   routeFromExpr?: CompiledCel;
   caseExprs?: CompiledCel[];
+  setExprs?: Map<string, CompiledCel>;
+  urlExpr?: CompiledCel;
+  headerExprs?: Map<string, CompiledCel>;
+  bodyExpr?: CompiledCel;
+  promptExpr?: CompiledCel;
   agentHandle?: AgentHandle;
 }
 
@@ -68,7 +96,26 @@ function evalCel(compiled: CompiledCel, bindings: Record<string, unknown>): unkn
   if (isCelError(result)) {
     throw new Error(`[DeclarativeGraph] CEL evaluation error: ${(result as Error).message}`);
   }
-  return result;
+  return celToJs(result);
+}
+
+function celToJs(value: unknown): unknown {
+  if (isCelMap(value)) {
+    const obj: Record<string, unknown> = {};
+    const map = (value as unknown as { _map: Map<unknown, unknown> })._map;
+    for (const [key, val] of map) {
+      obj[String(key)] = celToJs(val);
+    }
+    return obj;
+  }
+  if (isCelList(value)) {
+    const arr = (value as unknown as { _array: unknown[] })._array;
+    return arr.map(celToJs);
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  return value;
 }
 
 export function parseWorkflowDefinition(input: string | object): WorkflowDefinition {
@@ -98,7 +145,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     throw new Error("[DeclarativeGraph] edges is required and must be an array.");
   }
 
-  const validNodeTypes = new Set(["agent_call", "switch", "end"]);
+  const validNodeTypes = new Set(["agent_call", "switch", "set_state", "http_call", "interrupt", "end"]);
   const nodeIds = new Set<string>();
   for (const node of d.nodes) {
     const n = node as Record<string, unknown>;
@@ -110,7 +157,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     }
     nodeIds.add(n.id);
     if (!n.type || typeof n.type !== "string" || !validNodeTypes.has(n.type)) {
-      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, end.`);
+      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, set_state, http_call, interrupt, end.`);
     }
     if (n.type !== "end" && (!n.config || typeof n.config !== "object")) {
       throw new Error(`[DeclarativeGraph] Node "${n.id}" must have a config object.`);
@@ -188,6 +235,40 @@ export async function compileWorkflow(
     } else if (node.type === "switch") {
       const cfg = node.config as SwitchConfig;
       compiled.caseExprs = cfg.cases.map((c) => compileCel(c.when));
+    } else if (node.type === "set_state") {
+      const cfg = node.config as SetStateConfig;
+      compiled.setExprs = new Map<string, CompiledCel>();
+      for (const [field, expr] of Object.entries(cfg.set ?? {})) {
+        compiled.setExprs.set(field, compileCel(expr));
+      }
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
+    } else if (node.type === "http_call") {
+      const cfg = node.config as HttpCallConfig;
+      compiled.urlExpr = compileCel(cfg.url);
+      if (cfg.headers) {
+        compiled.headerExprs = new Map<string, CompiledCel>();
+        for (const [name, expr] of Object.entries(cfg.headers)) {
+          compiled.headerExprs.set(name, compileCel(expr));
+        }
+      }
+      if (cfg.body) {
+        compiled.bodyExpr = compileCel(cfg.body);
+      }
+      compiled.outputExprs = new Map<string, CompiledCel>();
+      for (const [field, expr] of Object.entries(cfg.output ?? {})) {
+        compiled.outputExprs.set(field, compileCel(expr));
+      }
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
+    } else if (node.type === "interrupt") {
+      const cfg = node.config as InterruptConfig;
+      compiled.promptExpr = compileCel(cfg.prompt);
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
     }
 
     nodes.set(node.id, compiled);
@@ -242,7 +323,10 @@ export async function compileWorkflow(
 export async function runWorkflow(
   compiled: CompiledGraph,
   initialState: AnyState,
-  opts?: { maxIterations?: number },
+  opts?: {
+    maxIterations?: number;
+    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+  },
 ): Promise<StateGraphResult<AnyState>> {
   const maxIter = opts?.maxIterations ?? compiled.maxIterations;
   const steps: StateGraphStep<AnyState>[] = [];
@@ -264,8 +348,9 @@ export async function runWorkflow(
 
     let next: string | undefined;
     let delta: Partial<AnyState> = {};
+    const nodeType = node.type;
 
-    if (node.type === "agent_call") {
+    if (nodeType === "agent_call") {
       const cfg = node.config as AgentCallConfig;
       const agentInput = evalCel(node.inputExpr!, { state }) as string | Part[];
       const response = await node.agentHandle!.run(agentInput);
@@ -288,7 +373,7 @@ export async function runWorkflow(
       } else {
         next = compiled.edges.get(current);
       }
-    } else if (node.type === "switch") {
+    } else if (nodeType === "switch") {
       const cfg = node.config as SwitchConfig;
       delta = {};
       let matched = false;
@@ -302,6 +387,85 @@ export async function runWorkflow(
       }
       if (!matched) {
         next = cfg.default;
+      }
+    } else if (nodeType === "set_state") {
+      delta = {};
+      for (const [field, expr] of node.setExprs!) {
+        const value = evalCel(expr, { state });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "http_call") {
+      const cfg = node.config as HttpCallConfig;
+      const url = evalCel(node.urlExpr!, { state }) as string;
+      const method = cfg.method;
+      const headers: Record<string, string> = {};
+      if (node.headerExprs) {
+        for (const [name, expr] of node.headerExprs) {
+          headers[name] = evalCel(expr, { state }) as string;
+        }
+      }
+      const body = node.bodyExpr ? evalCel(node.bodyExpr, { state }) : undefined;
+
+      const httpResponse = await fetch(url, {
+        method,
+        headers,
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      });
+
+      const responseHeaders: Record<string, string> = {};
+      httpResponse.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+
+      const contentType = httpResponse.headers.get("content-type") ?? "";
+      const responseBody: unknown = contentType.includes("application/json")
+        ? await httpResponse.json()
+        : await httpResponse.text();
+
+      if (!httpResponse.ok) {
+        throw new Error(`[DeclarativeGraph] HTTP ${method} ${url} failed with status ${httpResponse.status}: ${typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody)}`);
+      }
+
+      const responseBinding = {
+        status: httpResponse.status,
+        headers: responseHeaders,
+        body: responseBody,
+      };
+
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, response: responseBinding });
+        state[field] = value;
+        delta[field] = value;
+      }
+
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "interrupt") {
+      const cfg = node.config as InterruptConfig;
+      const prompt = evalCel(node.promptExpr!, { state }) as string;
+
+      if (!opts?.onInterrupt) {
+        throw new Error(`[DeclarativeGraph] Interrupt node "${current}" requires onInterrupt callback in runWorkflow options.`);
+      }
+
+      const answer = await opts.onInterrupt(current, prompt, { ...state });
+      state[cfg.field] = answer;
+      delta = { [cfg.field]: answer };
+
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
       }
     } else {
       delta = {};
@@ -326,7 +490,10 @@ export async function executeWorkflow(
   json: string | object,
   client: CortiClient,
   initialState: AnyState,
-  opts?: { maxIterations?: number },
+  opts?: {
+    maxIterations?: number;
+    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+  },
 ): Promise<StateGraphResult<AnyState>> {
   const def = parseWorkflowDefinition(json);
   const compiled = await compileWorkflow(def, client);
