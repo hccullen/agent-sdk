@@ -1,6 +1,6 @@
 {
-  "name": "@corti/agent-sdk",
-  "version": "1.0.0-beta.1",
+  "name": "@newsioaps/agent-sdk",
+  "version": "1.0.0",
   "description": "Type-safe SDK for the Corti Agent API v2, built on openapi-ts",
   "type": "module",
   "main": "./dist/index.js",
