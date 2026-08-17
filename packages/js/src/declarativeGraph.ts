@@ -3,9 +3,21 @@ import type { Agent, Part } from "./types.js";
 import type { CortiClient } from "./client.js";
 import { AgentHandle } from "./handle.js";
 import { MessageResponse } from "./response.js";
-import type { StateGraphResult, StateGraphStep } from "./stateGraph.js";
 
 type AnyState = Record<string, unknown>;
+
+export interface StateGraphStep<S extends AnyState = AnyState> {
+  node: string;
+  delta: Partial<S>;
+  state: S;
+}
+
+export interface StateGraphResult<S extends AnyState = AnyState> {
+  state: S;
+  steps: StateGraphStep<S>[];
+  iterations: number;
+  terminatedBy: "end" | "maxIterations" | "noEdge";
+}
 
 export interface WorkflowDefinition {
   document: { name: string; version: string; description?: string };
@@ -23,6 +35,7 @@ export type WorkflowNode =
   | { id: string; type: "interrupt"; config: InterruptConfig }
   | { id: string; type: "wait"; config: WaitConfig }
   | { id: string; type: "parallel"; config: ParallelConfig }
+  | { id: string; type: "callback"; config: CallbackConfig }
   | { id: string; type: "end" };
 
 export interface AgentCallConfig {
@@ -70,6 +83,15 @@ export interface ParallelConfig {
   route_from?: string;
 }
 
+export interface CallbackConfig {
+  handler: string;
+  output?: Record<string, string>;
+  route_from?: string;
+}
+
+export type WorkflowHandler = (state: AnyState) => Promise<Partial<AnyState>>;
+export type WorkflowHandlers = Record<string, WorkflowHandler>;
+
 export interface RetryPolicy {
   max_attempts: number;
   backoff_coefficient?: number;
@@ -79,8 +101,8 @@ type CompiledCel = (bindings?: Record<string, unknown>) => unknown;
 
 interface CompiledNode {
   id: string;
-  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "wait" | "parallel" | "end";
-  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | WaitConfig | ParallelConfig | Record<string, never>;
+  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "wait" | "parallel" | "callback" | "end";
+  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | WaitConfig | ParallelConfig | CallbackConfig | Record<string, never>;
   inputExpr?: CompiledCel;
   outputExprs?: Map<string, CompiledCel>;
   routeFromExpr?: CompiledCel;
@@ -93,6 +115,7 @@ interface CompiledNode {
   durationExpr?: CompiledCel;
   untilExpr?: CompiledCel;
   branchInputExprs?: Map<string, CompiledCel>;
+  handlerName?: string;
   agentHandle?: AgentHandle;
 }
 
@@ -102,6 +125,7 @@ export interface CompiledGraph {
   edges: Map<string, string>;
   entryNode: string;
   maxIterations: number;
+  handlers: WorkflowHandlers;
 }
 
 function compileCel(expr: string): CompiledCel {
@@ -163,7 +187,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     throw new Error("[DeclarativeGraph] edges is required and must be an array.");
   }
 
-  const validNodeTypes = new Set(["agent_call", "switch", "set_state", "http_call", "interrupt", "wait", "parallel", "end"]);
+  const validNodeTypes = new Set(["agent_call", "switch", "set_state", "http_call", "interrupt", "wait", "parallel", "callback", "end"]);
   const nodeIds = new Set<string>();
   for (const node of d.nodes) {
     const n = node as Record<string, unknown>;
@@ -175,7 +199,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     }
     nodeIds.add(n.id);
     if (!n.type || typeof n.type !== "string" || !validNodeTypes.has(n.type)) {
-      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, set_state, http_call, interrupt, wait, parallel, end.`);
+      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, set_state, http_call, interrupt, wait, parallel, callback, end.`);
     }
     if (n.type !== "end" && (!n.config || typeof n.config !== "object")) {
       throw new Error(`[DeclarativeGraph] Node "${n.id}" must have a config object.`);
@@ -217,6 +241,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
 export async function compileWorkflow(
   def: WorkflowDefinition,
   client: CortiClient,
+  handlers?: WorkflowHandlers,
 ): Promise<CompiledGraph> {
   const nodes = new Map<string, CompiledNode>();
   const edges = new Map<string, string>();
@@ -311,6 +336,18 @@ export async function compileWorkflow(
       if (cfg.route_from) {
         compiled.routeFromExpr = compileCel(cfg.route_from);
       }
+    } else if (node.type === "callback") {
+      const cfg = node.config as CallbackConfig;
+      compiled.handlerName = cfg.handler;
+      if (cfg.output) {
+        compiled.outputExprs = new Map<string, CompiledCel>();
+        for (const [field, expr] of Object.entries(cfg.output)) {
+          compiled.outputExprs.set(field, compileCel(expr));
+        }
+      }
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
     }
 
     nodes.set(node.id, compiled);
@@ -367,6 +404,7 @@ export async function compileWorkflow(
     edges,
     entryNode,
     maxIterations: def.max_iterations ?? 25,
+    handlers: handlers ?? {},
   };
 }
 
@@ -377,6 +415,7 @@ async function runSubGraph(
   opts?: {
     maxIterations?: number;
     onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    handlers?: WorkflowHandlers;
   },
 ): Promise<StateGraphResult<AnyState>> {
   const maxIter = opts?.maxIterations ?? compiled.maxIterations;
@@ -435,6 +474,29 @@ async function runSubGraph(
       } else {
         next = compiled.edges.get(current);
       }
+    } else if (nodeType === "callback") {
+      const handler = opts?.handlers?.[node.handlerName!] ?? compiled.handlers[node.handlerName!];
+      if (!handler) {
+        throw new Error(`[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`);
+      }
+      const handlerResult = await handler({ ...state });
+      if (node.outputExprs && node.outputExprs.size > 0) {
+        for (const [field, expr] of node.outputExprs) {
+          state[field] = evalCel(expr, { state, result: handlerResult });
+        }
+      } else {
+        for (const [field, value] of Object.entries(handlerResult)) {
+          state[field] = value;
+        }
+      }
+      if (handlerResult.__next !== undefined) {
+        next = handlerResult.__next as string;
+        delete state.__next;
+      } else if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
     } else if (nodeType === "end") {
       next = "__end__";
     } else {
@@ -458,6 +520,7 @@ export async function runWorkflow(
   opts?: {
     maxIterations?: number;
     onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    handlers?: WorkflowHandlers;
   },
 ): Promise<StateGraphResult<AnyState>> {
   const maxIter = opts?.maxIterations ?? compiled.maxIterations;
@@ -657,6 +720,33 @@ export async function runWorkflow(
       } else {
         next = compiled.edges.get(current);
       }
+    } else if (nodeType === "callback") {
+      const handler = opts?.handlers?.[node.handlerName!] ?? compiled.handlers[node.handlerName!];
+      if (!handler) {
+        throw new Error(`[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`);
+      }
+      const handlerResult = await handler({ ...state });
+      delta = {};
+      if (node.outputExprs && node.outputExprs.size > 0) {
+        for (const [field, expr] of node.outputExprs) {
+          const value = evalCel(expr, { state, result: handlerResult });
+          state[field] = value;
+          delta[field] = value;
+        }
+      } else {
+        for (const [field, value] of Object.entries(handlerResult)) {
+          state[field] = value;
+          delta[field] = value;
+        }
+      }
+      if (handlerResult.__next !== undefined) {
+        next = handlerResult.__next as string;
+        delete state.__next;
+      } else if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
     } else {
       delta = {};
       next = "__end__";
@@ -683,10 +773,11 @@ export async function executeWorkflow(
   opts?: {
     maxIterations?: number;
     onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    handlers?: WorkflowHandlers;
   },
 ): Promise<StateGraphResult<AnyState>> {
   const def = parseWorkflowDefinition(json);
-  const compiled = await compileWorkflow(def, client);
+  const compiled = await compileWorkflow(def, client, opts?.handlers);
   return runWorkflow(compiled, initialState, opts);
 }
 
@@ -765,70 +856,4 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
   }
 
   return { unreachable, deadEnds };
-}
-
-export interface StateGraphBridgeConfig {
-  agentCall: { agent: string; input: string; output: Record<string, string> };
-}
-
-export function stateGraphToDefinition<S extends Record<string, unknown>>(
-  graph: {
-    run: (entry: string, state: S, opts?: { maxIterations?: number }) => Promise<unknown>;
-  },
-  nodes: { name: string; type: string; config?: StateGraphBridgeConfig }[],
-  edges: { from: string; to: string | ((state: S) => string) }[],
-  entryNode: string,
-  opts?: { maxIterations?: number; name?: string; version?: string },
-): WorkflowDefinition {
-  const def: WorkflowDefinition = {
-    document: {
-      name: opts?.name ?? "converted",
-      version: opts?.version ?? "1.0.0",
-    },
-    nodes: [],
-    edges: [],
-    ...(opts?.maxIterations !== undefined && { max_iterations: opts.maxIterations }),
-  };
-
-  for (const node of nodes) {
-    if (node.type === "agent_call" && node.config?.agentCall) {
-      def.nodes.push({
-        id: node.name,
-        type: "agent_call",
-        config: {
-          agent: node.config.agentCall.agent,
-          input: node.config.agentCall.input,
-          output: node.config.agentCall.output,
-        },
-      });
-    } else if (node.type === "end" || node.name === "__end__") {
-      def.nodes.push({ id: node.name, type: "end" });
-    } else if (node.type === "switch") {
-      def.nodes.push({
-        id: node.name,
-        type: "switch",
-        config: { cases: [], default: "__end__" },
-      });
-    } else {
-      def.nodes.push({
-        id: node.name,
-        type: "set_state",
-        config: { set: {} },
-      });
-    }
-  }
-
-  def.edges.push({ source: "__start__", target: entryNode });
-
-  for (const edge of edges) {
-    if (typeof edge.to === "string") {
-      def.edges.push({ source: edge.from, target: edge.to });
-    }
-  }
-
-  if (!def.nodes.some((n) => n.id === "__end__")) {
-    def.nodes.push({ id: "__end__", type: "end" });
-  }
-
-  return def;
 }

@@ -1,6 +1,18 @@
 import { AgentHandle } from "./handle.js";
 import { MessageResponse } from "./response.js";
 import type { Part } from "./types.js";
+import type { CortiClient } from "./client.js";
+import {
+  compileWorkflow,
+  runWorkflow,
+} from "./declarativeGraph.js";
+import type {
+  WorkflowDefinition,
+  WorkflowNode,
+  WorkflowHandlers,
+} from "./declarativeGraph.js";
+
+export type { StateGraphResult, StateGraphStep } from "./declarativeGraph.js";
 
 export const END = Symbol("END");
 export type END = typeof END;
@@ -14,22 +26,14 @@ export type EdgeRouter<S extends AnyState> =
   | END
   | ((state: S) => string | END);
 
-export interface StateGraphStep<S extends AnyState> {
-  node: string;
-  delta: Partial<S>;
-  state: S;
-}
-
-export interface StateGraphResult<S extends AnyState> {
-  state: S;
-  steps: StateGraphStep<S>[];
-  iterations: number;
-  terminatedBy: "end" | "maxIterations" | "noEdge";
-}
-
 export class StateGraph<S extends AnyState> {
+  private readonly _client: CortiClient | undefined;
   private readonly _nodes = new Map<string, NodeFn<S>>();
   private readonly _edges = new Map<string, EdgeRouter<S>>();
+
+  constructor(client?: CortiClient) {
+    this._client = client;
+  }
 
   addNode(name: string, fn: NodeFn<S>): this {
     this._nodes.set(name, fn);
@@ -45,44 +49,76 @@ export class StateGraph<S extends AnyState> {
     entryNode: string,
     initialState: S,
     opts?: { maxIterations?: number },
-  ): Promise<StateGraphResult<S>> {
-    const maxIter = opts?.maxIterations ?? 25;
-    const steps: StateGraphStep<S>[] = [];
-    let state: S = { ...initialState };
-    let current: string | END = entryNode;
-    let iterations = 0;
-    let terminatedBy: StateGraphResult<S>["terminatedBy"] = "end";
+  ): Promise<import("./declarativeGraph.js").StateGraphResult<S>> {
+    const { def, handlers } = this._build(entryNode);
+    const compiled = await compileWorkflow(
+      def,
+      this._client ?? {} as CortiClient,
+      handlers,
+    );
+    return runWorkflow(compiled, initialState, opts) as Promise<import("./declarativeGraph.js").StateGraphResult<S>>;
+  }
 
-    while (current !== END) {
-      if (iterations >= maxIter) {
-        terminatedBy = "maxIterations";
-        break;
+  toDefinition(entryNode: string): WorkflowDefinition {
+    return this._build(entryNode).def;
+  }
+
+  private _build(entryNode: string): { def: WorkflowDefinition; handlers: WorkflowHandlers } {
+    const nodes: WorkflowNode[] = [];
+    const edges: { source: string; target: string }[] = [];
+    const handlers: WorkflowHandlers = {};
+
+    for (const [name, fn] of this._nodes) {
+      const handlerName = `__cb_${name}`;
+      const router = this._edges.get(name);
+
+      if (typeof router === "function") {
+        const routeFn = router;
+        handlers[handlerName] = async (state: AnyState) => {
+          const delta = await fn(state as S);
+          const target = routeFn({ ...state, ...delta } as S);
+          return { ...delta, __next: target === END ? "__end__" : target };
+        };
+        nodes.push({
+          id: name,
+          type: "callback",
+          config: { handler: handlerName },
+        });
+      } else {
+        handlers[handlerName] = async (state: AnyState) => fn(state as S);
+        nodes.push({
+          id: name,
+          type: "callback",
+          config: { handler: handlerName },
+        });
       }
 
-      const nodeName = current as string;
-      const fn = this._nodes.get(nodeName);
-      if (!fn) throw new Error(`[StateGraph] Unknown node: "${nodeName}".`);
-
-      const delta = await fn(state);
-      state = { ...state, ...delta };
-      steps.push({ node: nodeName, delta, state: { ...state } });
-      iterations++;
-
-      const router = this._edges.get(nodeName);
-      if (router === undefined) {
-        terminatedBy = "noEdge";
-        break;
+      if (router === END) {
+        edges.push({ source: name, target: "__end__" });
+      } else if (typeof router === "string") {
+        edges.push({ source: name, target: router });
       }
-
-      current = typeof router === "function" ? router(state) : router;
     }
 
-    return { state, steps, iterations, terminatedBy };
+    edges.push({ source: "__start__", target: entryNode });
+
+    if (!nodes.some((n) => n.id === "__end__")) {
+      nodes.push({ id: "__end__", type: "end" });
+    }
+
+    return {
+      def: {
+        document: { name: "stategraph", version: "1.0.0" },
+        nodes,
+        edges,
+      },
+      handlers,
+    };
   }
 }
 
-export function stateGraph<S extends AnyState>(): StateGraph<S> {
-  return new StateGraph<S>();
+export function stateGraph<S extends AnyState>(client?: CortiClient): StateGraph<S> {
+  return new StateGraph<S>(client);
 }
 
 export function agentNode<S extends AnyState>(

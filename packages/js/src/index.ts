@@ -25,10 +25,10 @@ export { Workflow, Parallel, workflow, parallel } from "./workflow.js";
 export type { ParallelResult, ParallelStep, Runnable, WorkflowResult, WorkflowStep } from "./workflow.js";
 
 export { END, StateGraph, agentNode, stateGraph } from "./stateGraph.js";
-export type { EdgeRouter, NodeFn, StateGraphResult, StateGraphStep } from "./stateGraph.js";
+export type { EdgeRouter, NodeFn } from "./stateGraph.js";
 
-export { parseWorkflowDefinition, compileWorkflow, runWorkflow, executeWorkflow, analyzeGraphStructure, stateGraphToDefinition } from "./declarativeGraph.js";
-export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, SwitchConfig, SetStateConfig, HttpCallConfig, InterruptConfig, WaitConfig, ParallelConfig, GraphAnalysis } from "./declarativeGraph.js";
+export { parseWorkflowDefinition, compileWorkflow, runWorkflow, executeWorkflow, analyzeGraphStructure } from "./declarativeGraph.js";
+export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, SwitchConfig, SetStateConfig, HttpCallConfig, InterruptConfig, WaitConfig, ParallelConfig, CallbackConfig, GraphAnalysis, WorkflowHandler, WorkflowHandlers, StateGraphResult, StateGraphStep } from "./declarativeGraph.js";
 
 export { CortiError, ManagementError, A2AError, HttpError } from "./errors.js";
 

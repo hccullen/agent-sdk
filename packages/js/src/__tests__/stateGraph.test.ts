@@ -93,7 +93,7 @@ describe("StateGraph", () => {
       .addNode("a", async (s) => ({ severity: "x" }))
       .addEdge("a", "b");
 
-    await expect(graph.run("a", { note: "test" })).rejects.toThrow('Unknown node: "b"');
+    await expect(graph.run("a", { note: "test" })).rejects.toThrow("does not match");
   });
 
   it("agentNode wraps an AgentHandle", async () => {

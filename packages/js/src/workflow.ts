@@ -1,6 +1,12 @@
 import { AgentHandle } from "./handle.js";
 import { MessageResponse } from "./response.js";
 import type { Part } from "./types.js";
+import {
+  parseWorkflowDefinition,
+  compileWorkflow,
+  runWorkflow,
+} from "./declarativeGraph.js";
+import type { WorkflowDefinition, WorkflowHandlers } from "./declarativeGraph.js";
 
 export interface Runnable {
   run(input: string | Part[]): Promise<MessageResponse>;
@@ -52,46 +58,88 @@ export class Workflow {
   }
 
   async run(input: string | Part[]): Promise<WorkflowResult> {
-    const executed: MessageResponse[] = [];
-    let current: string | Part[] = input;
+    const nodes: WorkflowDefinition["nodes"] = [];
+    const edges: { source: string; target: string }[] = [];
+    const handlers: WorkflowHandlers = {};
+    const stepResponses: MessageResponse[] = [];
     let stoppedEarly = false;
+
+    nodes.push({ id: "__end__", type: "end" });
 
     for (let i = 0; i < this._steps.length; i++) {
       const step = this._steps[i];
-      const isFirst = i === 0;
+      const nodeId = `step_${i}`;
+      const handlerName = `__wf_${i}`;
 
-      if (!isFirst && step.when !== undefined && !step.when(executed[executed.length - 1])) {
-        continue;
-      }
+      handlers[handlerName] = async (state: Record<string, unknown>) => {
+        const isFirst = i === 0;
+        const prevResponse = stepResponses[stepResponses.length - 1];
 
-      const stepInput: string | Part[] =
-        !isFirst && step.transform !== undefined
-          ? step.transform(executed[executed.length - 1])
-          : current;
+        if (!isFirst && step.when !== undefined && !step.when(prevResponse)) {
+          return { __skip: true, __next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__" };
+        }
 
-      const maxAttempts = 1 + (step.retries ?? 0);
-      const retryMs = step.retryDelay ?? 1000;
-      let response!: MessageResponse;
+        const stepInput: string | Part[] =
+          !isFirst && step.transform !== undefined
+            ? step.transform(prevResponse)
+            : !isFirst
+              ? (prevResponse.text ?? "")
+              : (state.__input as string | Part[]);
 
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        response = await step.agent.run(stepInput);
-        if (response.status !== "failed" || attempt + 1 >= maxAttempts) break;
-        if (retryMs > 0) await _delay(retryMs);
-      }
+        const maxAttempts = 1 + (step.retries ?? 0);
+        const retryMs = step.retryDelay ?? 1000;
+        let response!: MessageResponse;
 
-      executed.push(response);
-      current = response.text ?? "";
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          response = await step.agent.run(stepInput);
+          if (response.status !== "failed" || attempt + 1 >= maxAttempts) break;
+          if (retryMs > 0) await _delay(retryMs);
+        }
 
-      if (response.status === "failed") {
-        stoppedEarly = true;
-        break;
-      }
+        stepResponses.push(response);
+
+        if (response.status === "failed") {
+          stoppedEarly = true;
+          return { __next: "__end__" };
+        }
+
+        return {
+          __output: response.text ?? "",
+          __next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__",
+        };
+      };
+
+      nodes.push({
+        id: nodeId,
+        type: "callback",
+        config: { handler: handlerName },
+      });
+
+      edges.push({
+        source: i === 0 ? "__start__" : `step_${i - 1}`,
+        target: nodeId,
+      });
     }
 
-    if (executed.length === 0) {
+    const def: WorkflowDefinition = {
+      document: { name: "workflow", version: "1.0.0" },
+      nodes,
+      edges,
+    };
+
+    const parsed = parseWorkflowDefinition(def);
+    const compiled = await compileWorkflow(parsed, {} as never, handlers);
+    await runWorkflow(compiled, { __input: input });
+
+    if (stepResponses.length === 0) {
       throw new Error("[AgentSDK] All workflow steps were skipped — no output produced.");
     }
-    return { output: executed[executed.length - 1], steps: executed, stoppedEarly };
+
+    return {
+      output: stepResponses[stepResponses.length - 1],
+      steps: stepResponses,
+      stoppedEarly,
+    };
   }
 }
 

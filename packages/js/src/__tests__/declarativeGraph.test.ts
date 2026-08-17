@@ -5,11 +5,11 @@ import {
   runWorkflow,
   executeWorkflow,
   analyzeGraphStructure,
-  stateGraphToDefinition,
 } from "../declarativeGraph.js";
 import type { WorkflowDefinition } from "../declarativeGraph.js";
 import type { CortiClient } from "../client.js";
 import type { Agent } from "../types.js";
+import { stateGraph, END } from "../stateGraph.js";
 
 function mockAgent(id: string, name: string): Agent {
   return {
@@ -1305,55 +1305,149 @@ describe("DeclarativeGraph", () => {
     expect(analysis.unreachable).toHaveLength(0);
   });
 
-  it("stateGraphToDefinition converts a simple graph to a workflow definition", () => {
-    const def = stateGraphToDefinition(
-      {} as never,
-      [
-        { name: "triage", type: "agent_call", config: { agentCall: { agent: "agent-1", input: "state.note", output: { severity: "response.text" } } } },
-        { name: "coder", type: "agent_call", config: { agentCall: { agent: "agent-2", input: "state.note", output: { codes: "response.text" } } } },
+  it("callback node runs arbitrary handler and merges result into state", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "callback-basic", version: "1.0.0" },
+      nodes: [
+        { id: "custom", type: "callback", config: { handler: "enrichFn" } },
+        { id: "__end__", type: "end" },
       ],
-      [
-        { from: "triage", to: "coder" },
-        { from: "coder", to: "__end__" },
+      edges: [
+        { source: "__start__", target: "custom" },
+        { source: "custom", target: "__end__" },
       ],
-      "triage",
-      { name: "converted-flow", version: "2.0.0", maxIterations: 50 },
-    );
+    };
 
-    expect(def.document.name).toBe("converted-flow");
-    expect(def.document.version).toBe("2.0.0");
-    expect(def.max_iterations).toBe(50);
-    expect(def.nodes).toHaveLength(3);
-    expect(def.nodes[0].id).toBe("triage");
-    expect(def.nodes[0].type).toBe("agent_call");
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client, {
+      enrichFn: async (state) => ({ enriched: (state.note as string).toUpperCase() }),
+    });
+    const result = await runWorkflow(compiled, { note: "asthma" });
+
+    expect(result.state.enriched).toBe("ASTHMA");
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("callback node with output mapping uses CEL against result", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "callback-output", version: "1.0.0" },
+      nodes: [
+        {
+          id: "custom",
+          type: "callback",
+          config: {
+            handler: "fetchFn",
+            output: { label: "result.tag", count: "result.count" },
+          },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "custom" },
+        { source: "custom", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client, {
+      fetchFn: async () => ({ tag: "urgent", count: 42 }),
+    });
+    const result = await runWorkflow(compiled, {});
+
+    expect(result.state.label).toBe("urgent");
+    expect(result.state.count).toBe(42);
+  });
+
+  it("callback node supports route_from", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "callback-route", version: "1.0.0" },
+      nodes: [
+        {
+          id: "decide",
+          type: "callback",
+          config: {
+            handler: "decideFn",
+            route_from: "state.tier == 'A' ? 'process' : '__end__'",
+          },
+        },
+        {
+          id: "process",
+          type: "set_state",
+          config: { set: { processed: "true" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [{ source: "__start__", target: "decide" }, { source: "process", target: "__end__" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client, {
+      decideFn: async () => ({ tier: "A" }),
+    });
+    const result = await runWorkflow(compiled, {});
+
+    expect(result.state.tier).toBe("A");
+    expect(result.state.processed).toBe(true);
+    expect(result.iterations).toBe(2);
+  });
+
+  it("callback node throws when handler is not registered", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "callback-missing", version: "1.0.0" },
+      nodes: [
+        { id: "custom", type: "callback", config: { handler: "missingFn" } },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "custom" },
+        { source: "custom", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    await expect(runWorkflow(compiled, {})).rejects.toThrow("No handler registered");
+  });
+
+  it("callback handlers passed via runWorkflow opts override compiled handlers", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "callback-override", version: "1.0.0" },
+      nodes: [
+        { id: "custom", type: "callback", config: { handler: "fn" } },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "custom" },
+        { source: "custom", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client, {
+      fn: async () => ({ value: "compiled" }),
+    });
+    const result = await runWorkflow(compiled, {}, {
+      handlers: { fn: async () => ({ value: "runtime" }) },
+    });
+
+    expect(result.state.value).toBe("runtime");
+  });
+
+  it("StateGraph.toDefinition produces a valid WorkflowDefinition", () => {
+    const graph = stateGraph<{ note: string; severity?: string }>()
+      .addNode("triage", async (s) => ({ severity: "urgent" }))
+      .addEdge("triage", "coder")
+      .addNode("coder", async (s) => ({ severity: "coded" }))
+      .addEdge("coder", END);
+
+    const def = graph.toDefinition("triage");
+
+    expect(() => parseWorkflowDefinition(def)).not.toThrow();
+    expect(def.nodes.some((n) => n.id === "triage" && n.type === "callback")).toBe(true);
+    expect(def.nodes.some((n) => n.id === "coder" && n.type === "callback")).toBe(true);
     expect(def.edges).toContainEqual({ source: "__start__", target: "triage" });
     expect(def.edges).toContainEqual({ source: "triage", target: "coder" });
     expect(def.edges).toContainEqual({ source: "coder", target: "__end__" });
-  });
-
-  it("stateGraphToDefinition adds __end__ if missing", () => {
-    const def = stateGraphToDefinition(
-      {} as never,
-      [{ name: "only", type: "agent_call", config: { agentCall: { agent: "a", input: "'hi'", output: {} } } }],
-      [],
-      "only",
-    );
-
-    expect(def.nodes.some((n) => n.id === "__end__" && n.type === "end")).toBe(true);
-    expect(def.edges).toContainEqual({ source: "__start__", target: "only" });
-  });
-
-  it("stateGraphToDefinition output passes parseWorkflowDefinition", () => {
-    const def = stateGraphToDefinition(
-      {} as never,
-      [
-        { name: "step1", type: "agent_call", config: { agentCall: { agent: "agent-1", input: "'go'", output: { result: "response.text" } } } },
-      ],
-      [{ from: "step1", to: "__end__" }],
-      "step1",
-      { name: "bridge-test", version: "1.0.0" },
-    );
-
-    expect(() => parseWorkflowDefinition(def)).not.toThrow();
   });
 });
