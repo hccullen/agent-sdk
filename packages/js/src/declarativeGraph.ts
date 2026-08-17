@@ -16,7 +16,15 @@ export interface StateGraphResult<S extends AnyState = AnyState> {
   state: S;
   steps: StateGraphStep<S>[];
   iterations: number;
-  terminatedBy: "end" | "maxIterations" | "noEdge";
+  terminatedBy: "end" | "maxIterations" | "noEdge" | "interrupted";
+}
+
+export interface WorkflowInterrupt {
+  kind: "interrupt";
+  node: string;
+  prompt: string;
+  state: AnyState;
+  checkpoint: string;
 }
 
 export interface WorkflowDefinition {
@@ -872,4 +880,522 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
   }
 
   return { unreachable, deadEnds };
+}
+
+interface CheckpointData {
+  nodeId: string;
+  state: AnyState;
+  steps: StateGraphStep<AnyState>[];
+  iterations: number;
+}
+
+function encodeCheckpoint(data: CheckpointData): string {
+  return btoa(JSON.stringify(data));
+}
+
+function decodeCheckpoint(checkpoint: string): CheckpointData {
+  return JSON.parse(atob(checkpoint)) as CheckpointData;
+}
+
+export async function* runWorkflowInteractive(
+  compiled: CompiledGraph,
+  initialState: AnyState,
+  opts?: {
+    maxIterations?: number;
+    handlers?: WorkflowHandlers;
+  },
+): AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>> {
+  const maxIter = opts?.maxIterations ?? compiled.maxIterations;
+  const steps: StateGraphStep<AnyState>[] = [];
+  let state: AnyState = { ...initialState };
+  let current: string = compiled.entryNode;
+  let iterations = 0;
+  let terminatedBy: StateGraphResult<AnyState>["terminatedBy"] = "end";
+
+  while (current !== "__end__") {
+    if (iterations >= maxIter) {
+      terminatedBy = "maxIterations";
+      break;
+    }
+
+    const node = compiled.nodes.get(current);
+    if (!node) {
+      throw new Error(`[DeclarativeGraph] Unknown node: "${current}".`);
+    }
+
+    let next: string | undefined;
+    let delta: Partial<AnyState> = {};
+    const nodeType = node.type;
+
+    if (nodeType === "agent_call") {
+      const agentInput = evalCel(node.inputExpr!, { state }) as string | Part[];
+      const response = await node.agentHandle!.run(agentInput);
+      const responseBinding = {
+        text: response.text,
+        status: response.status,
+        artifacts: response.artifacts,
+      };
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, response: responseBinding });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "switch") {
+      const cfg = node.config as SwitchConfig;
+      delta = {};
+      let matched = false;
+      for (let i = 0; i < cfg.cases.length; i++) {
+        if (evalCel(node.caseExprs![i], { state })) {
+          next = cfg.cases[i].target;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) next = cfg.default;
+    } else if (nodeType === "set_state") {
+      delta = {};
+      for (const [field, expr] of node.setExprs!) {
+        const value = evalCel(expr, { state });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "http_call") {
+      const cfg = node.config as HttpCallConfig;
+      const url = evalCel(node.urlExpr!, { state }) as string;
+      const method = cfg.method;
+      const headers: Record<string, string> = {};
+      if (node.headerExprs) {
+        for (const [name, expr] of node.headerExprs) {
+          headers[name] = evalCel(expr, { state }) as string;
+        }
+      }
+      const body = node.bodyExpr ? evalCel(node.bodyExpr, { state }) : undefined;
+      const httpResponse = await fetch(url, {
+        method,
+        headers,
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      });
+      const responseHeaders: Record<string, string> = {};
+      httpResponse.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      const contentType = httpResponse.headers.get("content-type") ?? "";
+      const responseBody: unknown = contentType.includes("application/json")
+        ? await httpResponse.json()
+        : await httpResponse.text();
+      if (!httpResponse.ok) {
+        throw new Error(`[DeclarativeGraph] HTTP ${method} ${url} failed with status ${httpResponse.status}: ${typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody)}`);
+      }
+      const responseBinding = {
+        status: httpResponse.status,
+        headers: responseHeaders,
+        body: responseBody,
+      };
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, response: responseBinding });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "interrupt") {
+      const cfg = node.config as InterruptConfig;
+      const prompt = evalCel(node.promptExpr!, { state }) as string;
+      const checkpoint = encodeCheckpoint({
+        nodeId: current,
+        state: { ...state },
+        steps: [...steps],
+        iterations,
+      });
+      yield { kind: "interrupt" as const, node: current, prompt, state: { ...state }, checkpoint };
+      return;
+    } else if (nodeType === "wait") {
+      delta = {};
+      let ms: number;
+      if (node.durationExpr) {
+        const seconds = evalCel(node.durationExpr, { state }) as number;
+        ms = seconds * 1000;
+      } else if (node.untilExpr) {
+        const target = evalCel(node.untilExpr, { state }) as string;
+        ms = new Date(target).getTime() - Date.now();
+        if (ms < 0) ms = 0;
+      } else {
+        throw new Error(`[DeclarativeGraph] Wait node "${current}" requires either duration or until.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      const branchPromises = cfg.branches.map(async (branch) => {
+        const branchState = evalCel(node.branchInputExprs!.get(branch.name)!, { state }) as AnyState;
+        const result = await runSubGraph(compiled, branch.node, branchState, opts);
+        return { name: branch.name, result };
+      });
+      const results: Record<string, unknown> = {};
+      if (cfg.join === "any") {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+            break;
+          }
+        }
+      } else {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+          } else {
+            throw new Error(`[DeclarativeGraph] Parallel branch failed: ${(s.reason as Error).message}`);
+          }
+        }
+      }
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, results });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "callback") {
+      const handler = opts?.handlers?.[node.handlerName!] ?? compiled.handlers[node.handlerName!];
+      if (!handler) {
+        throw new Error(`[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`);
+      }
+      const handlerResult = await handler({ ...state });
+      delta = {};
+      if (node.outputExprs && node.outputExprs.size > 0) {
+        for (const [field, expr] of node.outputExprs) {
+          const value = evalCel(expr, { state, result: handlerResult });
+          state[field] = value;
+          delta[field] = value;
+        }
+      } else {
+        for (const [field, value] of Object.entries(handlerResult)) {
+          if (field === "__next") continue;
+          state[field] = value;
+          delta[field] = value;
+        }
+      }
+      if (handlerResult.__next !== undefined) {
+        next = handlerResult.__next as string;
+        delete state.__next;
+      } else if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else {
+      delta = {};
+      next = "__end__";
+    }
+
+    steps.push({ node: current, delta, state: { ...state } });
+    iterations++;
+
+    if (next === undefined) {
+      terminatedBy = "noEdge";
+      break;
+    }
+
+    current = next;
+  }
+
+  yield { state, steps, iterations, terminatedBy };
+}
+
+export async function* resumeWorkflow(
+  compiled: CompiledGraph,
+  checkpoint: string,
+  interruptResult: unknown,
+  opts?: {
+    maxIterations?: number;
+    handlers?: WorkflowHandlers;
+  },
+): AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>> {
+  const cp = decodeCheckpoint(checkpoint);
+  const node = compiled.nodes.get(cp.nodeId);
+  if (!node) {
+    throw new Error(`[DeclarativeGraph] Checkpoint node "${cp.nodeId}" not found in compiled graph.`);
+  }
+
+  let state: AnyState = { ...cp.state };
+  let iterations = cp.iterations;
+  const steps: StateGraphStep<AnyState>[] = [...cp.steps];
+
+  const cfg = node.config as InterruptConfig;
+  state[cfg.field] = interruptResult;
+  const delta = { [cfg.field]: interruptResult };
+  steps.push({ node: cp.nodeId, delta, state: { ...state } });
+  iterations++;
+
+  let next: string | undefined;
+  if (node.routeFromExpr) {
+    next = evalCel(node.routeFromExpr, { state }) as string;
+  } else {
+    next = compiled.edges.get(cp.nodeId);
+  }
+
+  if (next === undefined) {
+    yield { state, steps, iterations, terminatedBy: "noEdge" };
+    return;
+  }
+
+  yield* continueExecution(compiled, next, state, steps, iterations, opts);
+}
+
+async function* continueExecution(
+  compiled: CompiledGraph,
+  startNode: string,
+  initialState: AnyState,
+  priorSteps: StateGraphStep<AnyState>[],
+  priorIterations: number,
+  opts?: {
+    maxIterations?: number;
+    handlers?: WorkflowHandlers;
+  },
+): AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>> {
+  const maxIter = opts?.maxIterations ?? compiled.maxIterations;
+  const steps = priorSteps;
+  let state: AnyState = { ...initialState };
+  let current: string = startNode;
+  let iterations = priorIterations;
+  let terminatedBy: StateGraphResult<AnyState>["terminatedBy"] = "end";
+
+  while (current !== "__end__") {
+    if (iterations >= maxIter) {
+      terminatedBy = "maxIterations";
+      break;
+    }
+
+    const node = compiled.nodes.get(current);
+    if (!node) {
+      throw new Error(`[DeclarativeGraph] Unknown node: "${current}".`);
+    }
+
+    let next: string | undefined;
+    let delta: Partial<AnyState> = {};
+    const nodeType = node.type;
+
+    if (nodeType === "agent_call") {
+      const agentInput = evalCel(node.inputExpr!, { state }) as string | Part[];
+      const response = await node.agentHandle!.run(agentInput);
+      const responseBinding = {
+        text: response.text,
+        status: response.status,
+        artifacts: response.artifacts,
+      };
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, response: responseBinding });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "switch") {
+      const cfg = node.config as SwitchConfig;
+      delta = {};
+      let matched = false;
+      for (let i = 0; i < cfg.cases.length; i++) {
+        if (evalCel(node.caseExprs![i], { state })) {
+          next = cfg.cases[i].target;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) next = cfg.default;
+    } else if (nodeType === "set_state") {
+      delta = {};
+      for (const [field, expr] of node.setExprs!) {
+        const value = evalCel(expr, { state });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "http_call") {
+      const cfg = node.config as HttpCallConfig;
+      const url = evalCel(node.urlExpr!, { state }) as string;
+      const method = cfg.method;
+      const headers: Record<string, string> = {};
+      if (node.headerExprs) {
+        for (const [name, expr] of node.headerExprs) {
+          headers[name] = evalCel(expr, { state }) as string;
+        }
+      }
+      const body = node.bodyExpr ? evalCel(node.bodyExpr, { state }) : undefined;
+      const httpResponse = await fetch(url, {
+        method,
+        headers,
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      });
+      const responseHeaders: Record<string, string> = {};
+      httpResponse.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      const contentType = httpResponse.headers.get("content-type") ?? "";
+      const responseBody: unknown = contentType.includes("application/json")
+        ? await httpResponse.json()
+        : await httpResponse.text();
+      if (!httpResponse.ok) {
+        throw new Error(`[DeclarativeGraph] HTTP ${method} ${url} failed with status ${httpResponse.status}: ${typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody)}`);
+      }
+      const responseBinding = {
+        status: httpResponse.status,
+        headers: responseHeaders,
+        body: responseBody,
+      };
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, response: responseBinding });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "interrupt") {
+      const cfg = node.config as InterruptConfig;
+      const prompt = evalCel(node.promptExpr!, { state }) as string;
+      const checkpoint = encodeCheckpoint({
+        nodeId: current,
+        state: { ...state },
+        steps: [...steps],
+        iterations,
+      });
+      yield { kind: "interrupt" as const, node: current, prompt, state: { ...state }, checkpoint };
+      return;
+    } else if (nodeType === "wait") {
+      delta = {};
+      let ms: number;
+      if (node.durationExpr) {
+        const seconds = evalCel(node.durationExpr, { state }) as number;
+        ms = seconds * 1000;
+      } else if (node.untilExpr) {
+        const target = evalCel(node.untilExpr, { state }) as string;
+        ms = new Date(target).getTime() - Date.now();
+        if (ms < 0) ms = 0;
+      } else {
+        throw new Error(`[DeclarativeGraph] Wait node "${current}" requires either duration or until.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      const branchPromises = cfg.branches.map(async (branch) => {
+        const branchState = evalCel(node.branchInputExprs!.get(branch.name)!, { state }) as AnyState;
+        const result = await runSubGraph(compiled, branch.node, branchState, opts);
+        return { name: branch.name, result };
+      });
+      const results: Record<string, unknown> = {};
+      if (cfg.join === "any") {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+            break;
+          }
+        }
+      } else {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+          } else {
+            throw new Error(`[DeclarativeGraph] Parallel branch failed: ${(s.reason as Error).message}`);
+          }
+        }
+      }
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, results });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "callback") {
+      const handler = opts?.handlers?.[node.handlerName!] ?? compiled.handlers[node.handlerName!];
+      if (!handler) {
+        throw new Error(`[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`);
+      }
+      const handlerResult = await handler({ ...state });
+      delta = {};
+      if (node.outputExprs && node.outputExprs.size > 0) {
+        for (const [field, expr] of node.outputExprs) {
+          const value = evalCel(expr, { state, result: handlerResult });
+          state[field] = value;
+          delta[field] = value;
+        }
+      } else {
+        for (const [field, value] of Object.entries(handlerResult)) {
+          if (field === "__next") continue;
+          state[field] = value;
+          delta[field] = value;
+        }
+      }
+      if (handlerResult.__next !== undefined) {
+        next = handlerResult.__next as string;
+        delete state.__next;
+      } else if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else {
+      delta = {};
+      next = "__end__";
+    }
+
+    steps.push({ node: current, delta, state: { ...state } });
+    iterations++;
+
+    if (next === undefined) {
+      terminatedBy = "noEdge";
+      break;
+    }
+
+    current = next;
+  }
+
+  yield { state, steps, iterations, terminatedBy };
 }

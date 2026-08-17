@@ -5,6 +5,8 @@ import {
   runWorkflow,
   executeWorkflow,
   analyzeGraphStructure,
+  runWorkflowInteractive,
+  resumeWorkflow,
 } from "../declarativeGraph.js";
 import type { WorkflowDefinition } from "../declarativeGraph.js";
 import type { CortiClient } from "../client.js";
@@ -1449,5 +1451,212 @@ describe("DeclarativeGraph", () => {
     expect(def.edges).toContainEqual({ source: "__start__", target: "triage" });
     expect(def.edges).toContainEqual({ source: "triage", target: "coder" });
     expect(def.edges).toContainEqual({ source: "coder", target: "__end__" });
+  });
+
+  it("runWorkflowInteractive yields interrupt and resumes with answer", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "hitl-checkpoint", version: "1.0.0" },
+      nodes: [
+        {
+          id: "review",
+          type: "interrupt",
+          config: {
+            prompt: "'Approve codes: ' + state.codes + '?'",
+            field: "approved",
+            route_from: "state.approved == 'yes' ? 'finalize' : '__end__'",
+          },
+        },
+        {
+          id: "finalize",
+          type: "set_state",
+          config: { set: { status: "'finalized'" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "review" },
+        { source: "finalize", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const gen = runWorkflowInteractive(compiled, { codes: "J45.909" });
+
+    const first = await gen.next();
+    expect(first.value.kind).toBe("interrupt");
+    const interrupt = first.value as { kind: string; node: string; prompt: string; checkpoint: string };
+    expect(interrupt.node).toBe("review");
+    expect(interrupt.prompt).toBe("Approve codes: J45.909?");
+
+    const resumeGen = resumeWorkflow(compiled, interrupt.checkpoint, "yes");
+    const result = await resumeGen.next();
+    expect(result.value).toMatchObject({
+      state: { codes: "J45.909", approved: "yes", status: "finalized" },
+      terminatedBy: "end",
+    });
+  });
+
+  it("runWorkflowInteractive yields interrupt, resume with no routes to end", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "hitl-reject", version: "1.0.0" },
+      nodes: [
+        {
+          id: "review",
+          type: "interrupt",
+          config: {
+            prompt: "'Approve?'",
+            field: "approved",
+            route_from: "state.approved == 'yes' ? 'finalize' : '__end__'",
+          },
+        },
+        {
+          id: "finalize",
+          type: "set_state",
+          config: { set: { status: "'finalized'" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "review" },
+        { source: "finalize", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const gen = runWorkflowInteractive(compiled, {});
+    const first = await gen.next();
+    const interrupt = first.value as { kind: string; checkpoint: string };
+
+    const resumeGen = resumeWorkflow(compiled, interrupt.checkpoint, "no");
+    const result = await resumeGen.next();
+    expect(result.value).toMatchObject({
+      state: { approved: "no" },
+      terminatedBy: "end",
+    });
+    expect((result.value as Record<string, unknown>).status).toBeUndefined();
+  });
+
+  it("runWorkflowInteractive completes without interrupt when no interrupt nodes", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "no-interrupt", version: "1.0.0" },
+      nodes: [
+        { id: "a", type: "set_state", config: { set: { x: "1" } } },
+        { id: "b", type: "set_state", config: { set: { y: "2" } } },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "a" },
+        { source: "a", target: "b" },
+        { source: "b", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const gen = runWorkflowInteractive(compiled, {});
+
+    const result = await gen.next();
+    expect(result.value).toMatchObject({
+      state: { x: 1, y: 2 },
+      terminatedBy: "end",
+    });
+    expect(result.done).toBe(false);
+
+    const done = await gen.next();
+    expect(done.done).toBe(true);
+  });
+
+  it("checkpoint is a valid base64 string containing state and node", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "checkpoint-test", version: "1.0.0" },
+      nodes: [
+        {
+          id: "ask",
+          type: "interrupt",
+          config: { prompt: "'Proceed?'", field: "answer" },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "ask" },
+        { source: "ask", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const gen = runWorkflowInteractive(compiled, { data: "test" });
+    const first = await gen.next();
+    const interrupt = first.value as { kind: string; checkpoint: string };
+
+    const decoded = JSON.parse(atob(interrupt.checkpoint));
+    expect(decoded.nodeId).toBe("ask");
+    expect(decoded.state).toEqual({ data: "test" });
+    expect(decoded.iterations).toBe(0);
+    expect(decoded.steps).toHaveLength(0);
+  });
+
+  it("multiple interrupts — pause twice, resume twice", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "multi-interrupt", version: "1.0.0" },
+      nodes: [
+        {
+          id: "first",
+          type: "interrupt",
+          config: { prompt: "'First?'", field: "first_answer" },
+        },
+        {
+          id: "second",
+          type: "interrupt",
+          config: { prompt: "'Second?'", field: "second_answer" },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "first" },
+        { source: "first", target: "second" },
+        { source: "second", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+
+    const gen1 = runWorkflowInteractive(compiled, {});
+    const first = await gen1.next();
+    expect(first.value.kind).toBe("interrupt");
+    const cp1 = (first.value as { checkpoint: string }).checkpoint;
+
+    const gen2 = resumeWorkflow(compiled, cp1, "A");
+    const second = await gen2.next();
+    expect(second.value.kind).toBe("interrupt");
+    const cp2 = (second.value as { checkpoint: string }).checkpoint;
+
+    const gen3 = resumeWorkflow(compiled, cp2, "B");
+    const result = await gen3.next();
+    expect(result.value).toMatchObject({
+      state: { first_answer: "A", second_answer: "B" },
+      terminatedBy: "end",
+    });
+  });
+
+  it("resumeWorkflow throws on invalid checkpoint", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "bad-checkpoint", version: "1.0.0" },
+      nodes: [{ id: "__end__", type: "end" }],
+      edges: [{ source: "__start__", target: "__end__" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+
+    await expect(
+      (async () => {
+        const gen = resumeWorkflow(compiled, "not-valid-base64!!!", "answer");
+        await gen.next();
+      })(),
+    ).rejects.toThrow();
   });
 });
