@@ -67,6 +67,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@bufbuild/cel": "^0.6.0",
     "openapi-fetch": "^0.17.0"
   }
 }
