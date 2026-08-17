@@ -347,6 +347,8 @@ export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, 
 
 **Deliverable**: 14 test cases covering parser, compiler, executor, and convenience API.
 
+**Actual**: 153 tests across 10 test files (50 in `declarativeGraph.test.ts`, 8 in `stateGraph.test.ts`, 11 in `workflow.test.ts`, 84 in other existing test files).
+
 **File**: `packages/js/src/__tests__/declarativeGraph.test.ts`
 
 **Ported from `stateGraph.test.ts`** (adapted to declarative config):
@@ -402,38 +404,40 @@ const mockClient = {
 
 ## Final file inventory (v1)
 
-| File | Action | Est. LOC |
+| File | Action | Actual LOC |
 |---|---|---|
-| `packages/js/src/declarativeGraph.ts` | New | ~200 |
-| `packages/js/src/__tests__/declarativeGraph.test.ts` | New | ~220 |
-| `packages/js/src/index.ts` | Edit (+5 lines) | ~5 |
-| `packages/js/package.json` | Edit (+1 dep) | ~1 |
-| **Total** | | **~425** |
+| `packages/js/src/declarativeGraph.ts` | New | ~875 |
+| `packages/js/src/__tests__/declarativeGraph.test.ts` | New | ~1700 |
+| `packages/js/src/index.ts` | Edit | +10 |
+| `packages/js/package.json` | Edit | +1 dep |
+| **Total** | | **~2585** |
 
-For context: current `stateGraph.ts` is 94 lines. This is ~4.5x that, covering parser + CEL adapter + compiler + executor + types.
+### Actual file inventory (current)
 
-### Projected file inventory (after Phase 2/3)
-
-| File | Action | Est. LOC delta |
+| File | Status | Actual LOC |
 |---|---|---|
-| `packages/js/src/declarativeGraph.ts` | Edit | +150 (new node types) |
-| `packages/js/src/__tests__/declarativeGraph.test.ts` | Edit | +200 (new test cases) |
-| `packages/js/src/index.ts` | Edit | +5 (new type exports) |
-| `packages/js/src/mcpTools.ts` | New (Phase 3) | ~80 (MCP tool-call resource, blocked on API) |
-| **Total** | | **~435 additional** |
+| `packages/js/src/declarativeGraph.ts` | Done | ~875 |
+| `packages/js/src/stateGraph.ts` | Rewritten as builder | ~105 |
+| `packages/js/src/workflow.ts` | Rewritten as wrapper | ~190 |
+| `packages/js/src/__tests__/declarativeGraph.test.ts` | Done | ~1700 |
+| `packages/js/src/__tests__/stateGraph.test.ts` | Updated | ~141 |
+| `packages/js/src/__tests__/workflow.test.ts` | Unchanged | ~159 |
+| `packages/js/src/index.ts` | Updated | ~95 |
+| `packages/js/package.json` | Updated | +1 dep |
 
 ## What's NOT in v1 (deferred)
 
-| Feature | Reason | When |
+| Feature | Reason | Status |
 |---|---|---|
-| YAML authoring | Avoid `js-yaml` dep in v1 | Phase 2 |
-| Python SDK | Needs rebuild regardless | Separate effort |
-| Additional node types | See [Phase 2/3 node types](#phase-2--3-additional-node-types) below | Phase 2/3 |
-| Backward-compat bridge (`stateGraphToDefinition`) | Needs `agentNode()` to store config metadata | Phase 2 |
-| JSON Schema validation (ajv) | Hand-written validation is enough for 3 node types | When node types grow |
-| Checkpoint/resume | Needs persistence layer | Phase 3+ |
-| State schema runtime validation | CEL type-checking covers most cases | When needed |
-| Graph structure analysis (dead-ends, unreachable nodes) | Basic validation in v1, deeper analysis later | Phase 2 |
+| YAML authoring | Avoid `js-yaml` dep in v1 | Not started |
+| Python SDK | Needs rebuild regardless | Not started — separate effort |
+| Additional node types | See [Phase 2/3 node types](#phase-2--3-additional-node-types) below | Most done — see status column |
+| Backward-compat bridge | Replaced by `StateGraph.toDefinition()` + `callback` node type | **Done** |
+| JSON Schema validation (ajv) | Hand-written validation is enough for 9 node types | Not needed yet |
+| Checkpoint/resume | Needs persistence layer | **Done** — no persistence layer needed, checkpoint is a base64 string |
+| State schema runtime validation | CEL type-checking covers most cases | Not started |
+| Graph structure analysis (dead-ends, unreachable nodes) | Basic validation in v1, deeper analysis later | **Done** — `analyzeGraphStructure()` |
+| Engine unification | `StateGraph`/`Workflow`/`Parallel` all delegate to `runWorkflow` | **Done** — `callback` node type |
 
 ## Phase 2 / 3: Additional node types
 
@@ -444,7 +448,7 @@ For context: current `stateGraph.ts` is 94 lines. This is ~4.5x that, covering p
 3. The parser's `validNodeTypes` set grows by one per new type. Each type adds a focused validation function.
 4. `route_from` is available on all non-terminal node types (anything that's not `end`).
 
-### `set_state` — Pure state transform (Phase 2)
+### `set_state` — Pure state transform (Phase 2) — DONE
 
 **Purpose**: Transform state via CEL expressions without calling an agent or making I/O requests. Replaces the most common use case for custom code nodes: "set field X to an expression of state fields."
 
@@ -481,7 +485,7 @@ interface SetStateConfig {
 
 **Complexity**: Low — same as `switch` minus the routing logic. ~20 LOC in executor, ~10 LOC in compiler.
 
-### `http_call` — HTTP endpoint call (Phase 2)
+### `http_call` — HTTP endpoint call (Phase 2) — DONE
 
 **Purpose**: Call any HTTP endpoint and map the response into state. Covers webhooks, external APIs, database lookups via REST — anything with a URL.
 
@@ -538,11 +542,11 @@ interface HttpCallConfig {
 
 **Risk**: Network failures, timeouts. Mitigation: `retry` policy (already in the type system) + `timeout` field.
 
-### `interrupt` — Human-in-the-loop (Phase 3)
+### `interrupt` — Human-in-the-loop (Phase 3) — DONE (both modes)
 
 **Purpose**: Pause execution, ask a human for input, resume with their answer. Two modes: callback (simple, in-process) and checkpoint (durable, cross-session).
 
-#### Mode 1: Callback (Phase 3a)
+#### Mode 1: Callback (Phase 3a) — DONE
 
 **Config**:
 ```typescript
@@ -600,7 +604,7 @@ const result = await runWorkflow(compiled, { note: "asthma" }, {
 
 **Complexity**: Low-medium — ~15 LOC in executor. The complexity is in the caller's `onInterrupt` implementation, not the engine.
 
-#### Mode 2: Checkpoint/resume (Phase 3b)
+#### Mode 2: Checkpoint/resume (Phase 3b) — DONE
 
 **Purpose**: Durable interrupts that survive process restarts. The executor yields a checkpoint, the caller persists it, and a later process resumes with the human's answer.
 
@@ -639,11 +643,11 @@ async function resumeWorkflow(
 { nodeId: string; state: AnyState; steps: StateGraphStep[]; iterations: number }
 ```
 
-**Complexity**: High — requires serialising/resuming executor state, changing the return type, adding `resumeWorkflow`. ~80 LOC. Blocked on a persistence story (where to store checkpoints).
+**Complexity**: High — requires serialising/resuming executor state, changing the return type, adding `resumeWorkflow`. ~80 LOC. ~~Blocked on a persistence story (where to store checkpoints).~~ **Implemented** — checkpoint is a base64 string, caller stores it wherever they want.
 
-**Decision**: Phase 3a (callback) ships first. Phase 3b (checkpoint) waits until we have a use case that needs cross-session persistence.
+**Decision**: ~~Phase 3a (callback) ships first. Phase 3b (checkpoint) waits until we have a use case that needs cross-session persistence.~~ Both modes shipped.
 
-### `tool_call` — MCP tool invocation (Phase 3)
+### `tool_call` — MCP tool invocation (Phase 3) — NOT STARTED (blocked)
 
 **Purpose**: Call a specific tool on an MCP connector attached to an agent. Unlike `agent_call` (which sends a message and gets a response), `tool_call` invokes a named tool directly.
 
@@ -681,7 +685,7 @@ interface ToolCallConfig {
 
 **Blocker**: The SDK needs an MCP tool-call resource first. This is a separate effort.
 
-### `parallel` — Fan-out execution (Phase 3)
+### `parallel` — Fan-out execution (Phase 3) — DONE
 
 **Purpose**: Run multiple branches concurrently, merge results, continue.
 
@@ -719,7 +723,7 @@ interface ParallelConfig {
 
 **Risk**: Branch failure handling, what happens to in-flight branches when `join: "any"` completes. Needs careful error semantics.
 
-### `subworkflow` — Run another workflow (Phase 3)
+### `subworkflow` — Run another workflow (Phase 3) — NOT STARTED (blocked)
 
 **Purpose**: Invoke another workflow definition as a node, merge its output into state.
 
@@ -750,7 +754,7 @@ interface SubworkflowConfig {
 
 **Blocker**: No workflow registry exists in the SDK or API. Inline definitions work without one, but the ID case needs a `WorkflowsResource`.
 
-### `wait` — Delay (Phase 3)
+### `wait` — Delay (Phase 3) — DONE
 
 **Purpose**: Pause execution for a duration or until a timestamp.
 
@@ -775,20 +779,63 @@ interface WaitConfig {
 
 **Risk**: Long waits block the event loop. Mitigation: document that `wait` is for short delays; for long pauses use `interrupt` + checkpoint.
 
+### `callback` — Arbitrary code node (added during unification) — DONE
+
+**Purpose**: Run arbitrary async functions from declarative config. The config stores a handler **name** (serialisable); the runtime function is provided at compile or run time via the `handlers` parameter. This node type unified `StateGraph`, `Workflow`, and the declarative graph under one engine.
+
+**Config**:
+```typescript
+{ id: string; type: "callback"; config: CallbackConfig }
+
+interface CallbackConfig {
+  handler: string;                    // name, looked up at compile time
+  output?: Record<string, string>;    // optional CEL mapping (if omitted, handler return merges directly)
+  route_from?: string;
+}
+```
+
+**Runner API**:
+```typescript
+async function compileWorkflow(
+  def: WorkflowDefinition,
+  client: CortiClient,
+  handlers?: Record<string, (state: AnyState) => Promise<Partial<AnyState>>>,
+): Promise<CompiledGraph>;
+```
+
+**Executor behavior**:
+1. Look up handler by name in `opts.handlers` or `compiled.handlers`
+2. Call `handler({ ...state })` → `Partial<S>`
+3. If `output` CEL expressions are defined, evaluate them against `{ state, result: handlerResult }` and merge
+4. Else merge handler result directly into state (excluding `__next`)
+5. If `__next` is in handler result, use it as next node (function-based routing)
+6. Else routing: `route_from` if present, else static edge
+
+**`__next` convention**: Handlers can return `{ ...delta, __next: "targetNode" }` to dynamically route. `__next` is excluded from state and delta. Used by `StateGraph` builder for function-based edge routers.
+
+**Complexity**: Medium — ~30 LOC in executor, ~10 LOC in compiler. No external dependencies.
+
 ### Implementation order
 
-| Phase | Node type | Complexity | Blocked by |
-|---|---|---|---|
-| 2 | `set_state` | Low | Nothing |
-| 2 | `http_call` | Medium | Nothing |
-| 3a | `interrupt` (callback) | Low-medium | Nothing |
-| 3 | `tool_call` | Medium | MCP tool-call API in SDK |
-| 3 | `parallel` | High | Nothing (but needs careful design) |
-| 3 | `subworkflow` | Medium | Workflow registry for ID case |
-| 3 | `wait` | Low | Nothing |
-| 3b | `interrupt` (checkpoint) | High | Persistence layer |
-| - | Backward-compat bridge | Medium | `agentNode()` config metadata |
-| - | JSON Schema validation (ajv) | Low | >6 node types (justifies the dep) |
+| Phase | Node type | Complexity | Status | Blocked by |
+|---|---|---|---|---|
+| 1 | `agent_call` | Low | **Done** | — |
+| 1 | `switch` | Low | **Done** | — |
+| 1 | `end` | Low | **Done** | — |
+| 2 | `set_state` | Low | **Done** | — |
+| 2 | `http_call` | Medium | **Done** | — |
+| 3a | `interrupt` (callback) | Low-medium | **Done** | — |
+| 3 | `parallel` | High | **Done** | — |
+| 3 | `wait` | Low | **Done** | — |
+| 3b | `interrupt` (checkpoint) | High | **Done** | — |
+| - | `callback` (unification) | Medium | **Done** | — |
+| - | `analyzeGraphStructure` | Medium | **Done** | — |
+| - | Backward-compat bridge | Medium | **Done** (via `StateGraph.toDefinition()`) | — |
+| 3 | `tool_call` | Medium | Not started | MCP tool-call API in SDK |
+| 3 | `subworkflow` | Medium | Not started | Workflow registry for ID case |
+| - | YAML authoring | Low | Not started | `js-yaml` dep |
+| - | JSON Schema validation (ajv) | Low | Not needed | 9 node types, hand-written is sufficient |
+| - | Python SDK parity | High | Not started | Separate effort |
 
 ### Impact on existing code
 
@@ -799,27 +846,68 @@ Adding a new node type touches:
 3. **`parseWorkflowDefinition`** — add type to `validNodeTypes`, add config validation for the new type
 4. **`compileWorkflow`** — add a branch to pre-compile the new type's CEL expressions
 5. **`runWorkflow`** — add a branch in the `switch on node.type`
-6. **`index.ts`** — export new config type
-7. **Tests** — add test cases for the new type
+6. **`runWorkflowInteractive` / `continueExecution`** — add the same branch (for checkpoint mode)
+7. **`index.ts`** — export new config type
+8. **Tests** — add test cases for the new type
 
 Each new type is additive — no existing tests or behavior change. The `validNodeTypes` set is the gatekeeper.
 
+### Architecture (current)
+
+```
+Customer writes JSON config          Customer uses builder API
+    │                                     │
+    ▼                                     ▼
+parseWorkflowDefinition()            StateGraph.builder → _build()
+    │                                     │
+    ▼                                     ▼
+compileWorkflow(def, client, handlers?)  ←── unified entry point
+    │  CEL pre-compilation
+    │  agent resolution (eager fetch)
+    │  graph structure validation
+    ▼
+CompiledGraph (in-memory, ready to execute)
+    │
+    ├──────────────────────────────────────────────┐
+    ▼                                              ▼
+runWorkflow() — callback mode           runWorkflowInteractive() — checkpoint mode
+    onInterrupt callback                      yields WorkflowInterrupt + checkpoint
+    returns StateGraphResult                  resumeWorkflow(checkpoint, answer)
+    │                                              │
+    ▼                                              ▼
+StateGraphResult { state, steps, iterations, terminatedBy }
+```
+
+**One engine, three APIs:**
+
+| API | How it works |
+|---|---|
+| Declarative graph (JSON) | `compileWorkflow(def, client, handlers?)` + `runWorkflow()` — the single engine |
+| `StateGraph` builder (code-first) | `addNode`/`addEdge` → builds `WorkflowDefinition` with `callback` nodes → calls `compileWorkflow` + `runWorkflow` |
+| `Workflow` (sequence) | Builds `callback` nodes per step → runs through `compileWorkflow` + `runWorkflow` |
+| `Parallel` (fan-out) | `Promise.allSettled` (unchanged — no graph routing needed) |
+
 ## Complexity assessment
 
-| Component | Complexity | Risk | Mitigation |
-|---|---|---|---|
-| Executor while-loop | Low | None — same pattern as existing `StateGraph.run()` | — |
-| Type definitions | Low | None | — |
-| Hand-written parser/validator | Low-medium | Will grow as node types are added | Keep validation functions small and composable |
-| CEL adapter | Medium | `@bufbuild/cel` is beta (35 stars); need to verify field access on plain objects, string concat, null handling | Test CEL expressions thoroughly in Phase 1 |
-| Graph structure validation | Medium | Reachability, dead-end detection | Standard algorithms, well-understood |
-| Agent resolution | Medium | `client.agents.get()` is async, needs to fit in compile step | `compileWorkflow` is async — natural fit |
-| `response` binding for CEL | Low-medium | Need to expose `MessageResponse` fields cleanly | Thin wrapper object |
-| `set_state` node | Low | None — pure CEL evaluation | — |
-| `http_call` node | Medium | Network failures, timeout, non-JSON responses | `retry` policy + `timeout` field |
-| `interrupt` (callback) | Low-medium | Caller must implement `onInterrupt` | Document the contract clearly |
-| `interrupt` (checkpoint) | High | Serialising/resuming executor state, persistence | Phase 3b — wait for persistence story |
-| `tool_call` node | Medium | MCP tool-call API not yet in SDK | Blocked on MCP tool-call resource |
-| `parallel` node | High | Branch failure, join semantics, concurrent state | Careful design + dedicated test suite |
-| `subworkflow` node | Medium | Workflow registry doesn't exist | Inline definitions work without registry |
-| `wait` node | Low | Blocks event loop on long waits | Document short-delay only; use `interrupt` for long pauses |
+| Component | Complexity | Status | Risk | Mitigation |
+|---|---|---|---|---|
+| Executor while-loop | Low | **Done** | None — same pattern as existing `StateGraph.run()` | — |
+| Type definitions | Low | **Done** | None | — |
+| Hand-written parser/validator | Low-medium | **Done** | Will grow as node types are added | Keep validation functions small and composable |
+| CEL adapter | Medium | **Done** | `@bufbuild/cel` is beta (35 stars); field access on plain objects, string concat, null handling | `celToJs()` helper unwraps CEL maps/lists/bigints |
+| Graph structure validation | Medium | **Done** | Reachability, dead-end detection | `analyzeGraphStructure()` with switch/parallel/callback support |
+| Agent resolution | Medium | **Done** | `client.agents.get()` is async, needs to fit in compile step | `compileWorkflow` is async — natural fit |
+| `response` binding for CEL | Low-medium | **Done** | Need to expose `MessageResponse` fields cleanly | Thin wrapper object |
+| `set_state` node | Low | **Done** | None — pure CEL evaluation | — |
+| `http_call` node | Medium | **Done** | Network failures, timeout, non-JSON responses | `retry` policy + `timeout` field |
+| `interrupt` (callback) | Low-medium | **Done** | Caller must implement `onInterrupt` | Document the contract clearly |
+| `interrupt` (checkpoint) | High | **Done** | Serialising/resuming executor state | Checkpoint is base64 string, no persistence layer needed |
+| `callback` node (unification) | Medium | **Done** | Handler lookup, `__next` routing | Excluded `__next` from delta, handler validation at parse time |
+| `analyzeGraphStructure` | Medium | **Done** | False positives for dynamic routing | Callback nodes with handler exempt from dead-end check |
+| `parallel` node | High | **Done** | Branch failure, join semantics, concurrent state | `join: "all"` throws on failure, `join: "any"` takes first success |
+| `wait` node | Low | **Done** | Blocks event loop on long waits | Document short-delay only; use `interrupt` for long pauses |
+| Engine unification | Medium | **Done** | Circular imports, type narrowing | `StateGraphResult`/`StateGraphStep` moved to `declarativeGraph.ts` |
+| `tool_call` node | Medium | Not started | MCP tool-call API not yet in SDK | Blocked on MCP tool-call resource |
+| `subworkflow` node | Medium | Not started | Workflow registry doesn't exist | Inline definitions work without registry |
+| YAML authoring | Low | Not started | `js-yaml` dep | — |
+| Python SDK parity | High | Not started | Full port of declarative graph engine | Separate effort |
