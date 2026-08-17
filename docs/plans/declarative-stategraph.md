@@ -92,7 +92,7 @@ CompiledGraph (in-memory, ready to execute)
 runWorkflow(compiled, initialState)  ──▶  while-loop executor
     │                                       same pattern as StateGraph.run()
     ▼
-StateGraphResult { state, steps, iterations, terminated_by }
+StateGraphResult { state, steps, iterations, terminatedBy }
 ```
 
 ## Phased outcomes
@@ -142,9 +142,11 @@ interface RetryPolicy {
 
 Parser (`parseWorkflowDefinition`):
 - Accept `string` (JSON) or `object` input
-- Hand-validate: required top-level fields present, node types only `agent_call`/`switch`/`end`, node IDs unique, `__start__` and `__end__` synthetic nodes exist in edges/nodes, all edge targets reference valid node IDs
+- Hand-validate: required top-level fields present, node types only `agent_call`/`switch`/`end`, node IDs unique, an edge with `source: "__start__"` exists (entry point), a node with `id: "__end__"` and `type: "end"` exists, all edge targets reference valid node IDs
 - No `ajv` dependency — just typed checks
 - Throw descriptive errors on validation failure
+
+`state_schema` is accepted as an optional field for documentation/tooling purposes but **not validated at runtime in v1**. Deferred to when node types grow.
 
 CEL adapter:
 - Thin wrapper around `@bufbuild/cel`'s `run(expr, bindings)` API
@@ -176,29 +178,31 @@ async function compileWorkflow(
 
 Compiler steps:
 1. Build node lookup `Map<string, CompiledNode>` from `def.nodes`
-2. Find entry node — the target of the edge with `source: "__start__"`
-3. Validate graph structure:
+2. Build edge map `Map<string, string>` from `def.edges` (source → target)
+3. Find entry node — the target of the edge with `source: "__start__"`
+4. Validate graph structure:
    - Entry node exists
    - All edge targets reference valid node IDs
    - All switch case targets reference valid node IDs
    - All switch nodes have a `default` that references a valid node
    - `__end__` node exists and has type `"end"`
-4. Pre-compile all CEL expressions:
+5. Pre-compile all CEL expressions:
    - `agent_call.input` → compiled CEL
    - `agent_call.output` values → compiled CEL (one per field)
    - `agent_call.route_from` (if present) → compiled CEL
    - `switch.cases[].when` → compiled CEL (one per case)
-5. **Eagerly fetch all referenced agents**:
+6. **Eagerly fetch all referenced agents**:
    - For each `agent_call` node, call `client.agents.get(config.agent)`
    - Create `AgentHandle` from the returned `Agent` object
    - Cache in the compiled node
    - If agent not found → throw immediately (fail fast)
-6. Store `maxIterations` (from config or default 25)
+7. Store `maxIterations` (from config or default 25)
 
 ```typescript
 interface CompiledGraph {
   definition: WorkflowDefinition;
   nodes: Map<string, CompiledNode>;
+  edges: Map<string, string>;  // source → target (static edges, pre-built from def.edges)
   entryNode: string;
   maxIterations: number;
 }
@@ -262,22 +266,26 @@ Executor algorithm (same while-loop pattern as `StateGraph.run()` at `stateGraph
       - "agent_call":
         i.   Evaluate node.inputExpr against { state } → agentInput
         ii.  response = await node.agentHandle.run(agentInput)
-        iii. For each (field, expr) in node.outputExprs:
+        iii. delta = {}
+        iv.   For each (field, expr) in node.outputExprs:
              Evaluate expr against { state, response } → value
              state[field] = value
-        iv.  If node.routeFromExpr:
+             delta[field] = value
+        v.   If node.routeFromExpr:
              next = evalCel(node.routeFromExpr, { state })
-        v.   Else:
-             next = lookupEdge(compiled.edges, current)
+        vi.  Else:
+             next = compiled.edges.get(current)
 
       - "switch":
-        i.   For each (case, expr) in node.caseExprs:
+        i.   delta = {}
+        ii.  For each (case, expr) in node.caseExprs:
              If evalCel(expr, { state }) is truthy:
                next = case.target
                break
-        ii.  If no case matched: next = node.config.default
+        iii. If no case matched: next = node.config.default
 
       - "end":
+        delta = {}
         next = "__end__"
 
    d. steps.push({ node: current, delta, state: { ...state } })

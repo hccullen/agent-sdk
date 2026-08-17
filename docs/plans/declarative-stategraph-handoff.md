@@ -42,13 +42,13 @@ async function executeWorkflow(json: string | object, client: CortiClient, initi
 
 ## Key implementation points
 
-1. **Parser**: Hand-validate (no JSON Schema lib). Check required fields, node types (`agent_call`/`switch`/`end` only), unique IDs, `__start__`/`__end__` exist, edge targets valid.
+1. **Parser**: Hand-validate (no JSON Schema lib). Check required fields, node types (`agent_call`/`switch`/`end` only), unique IDs, an edge with `source: "__start__"` exists, a node with `id: "__end__"` and `type: "end"` exists, edge targets valid.
 
 2. **CEL adapter**: Use `@bufbuild/cel`'s `run(expr, bindings)` API. Pre-compile at load time. Bindings: `{ state, response }` where `response` has `.text`, `.status`, `.artifacts`.
 
-3. **Compiler** (async): Build node map, validate graph structure, pre-compile CEL, **eagerly fetch all agents** via `client.agents.get(id)` and cache `AgentHandle` instances.
+3. **Compiler** (async): Build node map and edge map (`Map<string, string>` from `def.edges`), validate graph structure, pre-compile CEL, **eagerly fetch all agents** via `client.agents.get(id)` and cache `AgentHandle` instances.
 
-4. **Executor**: Same while-loop as `StateGraph.run()` (`packages/js/src/stateGraph.ts:44-81`). `agent_call` → resolve agent, eval `input` CEL, call `agent.run()`, eval `output` CEL map, merge into state. `switch` → eval `when` CEL, route to matching `target`. `end` → stop. Return `{state, steps, iterations, terminated_by}` reusing `StateGraphResult`/`StateGraphStep` from `stateGraph.ts`.
+4. **Executor**: Same while-loop as `StateGraph.run()` (`packages/js/src/stateGraph.ts:44-81`). `agent_call` → resolve agent, eval `input` CEL, call `agent.run()`, eval `output` CEL map, merge into state. `switch` → eval `when` CEL, route to matching `target`. `end` → stop. Return `{state, steps, iterations, terminatedBy}` reusing `StateGraphResult`/`StateGraphStep` from `stateGraph.ts`.
 
 5. **Reuse**: Import `StateGraphResult`, `StateGraphStep` from `./stateGraph.js`, `CortiClient` from `./client.js`, `AgentHandle` from `./handle.js`, `MessageResponse` from `./response.js`.
 
