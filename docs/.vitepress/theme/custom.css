@@ -44,9 +44,9 @@ body {
   background: var(--vp-c-bg);
 }
 
-/* Prevent horizontal scroll on the whole page */
-html, body {
-  overflow-x: hidden;
+/* Prevent horizontal scroll without breaking fixed overlays */
+body {
+  overflow-x: clip;
 }
 
 /* Tighter code blocks */
@@ -71,7 +71,7 @@ html, body {
   font-weight: 400;
 }
 
-/* Tables — wrap in scrollable container */
+/* Tables — scrollable on mobile */
 .vp-doc table {
   display: block;
   width: 100%;
@@ -106,7 +106,7 @@ html, body {
   background: rgba(255, 255, 255, 0.02);
 }
 
-/* Custom containers — match the callout style */
+/* Custom containers */
 .vp-doc .vp-custom-block {
   border-radius: 6px;
   border-left-width: 3px;
@@ -133,17 +133,6 @@ html, body {
 .VPSidebar {
   background: var(--vp-c-bg);
   border-right: 1px solid var(--vp-c-border);
-}
-
-/* Nav — only style dark mode bg, don't override light */
-.dark .VPNav {
-  background: rgba(13, 15, 20, 0.85);
-  backdrop-filter: saturate(180%) blur(10px);
-}
-
-/* Ensure mobile nav screen sits above everything */
-.VPNavScreen {
-  z-index: 20;
 }
 
 /* Heading anchors */
@@ -189,9 +178,5 @@ html, body {
   }
   .vp-doc div[class*="language-"] {
     font-size: 0.8rem;
-    margin: 0.5rem -1.5rem;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
   }
 }
