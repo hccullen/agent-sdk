@@ -204,6 +204,12 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     if (n.type !== "end" && (!n.config || typeof n.config !== "object")) {
       throw new Error(`[DeclarativeGraph] Node "${n.id}" must have a config object.`);
     }
+    if (n.type === "callback") {
+      const cfg = n.config as Record<string, unknown>;
+      if (!cfg?.handler || typeof cfg.handler !== "string") {
+        throw new Error(`[DeclarativeGraph] Callback node "${n.id}" must have a string handler.`);
+      }
+    }
   }
 
   let hasStart = false;
@@ -486,6 +492,7 @@ async function runSubGraph(
         }
       } else {
         for (const [field, value] of Object.entries(handlerResult)) {
+          if (field === "__next") continue;
           state[field] = value;
         }
       }
@@ -735,6 +742,7 @@ export async function runWorkflow(
         }
       } else {
         for (const [field, value] of Object.entries(handlerResult)) {
+          if (field === "__next") continue;
           state[field] = value;
           delta[field] = value;
         }
@@ -845,9 +853,17 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
       if (!cfg.branches.some((b) => reachable.has(b.node) || b.node === "__end__")) {
         deadEnds.push(node.id);
       }
+    } else if (node.type === "callback") {
+      const hasEdge = def.edges.some((e) => e.source === node.id);
+      const cfg = node.config as unknown as Record<string, unknown>;
+      const hasRouteFrom = cfg?.route_from !== undefined;
+      const hasHandler = typeof cfg?.handler === "string" && cfg.handler.length > 0;
+      if (!hasEdge && !hasRouteFrom && !hasHandler) {
+        deadEnds.push(node.id);
+      }
     } else {
       const hasEdge = def.edges.some((e) => e.source === node.id);
-      const cfg = node.config as Record<string, unknown>;
+      const cfg = node.config as unknown as Record<string, unknown>;
       const hasRouteFrom = cfg?.route_from !== undefined;
       if (!hasEdge && !hasRouteFrom) {
         deadEnds.push(node.id);
