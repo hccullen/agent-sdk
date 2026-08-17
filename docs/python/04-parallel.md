@@ -1,3 +1,12 @@
+---
+prev:
+  text: "03 · Workflow"
+  link: "/python/03-workflow"
+next:
+  text: "05 · Streaming"
+  link: "/python/05-streaming"
+---
+
 # 04 — Parallel fan-out
 
 Run multiple agents concurrently on the same input using `parallel()`. Individual failures don't stop the others — results are split into `fulfilled` and `rejected`.

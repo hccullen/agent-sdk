@@ -1,3 +1,12 @@
+---
+prev:
+  text: "05 · Streaming"
+  link: "/python/05-streaming"
+next:
+  text: "07 · State graph"
+  link: "/python/07-state-graph"
+---
+
 # 06 — Credentials
 
 Pass a `credentials` dict to `create_context()` and the SDK transparently forwards tokens to authenticated MCP servers — both proactively on the first message and as a follow-up if the agent replies with `auth-required`.

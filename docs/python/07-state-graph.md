@@ -1,3 +1,10 @@
+---
+prev:
+  text: "06 · Credentials"
+  link: "/python/06-credentials"
+next: false
+---
+
 # 07 — State graph
 
 `stateGraph()` maintains a shared state dict across nodes and routes dynamically — including cycles. This example builds a clinical triage pipeline: triage → code → review → (loop back if rejected).

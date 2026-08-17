@@ -1,3 +1,12 @@
+---
+prev:
+  text: "01 · Hello, agent"
+  link: "/python/01-hello-agent"
+next:
+  text: "03 · Workflow"
+  link: "/python/03-workflow"
+---
+
 # 02 — Connectors
 
 Wire MCP servers, registry experts, and other Corti agents into an orchestrator agent using the `connectors` factory.

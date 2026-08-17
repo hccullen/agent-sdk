@@ -1,3 +1,12 @@
+---
+prev:
+  text: "04 · Parallel fan-out"
+  link: "/examples/04-parallel"
+next:
+  text: "06 · Credentials"
+  link: "/examples/06-credentials"
+---
+
 # 05 — Streaming
 
 `streamMessage()` returns an `AsyncIterable<StreamEvent>` that yields events as the agent generates its reply — status updates first, then partial or complete message chunks as tokens arrive.

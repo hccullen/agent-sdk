@@ -1,3 +1,12 @@
+---
+prev:
+  text: "04 · Parallel fan-out"
+  link: "/python/04-parallel"
+next:
+  text: "06 · Credentials"
+  link: "/python/06-credentials"
+---
+
 # 05 — Streaming
 
 Use `ctx.stream_message()` to receive the agent's response as an async generator of `StreamEvent` dicts. Each event carries a state update, artifact chunk, or the final message.

@@ -7,6 +7,10 @@ export default defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: [/^https?:\/\/localhost/],
   srcExclude: ["plans/**"],
+  lastUpdated: true,
+  sitemap: {
+    hostname: "https://corticph.github.io/agent-sdk",
+  },
 
   head: [
     ["meta", { name: "theme-color", content: "#0d0f14" }],
@@ -18,7 +22,7 @@ export default defineConfig({
 
     nav: [
       { text: "Docs", link: "/" },
-      { text: "TypeScript Examples", link: "/examples/01-hello-agent" },
+      { text: "Examples", link: "/examples/01-hello-agent" },
       { text: "Python SDK", link: "/python/" },
       {
         text: "Links",
@@ -29,47 +33,28 @@ export default defineConfig({
       },
     ],
 
-    sidebar: {
-      "/": [
-        {
-          text: "Getting started",
-          items: [
-            { text: "Introduction", link: "/#introduction" },
-            { text: "Install", link: "/#install" },
-            { text: "Quick start", link: "/#quick-start" },
-          ],
+    search: {
+      provider: "local",
+      options: {
+        translations: {
+          button: {
+            buttonText: "Search docs",
+            buttonAriaLabel: "Search docs",
+          },
+          modal: {
+            noResultsText: "No results found.",
+            resetButtonTitle: "Clear search",
+            footer: {
+              selectText: "Select",
+              navigateText: "Navigate",
+              closeText: "Close",
+            },
+          },
         },
-        {
-          text: "Concepts",
-          items: [
-            { text: "Agents", link: "/#agents" },
-            { text: "Connectors", link: "/#connectors" },
-            { text: "Contexts & threads", link: "/#contexts" },
-            { text: "Response shape", link: "/#responses" },
-            { text: "Agent lifecycle", link: "/#lifecycle" },
-          ],
-        },
-        {
-          text: "Composition",
-          items: [
-            { text: "Workflows", link: "/#workflows" },
-            { text: "Parallel fan-out", link: "/#parallel" },
-            { text: "State graph", link: "/#state-graph" },
-            { text: "Declarative workflows", link: "/#declarative-workflows" },
-            { text: "Streaming", link: "/#streaming" },
-            { text: "Credentials", link: "/#credentials" },
-          ],
-        },
-        {
-          text: "Reference",
-          items: [
-            { text: "API reference", link: "/#api" },
-            { text: "Examples", link: "/#examples" },
-            { text: "Python SDK", link: "/python/" },
-          ],
-        },
-      ],
+      },
+    },
 
+    sidebar: {
       "/examples/": [
         {
           text: "TypeScript examples",
@@ -85,8 +70,11 @@ export default defineConfig({
           ],
         },
         {
-          text: "Back",
-          items: [{ text: "← Docs home", link: "/" }],
+          text: "Reference",
+          items: [
+            { text: "← Docs home", link: "/" },
+            { text: "Python SDK →", link: "/python/" },
+          ],
         },
       ],
 
@@ -95,10 +83,6 @@ export default defineConfig({
           text: "Python SDK",
           items: [
             { text: "Overview", link: "/python/" },
-            { text: "Install", link: "/python/#install" },
-            { text: "Quick start", link: "/python/#quick-start" },
-            { text: "API reference", link: "/python/#api" },
-            { text: "vs TypeScript", link: "/python/#differences" },
           ],
         },
         {
@@ -114,8 +98,11 @@ export default defineConfig({
           ],
         },
         {
-          text: "Back",
-          items: [{ text: "← Docs home", link: "/" }],
+          text: "Reference",
+          items: [
+            { text: "← Docs home", link: "/" },
+            { text: "TypeScript Examples →", link: "/examples/01-hello-agent" },
+          ],
         },
       ],
     },
@@ -124,6 +111,11 @@ export default defineConfig({
       { icon: "github", link: "https://github.com/corticph" },
     ],
 
+    editLink: {
+      pattern: "https://github.com/corticph/agent-sdk/edit/main/docs/:path",
+      text: "Edit this page on GitHub",
+    },
+
     outline: {
       level: [2, 3],
       label: "On this page",
@@ -131,10 +123,14 @@ export default defineConfig({
 
     footer: {
       message: "MIT-licensed · built on @corti/sdk",
+      copyright: "Copyright © 2024–2025 Corti",
     },
 
     darkModeSwitchLabel: "Theme",
     sidebarMenuLabel: "Menu",
     returnToTopLabel: "Back to top",
+    lastUpdated: {
+      text: "Last updated",
+    },
   },
 });

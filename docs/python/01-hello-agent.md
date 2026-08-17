@@ -1,3 +1,10 @@
+---
+prev: false
+next:
+  text: "02 · Connectors"
+  link: "/python/02-connectors"
+---
+
 # 01 — Hello, agent
 
 The minimum viable example. Create an agent, open a conversation context, send two messages, and read the replies.

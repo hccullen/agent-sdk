@@ -1,3 +1,12 @@
+---
+prev:
+  text: "03 · Workflow"
+  link: "/examples/03-workflow"
+next:
+  text: "05 · Streaming"
+  link: "/examples/05-streaming"
+---
+
 # 04 — Parallel fan-out
 
 `parallel()` sends the same prompt to multiple agents at the same time and collects the results. Use it standalone for `Promise.allSettled`-style output, or drop it directly into a `workflow()` step list to merge the fulfilled results for a downstream synthesiser.

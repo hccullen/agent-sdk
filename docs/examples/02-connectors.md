@@ -1,3 +1,12 @@
+---
+prev:
+  text: "01 · Hello, agent"
+  link: "/examples/01-hello-agent"
+next:
+  text: "03 · Workflow"
+  link: "/examples/03-workflow"
+---
+
 # 02 — Connectors
 
 Real agents need tools. The `connectors` helper turns common expert types into the raw `experts` shape the API expects — fully typed. This example builds a two-agent system: a focused symptom-extractor sub-agent wired into an orchestrating triage agent.

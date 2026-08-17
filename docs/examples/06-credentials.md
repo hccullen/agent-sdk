@@ -1,3 +1,12 @@
+---
+prev:
+  text: "05 · Streaming"
+  link: "/examples/05-streaming"
+next:
+  text: "07 · State graph"
+  link: "/examples/07-state-graph"
+---
+
 # 06 — Credentials
 
 When a connector needs authentication, the agent may respond with `status: "auth-required"`. Pass a `CredentialStore` to `createContext()` and the SDK forwards your tokens automatically — on the first message *and* as a follow-up if the server asks again.

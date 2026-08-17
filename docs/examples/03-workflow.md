@@ -1,3 +1,12 @@
+---
+prev:
+  text: "02 · Connectors"
+  link: "/examples/02-connectors"
+next:
+  text: "04 · Parallel fan-out"
+  link: "/examples/04-parallel"
+---
+
 # 03 — Workflow
 
 `workflow()` builds a deterministic chain of agent steps. Each step's output feeds the next. Steps can be bare `AgentHandle`s or configuration objects with conditional logic, input transforms, and retry behaviour.

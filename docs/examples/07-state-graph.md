@@ -1,3 +1,12 @@
+---
+prev:
+  text: "06 · Credentials"
+  link: "/examples/06-credentials"
+next:
+  text: "08 · Declarative workflows"
+  link: "/examples/08-declarative-workflows"
+---
+
 # 07 — State graph
 
 `stateGraph()` is the most powerful composition primitive. Unlike `workflow()`, it carries a typed state object across nodes and routes dynamically between them — including cycles. This example implements a clinical triage pipeline: triage → code → review → (loop back if rejected).

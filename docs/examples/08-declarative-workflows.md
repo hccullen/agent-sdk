@@ -1,3 +1,10 @@
+---
+prev:
+  text: "07 · State graph"
+  link: "/examples/07-state-graph"
+next: false
+---
+
 # 08 — Declarative workflows
 
 The same execution engine that powers `workflow()` and `stateGraph()` is also available as a standalone **JSON / YAML definition format**. You describe the graph as data — nodes, edges, and CEL expressions — then compile and run it. The graph is portable, inspectable, and serialisable; it can be stored in a file, sent over the wire, or version-controlled.

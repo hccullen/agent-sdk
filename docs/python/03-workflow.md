@@ -1,3 +1,12 @@
+---
+prev:
+  text: "02 · Connectors"
+  link: "/python/02-connectors"
+next:
+  text: "04 · Parallel fan-out"
+  link: "/python/04-parallel"
+---
+
 # 03 — Workflow
 
 A `Workflow` is a deterministic, code-first pipeline. Steps run in order; each step receives the previous step's text as input. Use `when`, `transform`, and `retries` to add conditional logic.
