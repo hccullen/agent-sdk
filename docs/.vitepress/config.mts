@@ -9,8 +9,11 @@ export default defineConfig({
   srcExclude: ["plans/**"],
   lastUpdated: true,
   sitemap: {
-    hostname: "https://corticph.github.io/agent-sdk",
+    hostname: "https://hccullen.github.io/agent-sdk",
   },
+
+  // GitHub Pages serves at /<repo-name>/
+  base: "/agent-sdk/",
 
   head: [
     ["meta", { name: "theme-color", content: "#0d0f14" }],
