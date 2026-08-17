@@ -21,6 +21,8 @@ export type WorkflowNode =
   | { id: string; type: "set_state"; config: SetStateConfig }
   | { id: string; type: "http_call"; config: HttpCallConfig; retry?: RetryPolicy; timeout?: string }
   | { id: string; type: "interrupt"; config: InterruptConfig }
+  | { id: string; type: "wait"; config: WaitConfig }
+  | { id: string; type: "parallel"; config: ParallelConfig }
   | { id: string; type: "end" };
 
 export interface AgentCallConfig {
@@ -55,6 +57,19 @@ export interface InterruptConfig {
   route_from?: string;
 }
 
+export interface WaitConfig {
+  duration?: string;
+  until?: string;
+  route_from?: string;
+}
+
+export interface ParallelConfig {
+  branches: { name: string; node: string; input: string }[];
+  join: "all" | "any";
+  output: Record<string, string>;
+  route_from?: string;
+}
+
 export interface RetryPolicy {
   max_attempts: number;
   backoff_coefficient?: number;
@@ -64,8 +79,8 @@ type CompiledCel = (bindings?: Record<string, unknown>) => unknown;
 
 interface CompiledNode {
   id: string;
-  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "end";
-  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | Record<string, never>;
+  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "wait" | "parallel" | "end";
+  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | WaitConfig | ParallelConfig | Record<string, never>;
   inputExpr?: CompiledCel;
   outputExprs?: Map<string, CompiledCel>;
   routeFromExpr?: CompiledCel;
@@ -75,6 +90,9 @@ interface CompiledNode {
   headerExprs?: Map<string, CompiledCel>;
   bodyExpr?: CompiledCel;
   promptExpr?: CompiledCel;
+  durationExpr?: CompiledCel;
+  untilExpr?: CompiledCel;
+  branchInputExprs?: Map<string, CompiledCel>;
   agentHandle?: AgentHandle;
 }
 
@@ -145,7 +163,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     throw new Error("[DeclarativeGraph] edges is required and must be an array.");
   }
 
-  const validNodeTypes = new Set(["agent_call", "switch", "set_state", "http_call", "interrupt", "end"]);
+  const validNodeTypes = new Set(["agent_call", "switch", "set_state", "http_call", "interrupt", "wait", "parallel", "end"]);
   const nodeIds = new Set<string>();
   for (const node of d.nodes) {
     const n = node as Record<string, unknown>;
@@ -157,7 +175,7 @@ export function parseWorkflowDefinition(input: string | object): WorkflowDefinit
     }
     nodeIds.add(n.id);
     if (!n.type || typeof n.type !== "string" || !validNodeTypes.has(n.type)) {
-      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, set_state, http_call, interrupt, end.`);
+      throw new Error(`[DeclarativeGraph] Node "${n.id}" has invalid type. Must be one of: agent_call, switch, set_state, http_call, interrupt, wait, parallel, end.`);
     }
     if (n.type !== "end" && (!n.config || typeof n.config !== "object")) {
       throw new Error(`[DeclarativeGraph] Node "${n.id}" must have a config object.`);
@@ -269,6 +287,30 @@ export async function compileWorkflow(
       if (cfg.route_from) {
         compiled.routeFromExpr = compileCel(cfg.route_from);
       }
+    } else if (node.type === "wait") {
+      const cfg = node.config as WaitConfig;
+      if (cfg.duration) {
+        compiled.durationExpr = compileCel(cfg.duration);
+      }
+      if (cfg.until) {
+        compiled.untilExpr = compileCel(cfg.until);
+      }
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
+    } else if (node.type === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      compiled.branchInputExprs = new Map<string, CompiledCel>();
+      for (const branch of cfg.branches) {
+        compiled.branchInputExprs.set(branch.name, compileCel(branch.input));
+      }
+      compiled.outputExprs = new Map<string, CompiledCel>();
+      for (const [field, expr] of Object.entries(cfg.output ?? {})) {
+        compiled.outputExprs.set(field, compileCel(expr));
+      }
+      if (cfg.route_from) {
+        compiled.routeFromExpr = compileCel(cfg.route_from);
+      }
     }
 
     nodes.set(node.id, compiled);
@@ -300,6 +342,14 @@ export async function compileWorkflow(
         throw new Error(`[DeclarativeGraph] Switch default "${cfg.default}" in node "${node.id}" does not match any node id.`);
       }
     }
+    if (node.type === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      for (const branch of cfg.branches) {
+        if (!nodes.has(branch.node) && branch.node !== "__end__") {
+          throw new Error(`[DeclarativeGraph] Parallel branch "${branch.name}" target "${branch.node}" in node "${node.id}" does not match any node id.`);
+        }
+      }
+    }
   }
 
   for (const node of def.nodes) {
@@ -318,6 +368,88 @@ export async function compileWorkflow(
     entryNode,
     maxIterations: def.max_iterations ?? 25,
   };
+}
+
+async function runSubGraph(
+  compiled: CompiledGraph,
+  entryNode: string,
+  initialState: AnyState,
+  opts?: {
+    maxIterations?: number;
+    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+  },
+): Promise<StateGraphResult<AnyState>> {
+  const maxIter = opts?.maxIterations ?? compiled.maxIterations;
+  let state: AnyState = { ...initialState };
+  let current: string = entryNode;
+  let iterations = 0;
+  let terminatedBy: StateGraphResult<AnyState>["terminatedBy"] = "end";
+
+  while (current !== "__end__") {
+    if (iterations >= maxIter) {
+      terminatedBy = "maxIterations";
+      break;
+    }
+
+    const node = compiled.nodes.get(current);
+    if (!node) {
+      throw new Error(`[DeclarativeGraph] Unknown node: "${current}".`);
+    }
+
+    let next: string | undefined;
+    const nodeType = node.type;
+
+    if (nodeType === "agent_call") {
+      const agentInput = evalCel(node.inputExpr!, { state }) as string | Part[];
+      const response = await node.agentHandle!.run(agentInput);
+      const responseBinding = {
+        text: response.text,
+        status: response.status,
+        artifacts: response.artifacts,
+      };
+      for (const [field, expr] of node.outputExprs!) {
+        state[field] = evalCel(expr, { state, response: responseBinding });
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "switch") {
+      const cfg = node.config as SwitchConfig;
+      let matched = false;
+      for (let i = 0; i < cfg.cases.length; i++) {
+        if (evalCel(node.caseExprs![i], { state })) {
+          next = cfg.cases[i].target;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) next = cfg.default;
+    } else if (nodeType === "set_state") {
+      for (const [field, expr] of node.setExprs!) {
+        state[field] = evalCel(expr, { state });
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "end") {
+      next = "__end__";
+    } else {
+      next = compiled.edges.get(current);
+    }
+
+    iterations++;
+    if (next === undefined) {
+      terminatedBy = "noEdge";
+      break;
+    }
+    current = next;
+  }
+
+  return { state, steps: [], iterations, terminatedBy };
 }
 
 export async function runWorkflow(
@@ -467,6 +599,64 @@ export async function runWorkflow(
       } else {
         next = compiled.edges.get(current);
       }
+    } else if (nodeType === "wait") {
+      delta = {};
+      let ms: number;
+      if (node.durationExpr) {
+        const seconds = evalCel(node.durationExpr, { state }) as number;
+        ms = seconds * 1000;
+      } else if (node.untilExpr) {
+        const target = evalCel(node.untilExpr, { state }) as string;
+        ms = new Date(target).getTime() - Date.now();
+        if (ms < 0) ms = 0;
+      } else {
+        throw new Error(`[DeclarativeGraph] Wait node "${current}" requires either duration or until.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
+    } else if (nodeType === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      const branchPromises = cfg.branches.map(async (branch) => {
+        const branchState = evalCel(node.branchInputExprs!.get(branch.name)!, { state }) as AnyState;
+        const result = await runSubGraph(compiled, branch.node, branchState, opts);
+        return { name: branch.name, result };
+      });
+
+      const results: Record<string, unknown> = {};
+      if (cfg.join === "any") {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+            break;
+          }
+        }
+      } else {
+        const settled = await Promise.allSettled(branchPromises);
+        for (const s of settled) {
+          if (s.status === "fulfilled") {
+            results[s.value.name] = s.value.result.state;
+          } else {
+            throw new Error(`[DeclarativeGraph] Parallel branch failed: ${(s.reason as Error).message}`);
+          }
+        }
+      }
+
+      delta = {};
+      for (const [field, expr] of node.outputExprs!) {
+        const value = evalCel(expr, { state, results });
+        state[field] = value;
+        delta[field] = value;
+      }
+      if (node.routeFromExpr) {
+        next = evalCel(node.routeFromExpr, { state }) as string;
+      } else {
+        next = compiled.edges.get(current);
+      }
     } else {
       delta = {};
       next = "__end__";
@@ -498,4 +688,147 @@ export async function executeWorkflow(
   const def = parseWorkflowDefinition(json);
   const compiled = await compileWorkflow(def, client);
   return runWorkflow(compiled, initialState, opts);
+}
+
+export interface GraphAnalysis {
+  unreachable: string[];
+  deadEnds: string[];
+}
+
+export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
+  const nodeIds = new Set(def.nodes.map((n) => n.id));
+  const reachable = new Set<string>();
+  const queue: string[] = [];
+
+  for (const edge of def.edges) {
+    if (edge.source === "__start__") {
+      queue.push(edge.target);
+    }
+  }
+
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (reachable.has(current)) continue;
+    reachable.add(current);
+
+    const node = def.nodes.find((n) => n.id === current);
+    if (!node) continue;
+
+    if (node.type === "switch") {
+      const cfg = node.config as SwitchConfig;
+      for (const c of cfg.cases) {
+        if (!reachable.has(c.target)) queue.push(c.target);
+      }
+      if (!reachable.has(cfg.default)) queue.push(cfg.default);
+    }
+
+    if (node.type === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      for (const branch of cfg.branches) {
+        if (!reachable.has(branch.node)) queue.push(branch.node);
+      }
+    }
+
+    if (node.type !== "end" && node.type !== "switch" && node.type !== "parallel") {
+      for (const edge of def.edges) {
+        if (edge.source === current && !reachable.has(edge.target)) {
+          queue.push(edge.target);
+        }
+      }
+    }
+  }
+
+  const unreachable = [...nodeIds].filter((id) => !reachable.has(id) && id !== "__end__");
+
+  const deadEnds: string[] = [];
+  for (const node of def.nodes) {
+    if (node.type === "end") continue;
+    if (node.type === "switch") {
+      const cfg = node.config as SwitchConfig;
+      const allTargets = [...cfg.cases.map((c) => c.target), cfg.default];
+      if (!allTargets.some((t) => reachable.has(t) || t === "__end__")) {
+        deadEnds.push(node.id);
+      }
+    } else if (node.type === "parallel") {
+      const cfg = node.config as ParallelConfig;
+      if (!cfg.branches.some((b) => reachable.has(b.node) || b.node === "__end__")) {
+        deadEnds.push(node.id);
+      }
+    } else {
+      const hasEdge = def.edges.some((e) => e.source === node.id);
+      const cfg = node.config as Record<string, unknown>;
+      const hasRouteFrom = cfg?.route_from !== undefined;
+      if (!hasEdge && !hasRouteFrom) {
+        deadEnds.push(node.id);
+      }
+    }
+  }
+
+  return { unreachable, deadEnds };
+}
+
+export interface StateGraphBridgeConfig {
+  agentCall: { agent: string; input: string; output: Record<string, string> };
+}
+
+export function stateGraphToDefinition<S extends Record<string, unknown>>(
+  graph: {
+    run: (entry: string, state: S, opts?: { maxIterations?: number }) => Promise<unknown>;
+  },
+  nodes: { name: string; type: string; config?: StateGraphBridgeConfig }[],
+  edges: { from: string; to: string | ((state: S) => string) }[],
+  entryNode: string,
+  opts?: { maxIterations?: number; name?: string; version?: string },
+): WorkflowDefinition {
+  const def: WorkflowDefinition = {
+    document: {
+      name: opts?.name ?? "converted",
+      version: opts?.version ?? "1.0.0",
+    },
+    nodes: [],
+    edges: [],
+    ...(opts?.maxIterations !== undefined && { max_iterations: opts.maxIterations }),
+  };
+
+  for (const node of nodes) {
+    if (node.type === "agent_call" && node.config?.agentCall) {
+      def.nodes.push({
+        id: node.name,
+        type: "agent_call",
+        config: {
+          agent: node.config.agentCall.agent,
+          input: node.config.agentCall.input,
+          output: node.config.agentCall.output,
+        },
+      });
+    } else if (node.type === "end" || node.name === "__end__") {
+      def.nodes.push({ id: node.name, type: "end" });
+    } else if (node.type === "switch") {
+      def.nodes.push({
+        id: node.name,
+        type: "switch",
+        config: { cases: [], default: "__end__" },
+      });
+    } else {
+      def.nodes.push({
+        id: node.name,
+        type: "set_state",
+        config: { set: {} },
+      });
+    }
+  }
+
+  def.edges.push({ source: "__start__", target: entryNode });
+
+  for (const edge of edges) {
+    if (typeof edge.to === "string") {
+      def.edges.push({ source: edge.from, target: edge.to });
+    }
+  }
+
+  if (!def.nodes.some((n) => n.id === "__end__")) {
+    def.nodes.push({ id: "__end__", type: "end" });
+  }
+
+  return def;
 }

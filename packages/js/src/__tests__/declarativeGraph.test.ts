@@ -4,6 +4,8 @@ import {
   compileWorkflow,
   runWorkflow,
   executeWorkflow,
+  analyzeGraphStructure,
+  stateGraphToDefinition,
 } from "../declarativeGraph.js";
 import type { WorkflowDefinition } from "../declarativeGraph.js";
 import type { CortiClient } from "../client.js";
@@ -937,5 +939,421 @@ describe("DeclarativeGraph", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("wait node delays execution by duration", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "wait-duration", version: "1.0.0" },
+      nodes: [
+        {
+          id: "wait",
+          type: "wait",
+          config: { duration: "0.01" },
+        },
+        {
+          id: "after",
+          type: "set_state",
+          config: { set: { done: "true" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "wait" },
+        { source: "wait", target: "after" },
+        { source: "after", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const start = Date.now();
+    const result = await runWorkflow(compiled, {});
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeGreaterThanOrEqual(8);
+    expect(result.state.done).toBe(true);
+    expect(result.iterations).toBe(2);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("wait node with until in the past executes immediately", async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const def: WorkflowDefinition = {
+      document: { name: "wait-past", version: "1.0.0" },
+      nodes: [
+        {
+          id: "wait",
+          type: "wait",
+          config: { until: `"${past}"` },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "wait" },
+        { source: "wait", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const start = Date.now();
+    const result = await runWorkflow(compiled, {});
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(100);
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("wait node supports route_from", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "wait-route", version: "1.0.0" },
+      nodes: [
+        {
+          id: "wait",
+          type: "wait",
+          config: {
+            duration: "0",
+            route_from: "state.go == 'a' ? 'a' : '__end__'",
+          },
+        },
+        {
+          id: "a",
+          type: "set_state",
+          config: { set: { reached: "true" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [{ source: "__start__", target: "wait" }, { source: "a", target: "__end__" }],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const result = await runWorkflow(compiled, { go: "a" });
+
+    expect(result.state.reached).toBe(true);
+    expect(result.iterations).toBe(2);
+  });
+
+  it("wait node throws without duration or until", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "wait-noop", version: "1.0.0" },
+      nodes: [
+        { id: "wait", type: "wait", config: {} },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "wait" },
+        { source: "wait", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    await expect(runWorkflow(compiled, {})).rejects.toThrow("duration or until");
+  });
+
+  it("parallel node runs branches concurrently with join: all", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "parallel-all", version: "1.0.0" },
+      nodes: [
+        {
+          id: "fanout",
+          type: "parallel",
+          config: {
+            branches: [
+              { name: "a", node: "branchA", input: "{ \"val\": 1 }" },
+              { name: "b", node: "branchB", input: "{ \"val\": 2 }" },
+            ],
+            join: "all",
+            output: {
+              a_val: "results.a.val",
+              b_val: "results.b.val",
+            },
+          },
+        },
+        {
+          id: "branchA",
+          type: "set_state",
+          config: { set: { val: "state.val" } },
+        },
+        {
+          id: "branchB",
+          type: "set_state",
+          config: { set: { val: "state.val" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "fanout" },
+        { source: "fanout", target: "__end__" },
+        { source: "branchA", target: "__end__" },
+        { source: "branchB", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const result = await runWorkflow(compiled, {});
+
+    expect(result.state.a_val).toBe(1);
+    expect(result.state.b_val).toBe(2);
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+  });
+
+  it("parallel node with join: any returns first successful branch", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "parallel-any", version: "1.0.0" },
+      nodes: [
+        {
+          id: "fanout",
+          type: "parallel",
+          config: {
+            branches: [
+              { name: "fast", node: "fastBranch", input: "{ \"result\": 'fast' }" },
+              { name: "slow", node: "slowBranch", input: "{ \"result\": 'slow' }" },
+            ],
+            join: "any",
+            output: { winner: "results.fast.result" },
+          },
+        },
+        {
+          id: "fastBranch",
+          type: "set_state",
+          config: { set: { result: "state.result" } },
+        },
+        {
+          id: "slowBranch",
+          type: "set_state",
+          config: { set: { result: "state.result" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "fanout" },
+        { source: "fanout", target: "__end__" },
+        { source: "fastBranch", target: "__end__" },
+        { source: "slowBranch", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    const result = await runWorkflow(compiled, {});
+
+    expect(result.state.winner).toBe("fast");
+    expect(result.iterations).toBe(1);
+  });
+
+  it("parallel node with join: all throws if a branch fails", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "parallel-fail", version: "1.0.0" },
+      nodes: [
+        {
+          id: "fanout",
+          type: "parallel",
+          config: {
+            branches: [
+              { name: "ok", node: "okBranch", input: "{}" },
+              { name: "bad", node: "badBranch", input: "{}" },
+            ],
+            join: "all",
+            output: {},
+          },
+        },
+        {
+          id: "okBranch",
+          type: "set_state",
+          config: { set: { ok: "true" } },
+        },
+        {
+          id: "badBranch",
+          type: "set_state",
+          config: { set: { fail: "state.nonexistent.field" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "fanout" },
+        { source: "fanout", target: "__end__" },
+        { source: "okBranch", target: "__end__" },
+        { source: "badBranch", target: "__end__" },
+      ],
+    };
+
+    const client = mockClient();
+    const compiled = await compileWorkflow(def, client);
+    await expect(runWorkflow(compiled, {})).rejects.toThrow("Parallel branch failed");
+  });
+
+  it("analyzeGraphStructure finds unreachable nodes", () => {
+    const def: WorkflowDefinition = {
+      document: { name: "unreachable", version: "1.0.0" },
+      nodes: [
+        {
+          id: "start",
+          type: "set_state",
+          config: { set: { a: "1" } },
+        },
+        {
+          id: "orphan",
+          type: "set_state",
+          config: { set: { b: "2" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "start" },
+        { source: "start", target: "__end__" },
+      ],
+    };
+
+    const analysis = analyzeGraphStructure(def);
+    expect(analysis.unreachable).toContain("orphan");
+    expect(analysis.unreachable).not.toContain("start");
+  });
+
+  it("analyzeGraphStructure finds dead-end nodes", () => {
+    const def: WorkflowDefinition = {
+      document: { name: "deadend", version: "1.0.0" },
+      nodes: [
+        {
+          id: "alive",
+          type: "set_state",
+          config: { set: { a: "1" } },
+        },
+        {
+          id: "dead",
+          type: "set_state",
+          config: { set: { b: "2" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "alive" },
+        { source: "alive", target: "__end__" },
+        { source: "__start__", target: "dead" },
+      ],
+    };
+
+    const analysis = analyzeGraphStructure(def);
+    expect(analysis.deadEnds).toContain("dead");
+    expect(analysis.deadEnds).not.toContain("alive");
+  });
+
+  it("analyzeGraphStructure reports clean graph with no issues", () => {
+    const def: WorkflowDefinition = {
+      document: { name: "clean", version: "1.0.0" },
+      nodes: [
+        {
+          id: "a",
+          type: "set_state",
+          config: { set: { x: "1" } },
+        },
+        {
+          id: "b",
+          type: "set_state",
+          config: { set: { y: "2" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "a" },
+        { source: "a", target: "b" },
+        { source: "b", target: "__end__" },
+      ],
+    };
+
+    const analysis = analyzeGraphStructure(def);
+    expect(analysis.unreachable).toHaveLength(0);
+    expect(analysis.deadEnds).toHaveLength(0);
+  });
+
+  it("analyzeGraphStructure follows switch and parallel targets for reachability", () => {
+    const def: WorkflowDefinition = {
+      document: { name: "reachable", version: "1.0.0" },
+      nodes: [
+        {
+          id: "route",
+          type: "switch",
+          config: {
+            cases: [{ when: "state.x == 1", target: "a" }],
+            default: "b",
+          },
+        },
+        {
+          id: "a",
+          type: "set_state",
+          config: { set: { val: "1" } },
+        },
+        {
+          id: "b",
+          type: "set_state",
+          config: { set: { val: "2" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "route" },
+        { source: "a", target: "__end__" },
+        { source: "b", target: "__end__" },
+      ],
+    };
+
+    const analysis = analyzeGraphStructure(def);
+    expect(analysis.unreachable).toHaveLength(0);
+  });
+
+  it("stateGraphToDefinition converts a simple graph to a workflow definition", () => {
+    const def = stateGraphToDefinition(
+      {} as never,
+      [
+        { name: "triage", type: "agent_call", config: { agentCall: { agent: "agent-1", input: "state.note", output: { severity: "response.text" } } } },
+        { name: "coder", type: "agent_call", config: { agentCall: { agent: "agent-2", input: "state.note", output: { codes: "response.text" } } } },
+      ],
+      [
+        { from: "triage", to: "coder" },
+        { from: "coder", to: "__end__" },
+      ],
+      "triage",
+      { name: "converted-flow", version: "2.0.0", maxIterations: 50 },
+    );
+
+    expect(def.document.name).toBe("converted-flow");
+    expect(def.document.version).toBe("2.0.0");
+    expect(def.max_iterations).toBe(50);
+    expect(def.nodes).toHaveLength(3);
+    expect(def.nodes[0].id).toBe("triage");
+    expect(def.nodes[0].type).toBe("agent_call");
+    expect(def.edges).toContainEqual({ source: "__start__", target: "triage" });
+    expect(def.edges).toContainEqual({ source: "triage", target: "coder" });
+    expect(def.edges).toContainEqual({ source: "coder", target: "__end__" });
+  });
+
+  it("stateGraphToDefinition adds __end__ if missing", () => {
+    const def = stateGraphToDefinition(
+      {} as never,
+      [{ name: "only", type: "agent_call", config: { agentCall: { agent: "a", input: "'hi'", output: {} } } }],
+      [],
+      "only",
+    );
+
+    expect(def.nodes.some((n) => n.id === "__end__" && n.type === "end")).toBe(true);
+    expect(def.edges).toContainEqual({ source: "__start__", target: "only" });
+  });
+
+  it("stateGraphToDefinition output passes parseWorkflowDefinition", () => {
+    const def = stateGraphToDefinition(
+      {} as never,
+      [
+        { name: "step1", type: "agent_call", config: { agentCall: { agent: "agent-1", input: "'go'", output: { result: "response.text" } } } },
+      ],
+      [{ from: "step1", to: "__end__" }],
+      "step1",
+      { name: "bridge-test", version: "1.0.0" },
+    );
+
+    expect(() => parseWorkflowDefinition(def)).not.toThrow();
   });
 });
