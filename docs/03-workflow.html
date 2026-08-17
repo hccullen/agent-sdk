@@ -48,6 +48,7 @@
         <a href="05-streaming.html">05 · Streaming</a>
         <a href="06-credentials.html">06 · Credentials</a>
         <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-declarative-workflows.html">08 · Declarative workflows</a>
       </nav>
     </aside>
 
@@ -65,6 +66,7 @@
           <div><strong>when</strong>A predicate on the previous response. Returns <code>false</code> → skip the step, pass the previous output forward unchanged.</div>
           <div><strong>transform</strong>Maps the previous response to this step's input. Default: <code>prev.text</code>.</div>
           <div><strong>retries</strong>Additional attempts when a step returns <code>status: "failed"</code>. Combined with <code>retryDelay</code> (ms).</div>
+          <div><strong>Declarative engine</strong><code>workflow()</code> compiles its step list into the same <code>WorkflowDefinition</code> used by the <a href="08-declarative-workflows.html">JSON / YAML DSL</a>.</div>
         </div>
       </section>
 
@@ -208,6 +210,17 @@ const result = await workflow([
               <tr><td><code>stoppedEarly</code></td><td><code>boolean</code></td><td><code>true</code> if a step exhausted its retries and the workflow halted.</td></tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="callout">
+          <strong>Under the hood.</strong> <code>workflow()</code> does not
+          have its own runtime. On <code>.run()</code> it builds a
+          <code>WorkflowDefinition</code> — each step becomes a
+          <code>callback</code> node (<code>step_0</code> →
+          <code>step_1</code> → … → <code>__end__</code>) — and executes it
+          through the shared declarative engine. The same engine powers
+          <a href="07-state-graph.html"><code>stateGraph()</code></a> and the
+          <a href="08-declarative-workflows.html">JSON / YAML DSL</a>.
         </div>
       </section>
 

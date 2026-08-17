@@ -39,6 +39,7 @@
         <a href="#walkthrough">Walkthrough</a>
         <a href="#result-shape">Result shape</a>
         <a href="#vs-workflow">vs workflow()</a>
+        <a href="#engine-unification">Under the hood</a>
         <a href="#code">Full code</a>
         <a href="#output">What to expect</a>
 
@@ -50,6 +51,7 @@
         <a href="05-streaming.html">05 · Streaming</a>
         <a href="06-credentials.html">06 · Credentials</a>
         <a href="07-state-graph.html" class="active">07 · State graph</a>
+        <a href="08-declarative-workflows.html">08 · Declarative workflows</a>
       </nav>
     </aside>
 
@@ -67,6 +69,7 @@
           <div><strong>Nodes</strong>Async functions <code>(state) =&gt; Partial&lt;S&gt;</code>. <code>agentNode()</code> wraps an <code>AgentHandle</code> into this shape.</div>
           <div><strong>Edges</strong>Static node names, <code>END</code>, or routing functions that inspect state and return the next node. Run <em>after</em> the node updates state.</div>
           <div><strong>Cycles + maxIterations</strong>Loops are supported. The <code>maxIterations</code> option (default 25) acts as the safety net against infinite cycles.</div>
+          <div><strong>Declarative engine</strong><code>stateGraph()</code> compiles to the same <code>WorkflowDefinition</code> as the JSON DSL — export it with <code>graph.toDefinition()</code>.</div>
         </div>
       </section>
 
@@ -305,6 +308,44 @@ const result = await graph.run("triage", initialState, { maxIterations: 10 });</
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section id="engine-unification">
+        <h2>Under the hood: declarative engine</h2>
+        <p>
+          <code>stateGraph()</code> does not have its own runtime. When you
+          call <code>graph.run()</code>, the builder compiles the graph into a
+          portable <code>WorkflowDefinition</code> (the same JSON shape used
+          by the <a href="08-declarative-workflows.html">declarative DSL</a>)
+          and executes it through the shared <code>runWorkflow()</code> engine.
+        </p>
+        <p>
+          Each code-level node becomes a <code>callback</code> node; each edge
+          becomes a static edge or a <code>route_from</code> expression;
+          <code>END</code> maps to <code>"__end__"</code>. You can inspect or
+          export the definition at any time:
+        </p>
+<pre><code class="language-typescript">const graph = stateGraph&lt;TriageState&gt;()
+  .addNode("triage", agentNode(triageAgent, s =&gt; s.note, (r) =&gt; ({ severity: r.text ?? "" })))
+  .addEdge("triage", s =&gt; s.severity.includes("urgent") ? "coder" : END)
+  .addNode("coder", agentNode(coderAgent, s =&gt; s.note, (r) =&gt; ({ codes: r.text ?? "" })))
+  .addEdge("coder", END);
+
+// Export to portable JSON:
+const def = graph.toDefinition("triage");
+// def.nodes  → [{ id: "triage",  type: "callback", config: { handler: "__cb_triage" } },
+//               { id: "coder",   type: "callback", config: { handler: "__cb_coder"  } },
+//               { id: "__end__", type: "end" }]
+// def.edges  → [{ source: "__start__", target: "triage" },
+//               { source: "triage",   target: "coder" },
+//               { source: "coder",    target: "__end__" }]</code></pre>
+        <p>
+          The exported definition passes <code>parseWorkflowDefinition()</code>
+          — you can serialise it, store it, and re-run it later with
+          <code>compileWorkflow()</code> + <code>runWorkflow()</code> without
+          the original builder code. See <a href="08-declarative-workflows.html">example 08</a>
+          for the full declarative API.
+        </p>
       </section>
 
       <section id="code">

@@ -48,6 +48,7 @@
         <a href="05-streaming.html">05 · Streaming</a>
         <a href="06-credentials.html">06 · Credentials</a>
         <a href="07-state-graph.html">07 · State graph</a>
+        <a href="08-declarative-workflows.html">08 · Declarative workflows</a>
       </nav>
     </aside>
 
@@ -65,6 +66,7 @@
           <div><strong>fulfilled / rejected</strong>Standalone result shape. <code>fulfilled</code> is an array of <code>MessageResponse</code>; <code>rejected</code> has <code>reason</code> strings.</div>
           <div><strong>Inline in workflow()</strong>Drop <code>parallel([...])</code> anywhere in the step list. Fulfilled results are text-joined (one per line) and passed to the next step.</div>
           <div><strong>Per-step overrides</strong>Each agent in the group can have its own <code>input</code>, <code>credentials</code>, or other step-level options.</div>
+          <div><strong>Declarative equivalent</strong>The <a href="08-declarative-workflows.html">JSON DSL</a> exposes the same concept as a <code>parallel</code> node with branches and <code>join: "all" | "any"</code>.</div>
         </div>
       </section>
 
@@ -110,6 +112,14 @@ if (fanout.rejected.length) console.log("Rejected:", fanout.rejected);</code></p
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="callout">
+          The <a href="08-declarative-workflows.html">declarative DSL</a>
+          exposes the same concept as a <code>parallel</code> node: named
+          branches each start at a sub-graph node with their own initial
+          state, and <code>join: "all" | "any"</code> controls whether the
+          engine waits for all branches or returns on the first success.
         </div>
       </section>
 

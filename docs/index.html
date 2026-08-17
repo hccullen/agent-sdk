@@ -45,6 +45,7 @@
         <a href="#workflows">Workflows</a>
         <a href="#parallel">Parallel fan-out</a>
         <a href="#state-graph">State graph</a>
+        <a href="#declarative-workflows">Declarative workflows</a>
         <a href="#streaming">Streaming</a>
         <a href="#credentials">Credentials</a>
 
@@ -523,6 +524,133 @@ console.log(terminatedBy);     // "end" | "maxIterations" | "noEdge"
         </div>
       </section>
 
+      <section id="declarative-workflows">
+        <h2>Declarative workflows</h2>
+        <p>
+          The JSON / YAML definition format is the portable, data-level
+          surface of the same engine that powers <code>workflow()</code> and
+          <code>stateGraph()</code>. You describe the graph as data — nodes,
+          edges, and <a href="https://cel.dev">CEL</a> expressions — then
+          <code>parseWorkflowDefinition()</code>, <code>compileWorkflow()</code>,
+          and <code>runWorkflow()</code>.
+        </p>
+
+        <h3>Why declarative?</h3>
+        <ul>
+          <li><strong>Graphs as data</strong> — store them in a file,
+            database, or CMS; version-control them; ship them over the
+            network.</li>
+          <li><strong>Non-developer authoring</strong> — a clinical lead
+            edits a YAML file; no SDK rebuild needed.</li>
+          <li><strong>Static analysis</strong> — <code>analyzeGraphStructure()</code>
+            finds unreachable nodes and dead ends before the graph runs.</li>
+          <li><strong>Human-in-the-loop</strong> — <code>interrupt</code>
+            nodes yield checkpoint tokens you can persist and resume from
+            later, even across process restarts.</li>
+        </ul>
+
+        <h3>Node types</h3>
+        <p>
+          Nine node types cover agent calls, conditional routing, state
+          transforms, HTTP calls, human interrupts, waits, parallel fan-out,
+          arbitrary code callbacks, and termination:
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Type</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>agent_call</code></td><td>Invoke a Corti agent; map response into state.</td></tr>
+              <tr><td><code>switch</code></td><td>Branch on a CEL condition (no state change).</td></tr>
+              <tr><td><code>set_state</code></td><td>Compute state fields from CEL expressions.</td></tr>
+              <tr><td><code>http_call</code></td><td>Make an HTTP request; map response into state.</td></tr>
+              <tr><td><code>interrupt</code></td><td>Pause for human-in-the-loop input.</td></tr>
+              <tr><td><code>wait</code></td><td>Delay for a duration or until a timestamp.</td></tr>
+              <tr><td><code>parallel</code></td><td>Run sub-graphs concurrently, then join.</td></tr>
+              <tr><td><code>callback</code></td><td>Run a registered TypeScript / Python handler.</td></tr>
+              <tr><td><code>end</code></td><td>Terminate the run.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Minimal example</h3>
+<pre><code class="language-typescript">import {
+  executeWorkflow,
+  parseWorkflowDefinition,
+} from "@corti/agent-sdk";
+
+const definition = {
+  document: { name: "triage-flow", version: "1.0.0" },
+  nodes: [
+    {
+      id: "triage",
+      type: "agent_call",
+      config: {
+        agent: triageAgent.id,            // looked up at compile time
+        input: "state.note",               // CEL: extract from state
+        output: { severity: "response.text" }, // CEL: map response → state
+      },
+    },
+    {
+      id: "route",
+      type: "switch",
+      config: {
+        cases: [{ when: "state.severity == 'urgent'", target: "coder" }],
+        default: "__end__",
+      },
+    },
+    {
+      id: "coder",
+      type: "agent_call",
+      config: {
+        agent: coderAgent.id,
+        input: "state.note",
+        output: { codes: "response.text" },
+      },
+    },
+    { id: "__end__", type: "end" },
+  ],
+  edges: [
+    { source: "__start__", target: "triage" },
+    { source: "triage",    target: "route" },
+    { source: "coder",     target: "__end__" },
+  ],
+};
+
+parseWorkflowDefinition(definition);          // validate structure
+const result = await executeWorkflow(          // parse + compile + run
+  definition,
+  client,
+  { note: "Patient presents with chest pain..." },
+);
+
+console.log(result.state.severity);  // "urgent"
+console.log(result.state.codes);     // "I21.9, R07.9"</code></pre>
+
+        <h3>Engine unification</h3>
+        <p>
+          The declarative engine <em>is</em> the runtime —
+          <code>workflow()</code> and <code>stateGraph()</code> both compile
+          down to a <code>WorkflowDefinition</code> before execution. You can
+          export a builder-built graph with <code>StateGraph.toDefinition()</code>:
+        </p>
+<pre><code class="language-typescript">const graph = stateGraph&lt;TriageState&gt;()
+  .addNode("triage", agentNode(triageAgent, s =&gt; s.note, (r) =&gt; ({ severity: r.text ?? "" })))
+  .addEdge("triage", s =&gt; s.severity.includes("urgent") ? "coder" : END)
+  .addNode("coder", agentNode(coderAgent, s =&gt; s.note, (r) =&gt; ({ codes: r.text ?? "" })))
+  .addEdge("coder", END);
+
+// Export to portable JSON:
+const def = graph.toDefinition("triage");
+
+// def.nodes  → [{ id: "triage", type: "callback", config: { handler: "__cb_triage" } }, …]
+// def.edges  → [{ source: "__start__", target: "triage" }, { source: "triage", target: "coder" }, …]</code></pre>
+        <p>
+          See <a href="08-declarative-workflows.html">example 08</a> for the
+          full walkthrough — all nine node types, YAML support,
+          human-in-the-loop checkpoints, and static analysis.
+        </p>
+      </section>
+
       <section id="streaming">
         <h2>Streaming</h2>
 <pre><code class="language-typescript">const stream = await ctx.streamMessage([{ kind: "text", text: "Hello" }]);
@@ -624,6 +752,25 @@ for await (const event of stream) {
             </tbody>
           </table>
         </div>
+
+        <h3>Declarative workflow engine</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Export</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>parseWorkflowDefinition(input)</code></td><td>Validate a JSON object or string as a <code>WorkflowDefinition</code>. Throws on structural errors.</td></tr>
+              <tr><td><code>parseYamlDefinition(yaml)</code></td><td>Parse a YAML string into a <code>WorkflowDefinition</code>.</td></tr>
+              <tr><td><code>compileWorkflow(def, client, handlers?)</code></td><td>Compile a definition into a <code>CompiledGraph</code> (resolves agent IDs, compiles CEL).</td></tr>
+              <tr><td><code>runWorkflow(compiled, state, opts?)</code></td><td>Execute a compiled graph. Returns <code>StateGraphResult</code>.</td></tr>
+              <tr><td><code>executeWorkflow(json, client, state, opts?)</code></td><td>One-shot: parse + compile + run.</td></tr>
+              <tr><td><code>runWorkflowInteractive(compiled, state, opts?)</code></td><td>Async generator — yields <code>WorkflowInterrupt</code> on pause, <code>StateGraphResult</code> on completion.</td></tr>
+              <tr><td><code>resumeWorkflow(compiled, checkpoint, answer, opts?)</code></td><td>Resume from a checkpoint after a human-in-the-loop interrupt.</td></tr>
+              <tr><td><code>analyzeGraphStructure(def)</code></td><td>Static analysis — returns <code>{ unreachable, deadEnds }</code>.</td></tr>
+              <tr><td><code>validateStateSchema(state, schema)</code></td><td>Validate state against a JSON Schema (Ajv).</td></tr>
+              <tr><td><code>StateGraph.toDefinition(entryNode)</code></td><td>Export a builder-built graph as a portable <code>WorkflowDefinition</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section id="examples">
@@ -673,6 +820,11 @@ for await (const event of stream) {
                 <td><code>npm run state-graph</code></td>
                 <td><a href="07-state-graph.html">07 — State graph</a></td>
                 <td>Typed state, routing functions, reviewer loop, <code>agentNode()</code>.</td>
+              </tr>
+              <tr>
+                <td><code>npm run declarative-workflows</code></td>
+                <td><a href="08-declarative-workflows.html">08 — Declarative workflows</a></td>
+                <td>JSON / YAML DSL, nine node types, CEL expressions, HITL checkpoints, <code>toDefinition()</code>.</td>
               </tr>
             </tbody>
           </table>
