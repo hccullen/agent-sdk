@@ -1,5 +1,4 @@
 import type { CortiClient } from "./client.js";
-import { throwFromFetchError } from "./errors.js";
 import type { FeedbackCreateRequest, FeedbackResponse, FeedbackListResponse } from "./types.js";
 
 export class FeedbackResource {
@@ -10,41 +9,32 @@ export class FeedbackResource {
     taskId: string,
     body: FeedbackCreateRequest,
   ): Promise<FeedbackResponse> {
-    const { data, error, response } = await this._client.raw.POST(
-      "/v2/agentic/contexts/{contextId}/tasks/{taskId}/feedback",
-      {
-        params: { path: { contextId, taskId } },
-        body,
-      },
+    return this._client.sdk.agentic.contexts.tasks.feedback.create(
+      contextId,
+      taskId,
+      body,
     );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
   }
 
   async list(
     contextId: string,
     taskId: string,
   ): Promise<FeedbackListResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}/tasks/{taskId}/feedback",
-      {
-        params: { path: { contextId, taskId } },
-      },
+    return this._client.sdk.agentic.contexts.tasks.feedback.list(
+      contextId,
+      taskId,
     );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
   }
 
   async delete(
     contextId: string,
     taskId: string,
+    feedbackId: string,
   ): Promise<void> {
-    const { error, response } = await this._client.raw.DELETE(
-      "/v2/agentic/contexts/{contextId}/tasks/{taskId}/feedback",
-      {
-        params: { path: { contextId, taskId } },
-      },
+    await this._client.sdk.agentic.contexts.tasks.feedback.delete(
+      contextId,
+      taskId,
+      feedbackId,
     );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
   }
 }

@@ -30,17 +30,14 @@ function mockAgent(id: string, name: string): Agent {
 
 function mockTaskResponse(text: string) {
   return {
-    data: {
-      task: {
-        id: "task.1",
-        contextId: "ctx.1",
-        status: {
-          state: "TASK_STATE_COMPLETED",
-          message: { role: "ROLE_AGENT", parts: [{ text }], messageId: "msg.1" },
-        },
+    task: {
+      id: "task.1",
+      contextId: "ctx.1",
+      status: {
+        state: "TASK_STATE_COMPLETED",
+        message: { role: "ROLE_AGENT", parts: [{ text }], messageId: "msg.1" },
       },
     },
-    response: { ok: true },
   };
 }
 
@@ -60,12 +57,20 @@ function mockClient(agentResponses: Record<string, string> = {}): CortiClient {
         return agent;
       }),
     },
-    raw: {
-      POST: vi.fn().mockImplementation((_path: string, opts: { params: { path: { agentId: string } } }) => {
-        const agentId = opts.params.path.agentId;
-        const text = responseTexts.get(agentId) ?? "J45.909";
-        return Promise.resolve(mockTaskResponse(text));
-      }),
+    sdk: {
+      agentic: {
+        agents: {
+          sendMessage: vi.fn().mockImplementation(async (agentId: string, _body: unknown) => {
+            const text = responseTexts.get(agentId) ?? "J45.909";
+            return mockTaskResponse(text);
+          }),
+          get: vi.fn().mockImplementation(async (agentId: string) => {
+            const agent = agents.get(agentId);
+            if (!agent) throw new Error(`Agent not found: ${agentId}`);
+            return agent;
+          }),
+        },
+      },
     },
   } as unknown as CortiClient;
 }

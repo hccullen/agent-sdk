@@ -1,7 +1,7 @@
 {
   "name": "@newsioaps/agent-sdk",
-  "version": "2.0.1",
-  "description": "Type-safe SDK for the Corti Agent API v2, built on openapi-ts",
+  "version": "3.0.0",
+  "description": "Type-safe SDK for the Corti Agent API v2, built on @corti/sdk",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -31,7 +31,6 @@
     "url": "https://github.com/hccullen/agent-sdk/issues"
   },
   "scripts": {
-    "generate": "openapi-typescript ./openapi/agent-api-v2.yml -o ./src/gen/api-v2.d.ts --default-non-nullable false",
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "test": "vitest run",
@@ -53,24 +52,17 @@
   "author": "Corti <developer@corti.ai>",
   "license": "MIT",
   "peerDependencies": {
-    "@corti/sdk": ">=3.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@corti/sdk": {
-      "optional": true
-    }
+    "@corti/sdk": ">=4.3.0-beta"
   },
   "devDependencies": {
-    "@corti/sdk": "3.0.0",
+    "@corti/sdk": "4.3.0-beta",
     "@types/js-yaml": "^4.0.9",
-    "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "@bufbuild/cel": "^0.6.0",
     "ajv": "^8.20.0",
-    "js-yaml": "^4.2.0",
-    "openapi-fetch": "^0.17.0"
+    "js-yaml": "^4.2.0"
   }
 }

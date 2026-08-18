@@ -1,5 +1,4 @@
 import type { CortiClient } from "./client.js";
-import { throwFromFetchError } from "./errors.js";
 import type {
   ContextDetailResponse,
   ContextListResponse,
@@ -11,8 +10,8 @@ import type {
 
 export interface ListContextsParams {
   agentId?: string;
-  from?: string;
-  to?: string;
+  from?: Date;
+  to?: Date;
   pageSize?: number;
   pageToken?: string;
 }
@@ -21,82 +20,42 @@ export class ContextsResource {
   constructor(private readonly _client: CortiClient) {}
 
   async list(params?: ListContextsParams): Promise<ContextListResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts",
-      { params: { query: params } },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    const page = await this._client.sdk.agentic.contexts.list(params);
+    return page.response;
   }
 
   async get(
     contextId: string,
     historyLength?: number,
   ): Promise<ContextDetailResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}",
-      {
-        params: {
-          path: { contextId },
-          query: { historyLength },
-        },
-      },
+    return this._client.sdk.agentic.contexts.get(
+      contextId,
+      historyLength !== undefined ? { historyLength } : undefined,
     );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
   }
 
   async delete(contextId: string): Promise<void> {
-    const { error, response } = await this._client.raw.DELETE(
-      "/v2/agentic/contexts/{contextId}",
-      { params: { path: { contextId } } },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
+    await this._client.sdk.agentic.contexts.delete(contextId);
   }
 
   async getTrace(
     contextId: string,
     params?: { pageSize?: number; pageToken?: string },
   ): Promise<ContextTraceResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}/trace",
-      {
-        params: {
-          path: { contextId },
-          query: params,
-        },
-      },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    const page = await this._client.sdk.agentic.contexts.trace(contextId, params);
+    return page.response;
   }
 
   async listTasks(
     contextId: string,
     params?: { pageSize?: number; pageToken?: string },
   ): Promise<TaskListResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}/tasks",
-      {
-        params: {
-          path: { contextId },
-          query: params,
-        },
-      },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    const page = await this._client.sdk.agentic.contexts.tasks.list(contextId, params);
+    return page.response;
   }
 
   async getTask(contextId: string, taskId: string): Promise<Task> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}/tasks/{taskId}",
-      {
-        params: { path: { contextId, taskId } },
-      },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    return this._client.sdk.agentic.contexts.tasks.get(contextId, taskId);
   }
 
   async getArtifact(
@@ -104,13 +63,10 @@ export class ContextsResource {
     taskId: string,
     artifactId: string,
   ): Promise<Artifact> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/contexts/{contextId}/tasks/{taskId}/artifacts/{artifactId}",
-      {
-        params: { path: { contextId, taskId, artifactId } },
-      },
+    return this._client.sdk.agentic.contexts.tasks.artifacts.get(
+      contextId,
+      taskId,
+      artifactId,
     );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
   }
 }

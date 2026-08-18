@@ -1,23 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { CortiClient } from "../client.js";
 import { AgentHandle } from "../handle.js";
-import type { Agent } from "../types.js";
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function makeClient(fetchFn: ReturnType<typeof vi.fn>): CortiClient {
-  return new CortiClient({
-    token: "test-token",
-    tenant: "test-tenant",
-    baseUrl: "https://api.test.corti.app",
-    fetch: fetchFn as unknown as typeof fetch,
-  });
-}
+import type { Agent, SendMessageResponse } from "../types.js";
 
 const agentResponse: Agent = {
   id: "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
@@ -28,14 +11,39 @@ const agentResponse: Agent = {
   visibility: "private",
   lifecycle: "persistent",
   connectors: [],
-  createdAt: "2026-05-19T12:00:00Z",
-  updatedAt: "2026-05-19T12:00:00Z",
-  createdBy: "usr.0192f4c8-8bc0-7194-8570-92e3ce81d0a6",
 };
+
+function mockSendMessageResponse(text: string): SendMessageResponse {
+  return {
+    task: {
+      id: "task.1",
+      contextId: "ctx.1",
+      status: {
+        state: "TASK_STATE_COMPLETED",
+        message: { role: "ROLE_AGENT", parts: [{ text }], messageId: "msg.1" },
+      },
+    },
+  };
+}
+
+function makeMockClient(sendMessageImpl?: (agentId: string, body: unknown) => Promise<unknown>) {
+  return {
+    sdk: {
+      agentic: {
+        agents: {
+          sendMessage: vi.fn(sendMessageImpl ?? (async () => mockSendMessageResponse("J45.909"))),
+          get: vi.fn().mockResolvedValue(agentResponse),
+          update: vi.fn().mockResolvedValue(agentResponse),
+          delete: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    },
+  } as unknown as import("../client.js").CortiClient;
+}
 
 describe("AgentHandle", () => {
   it("exposes agent properties", () => {
-    const client = makeClient(vi.fn());
+    const client = makeMockClient();
     const h = new AgentHandle(agentResponse, client);
     expect(h.id).toBe(agentResponse.id);
     expect(h.name).toBe("coder");
@@ -48,7 +56,7 @@ describe("AgentHandle", () => {
   });
 
   it("createContext returns an AgentContext with the agent id", () => {
-    const client = makeClient(vi.fn());
+    const client = makeMockClient();
     const h = new AgentHandle(agentResponse, client);
     const ctx = h.createContext();
     expect(ctx).toBeDefined();
@@ -56,24 +64,14 @@ describe("AgentHandle", () => {
   });
 
   it("getContext returns an AgentContext with the given contextId", () => {
-    const client = makeClient(vi.fn());
+    const client = makeMockClient();
     const h = new AgentHandle(agentResponse, client);
     const ctx = h.getContext("ctx.123");
     expect(ctx.id).toBe("ctx.123");
   });
 
   it("run creates a fresh context, sends text, and returns the response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({
-      task: {
-        id: "task.1",
-        contextId: "ctx.1",
-        status: {
-          state: "TASK_STATE_COMPLETED",
-          message: { role: "ROLE_AGENT", parts: [{ text: "J45.909" }], messageId: "msg.1" },
-        },
-      },
-    }));
-    const client = makeClient(fetchFn);
+    const client = makeMockClient();
     const h = new AgentHandle(agentResponse, client);
     const r = await h.run("Code this encounter");
 
@@ -82,47 +80,45 @@ describe("AgentHandle", () => {
   });
 
   it("run accepts Part[] input", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({
-      task: {
-        id: "task.1",
-        contextId: "ctx.1",
-        status: {
-          state: "TASK_STATE_COMPLETED",
-          message: { role: "ROLE_AGENT", parts: [{ text: "I10" }], messageId: "msg.1" },
-        },
-      },
-    }));
-    const client = makeClient(fetchFn);
+    const client = makeMockClient(async (_agentId, body) => {
+      const parts = (body as { message: { parts: { text?: string }[] } }).message.parts;
+      return mockSendMessageResponse(parts.map(p => p.text ?? "").join(""));
+    });
     const h = new AgentHandle(agentResponse, client);
     const r = await h.run([{ text: "Hypertension" }]);
 
-    expect(r.text).toBe("I10");
-    const req = fetchFn.mock.calls[0][0] as Request;
-    const body = JSON.parse(await req.text());
-    expect(body.message.parts).toEqual([{ text: "Hypertension" }]);
+    expect(r.text).toBe("Hypertension");
+    expect(client.sdk.agentic.agents.sendMessage).toHaveBeenCalledWith(
+      agentResponse.id,
+      expect.objectContaining({
+        message: expect.objectContaining({
+          parts: [{ text: "Hypertension" }],
+        }),
+      }),
+      expect.anything(),
+    );
   });
 
   it("refresh fetches the latest agent state", async () => {
     const updated = { ...agentResponse, name: "coder-v2" };
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(updated));
-    const client = makeClient(fetchFn);
+    const client = makeMockClient();
+    client.sdk.agentic.agents.get = vi.fn().mockResolvedValue(updated);
     const h = new AgentHandle(agentResponse, client);
     const refreshed = await h.refresh();
     expect(refreshed.name).toBe("coder-v2");
   });
 
-  it("update sends a PATCH with merge-patch body", async () => {
+  it("update delegates to sdk.agentic.agents.update", async () => {
     const updated = { ...agentResponse, name: "coder-v2" };
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(updated));
-    const client = makeClient(fetchFn);
+    const client = makeMockClient();
+    client.sdk.agentic.agents.update = vi.fn().mockResolvedValue(updated);
     const h = new AgentHandle(agentResponse, client);
     const result = await h.update({ name: "coder-v2" });
 
     expect(result.name).toBe("coder-v2");
-    const req = fetchFn.mock.calls[0][0] as Request;
-    expect(req.method).toBe("PATCH");
-    expect(req.headers.get("Content-Type")).toBe("application/merge-patch+json");
-    const body = JSON.parse(await req.text());
-    expect(body).toEqual({ name: "coder-v2" });
+    expect(client.sdk.agentic.agents.update).toHaveBeenCalledWith(
+      agentResponse.id,
+      { name: "coder-v2" },
+    );
   });
 });

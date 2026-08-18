@@ -1,5 +1,4 @@
 import type { CortiClient } from "./client.js";
-import { throwFromFetchError } from "./errors.js";
 import type {
   RegistryConnectorListResponse,
   RegistryConnector,
@@ -13,20 +12,11 @@ export class RegistryResource {
     pageSize?: number;
     pageToken?: string;
   }): Promise<RegistryConnectorListResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/registry/connectors",
-      { params: { query: params } },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    const page = await this._client.sdk.agentic.registry.connectors.list(params);
+    return page.response;
   }
 
   async get(connectorId: string): Promise<RegistryConnector> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/registry/connectors/{connectorId}",
-      { params: { path: { connectorId } } },
-    );
-    if (error || !response.ok) throwFromFetchError(error, response, false);
-    return data!;
+    return this._client.sdk.agentic.registry.connectors.get(connectorId);
   }
 }

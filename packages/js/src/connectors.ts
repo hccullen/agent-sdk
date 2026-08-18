@@ -1,12 +1,12 @@
-import type { components } from "./gen/api-v2.js";
+import type { Corti } from "@corti/sdk";
 
-export type RegistryConnectorCreate = components["schemas"]["CommonRegistryConnectorCreate"];
-export type McpConnectorCreate = components["schemas"]["CommonMcpConnectorCreate"];
-export type AgentConnectorCreate = components["schemas"]["CommonAgentConnectorCreate"];
-export type A2AConnectorCreate = components["schemas"]["CommonA2AConnectorCreate"];
-export type SchemaConnectorCreate = components["schemas"]["CommonSchemaConnectorCreate"];
-export type ConnectorCreateRequest = components["schemas"]["CommonConnectorCreateRequest"];
-export type ConnectorAuth = components["schemas"]["CommonConnectorAuth"];
+export type RegistryConnectorCreate = Corti.CommonRegistryConnectorCreate;
+export type McpConnectorCreate = Corti.CommonMcpConnectorCreate;
+export type AgentConnectorCreate = Corti.CommonAgentConnectorCreate;
+export type A2AConnectorCreate = Corti.CommonA2AConnectorCreate;
+export type SchemaConnectorCreate = Corti.CommonSchemaConnectorCreate;
+export type ConnectorCreateRequest = Corti.CommonConnectorCreateRequest;
+export type ConnectorAuth = Corti.CommonConnectorAuth;
 
 export const connectors = {
   registry(

@@ -12,6 +12,7 @@ export type { SendMessageOptions } from "./context.js";
 export { MessageResponse } from "./response.js";
 
 export { connectors, auth } from "./connectors.js";
+export type { RegistryConnectorCreate, McpConnectorCreate, AgentConnectorCreate, A2AConnectorCreate, SchemaConnectorCreate, ConnectorCreateRequest } from "./connectors.js";
 
 export { ContextsResource } from "./contexts.js";
 export type { ListContextsParams } from "./contexts.js";
@@ -30,15 +31,12 @@ export type { EdgeRouter, NodeFn } from "./stateGraph.js";
 export { parseWorkflowDefinition, parseYamlDefinition, compileWorkflow, runWorkflow, executeWorkflow, analyzeGraphStructure, runWorkflowInteractive, resumeWorkflow, validateStateSchema } from "./declarativeGraph.js";
 export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, SwitchConfig, SetStateConfig, HttpCallConfig, InterruptConfig, WaitConfig, ParallelConfig, CallbackConfig, GraphAnalysis, WorkflowHandler, WorkflowHandlers, StateGraphResult, StateGraphStep, WorkflowInterrupt } from "./declarativeGraph.js";
 
-export { CortiError, ManagementError, A2AError, HttpError } from "./errors.js";
+export { CortiError } from "./errors.js";
 
 export { parseSSEStream, parseA2AStream, makeAbortController } from "./streaming.js";
 export type { SSEEvent, AbortOptions } from "./streaming.js";
 
 export type {
-  paths,
-  components,
-  operations,
   AgentID,
   ConnectorID,
   ContextID,
@@ -83,8 +81,6 @@ export type {
   UsageReportResponse,
   UsageGranularity,
   ErrorResponse,
-  A2AErrorResponse,
-  PageToken,
   TextPart,
   FilePart,
   DataPart,

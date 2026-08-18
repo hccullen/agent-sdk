@@ -9,7 +9,6 @@ import type {
   Part,
   StreamResponse,
 } from "./types.js";
-import { throwFromFetchError } from "./errors.js";
 
 export class AgentHandle {
   private _agent: Agent;
@@ -49,7 +48,7 @@ export class AgentHandle {
     return this._agent.lifecycle;
   }
 
-  get connectors() {
+  get connectors(): import("@corti/sdk").Corti.CommonConnectorResponse[] {
     return this._agent.connectors;
   }
 
@@ -90,38 +89,16 @@ export class AgentHandle {
   }
 
   async update(patch: AgentPatch): Promise<AgentHandle> {
-    const { data, error, response } = await this._client.raw.PATCH(
-      "/v2/agentic/agents/{agentId}",
-      {
-        params: { path: { agentId: this._agent.id } },
-        body: patch,
-        headers: { "Content-Type": "application/merge-patch+json" },
-      },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return new AgentHandle(data!, this._client);
+    const updated = await this._client.sdk.agentic.agents.update(this._agent.id, patch);
+    return new AgentHandle(updated, this._client);
   }
 
   async refresh(): Promise<AgentHandle> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/agents/{agentId}",
-      { params: { path: { agentId: this._agent.id } } },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return new AgentHandle(data!, this._client);
+    const agent = await this._client.sdk.agentic.agents.get(this._agent.id);
+    return new AgentHandle(agent, this._client);
   }
 
   async delete(): Promise<void> {
-    const { error, response } = await this._client.raw.DELETE(
-      "/v2/agentic/agents/{agentId}",
-      { params: { path: { agentId: this._agent.id } } },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
+    await this._client.sdk.agentic.agents.delete(this._agent.id);
   }
 }
