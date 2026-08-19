@@ -1,11 +1,11 @@
-import type { components } from "./gen/api-v2.js";
+import type { Corti } from "@corti/sdk";
+import type { SendMessageResponse } from "./types.js";
 
-type Task = components["schemas"]["CommonTaskResponse"];
-type Message = components["schemas"]["CommonMessage"];
-type Artifact = components["schemas"]["CommonArtifactResponse"];
-type TaskState = components["schemas"]["CommonTaskState"];
-type Part = components["schemas"]["CommonPart"];
-type SendMessageResponse = components["schemas"]["A2ASendMessageResponse"];
+type Task = Corti.CommonTaskResponse;
+type Message = Corti.CommonMessage;
+type Artifact = Corti.CommonArtifactResponse;
+type TaskState = Corti.CommonTaskState;
+type Part = Corti.CommonPart;
 
 export class MessageResponse {
   private readonly _task: Task | undefined;

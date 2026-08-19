@@ -1,6 +1,5 @@
 import type { CortiClient } from "./client.js";
-import { throwFromFetchError, throwFromResponse } from "./errors.js";
-import { makeAbortController, parseA2AStream } from "./streaming.js";
+import { makeAbortController } from "./streaming.js";
 import type { AbortOptions } from "./streaming.js";
 import { MessageResponse } from "./response.js";
 import type {
@@ -69,21 +68,11 @@ export class AgentContext {
     const body = this.buildRequest(parts, opts);
 
     try {
-      const response = await this._client.raw.POST(
-        "/v2/agentic/agents/{agentId}/a2a/message:send",
-        {
-          params: { path: { agentId: this._agentId } },
-          body,
-          signal: controller.signal,
-          parseAs: "json",
-        },
-      );
-
-      if (response.error || !response.response.ok) {
-        throwFromFetchError(response.error, response.response, true);
-      }
-
-      const result = response.data as SendMessageResponse;
+      const result = await this._client.sdk.agentic.agents.sendMessage(
+        this._agentId,
+        body,
+        { abortSignal: controller.signal },
+      ) as SendMessageResponse;
 
       if (this._contextId === undefined && result.task?.contextId) {
         this._contextId = result.task.contextId;
@@ -107,29 +96,17 @@ export class AgentContext {
     const body = this.buildRequest(parts);
 
     try {
-      const { response } = await this._client.raw.POST(
-        "/v2/agentic/agents/{agentId}/a2a/message:stream",
-        {
-          params: { path: { agentId: this._agentId } },
-          body,
-          signal: controller.signal,
-          parseAs: "stream",
-        },
+      const stream = await this._client.sdk.agentic.agents.streamMessage(
+        this._agentId,
+        body,
+        { abortSignal: controller.signal },
       );
 
-      if (!response.ok) {
-        await throwFromResponse(response, true);
-      }
-
-      if (!response.body) {
-        throw new Error("[AgentSDK] No response body for stream");
-      }
-
-      for await (const event of parseA2AStream(response.body)) {
+      for await (const event of stream as AsyncIterable<StreamResponse>) {
         if (this._contextId === undefined) {
           const cid =
-            event.task?.contextId ??
-            event.statusUpdate?.contextId;
+            (event as { task?: { contextId?: string } }).task?.contextId ??
+            (event as { statusUpdate?: { contextId?: string } }).statusUpdate?.contextId;
           if (cid) this._contextId = cid;
         }
         yield event;
@@ -142,20 +119,12 @@ export class AgentContext {
   async getTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      const { data, error, response } = await this._client.raw.GET(
-        "/v2/agentic/agents/{agentId}/a2a/tasks/{taskId}",
-        {
-          params: {
-            path: { agentId: this._agentId, taskId },
-            query: { historyLength: undefined },
-          },
-          signal: controller.signal,
-        },
+      return await this._client.sdk.agentic.agents.tasks.get(
+        this._agentId,
+        taskId,
+        undefined,
+        { abortSignal: controller.signal },
       );
-      if (error || !response.ok) {
-        throwFromFetchError(error, response, true);
-      }
-      return data!;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -164,17 +133,11 @@ export class AgentContext {
   async cancelTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      const { data, error, response } = await this._client.raw.POST(
-        "/v2/agentic/agents/{agentId}/a2a/tasks/{taskId}:cancel",
-        {
-          params: { path: { agentId: this._agentId, taskId } },
-          signal: controller.signal,
-        },
+      return await this._client.sdk.agentic.agents.tasks.cancel(
+        this._agentId,
+        taskId,
+        { abortSignal: controller.signal },
       );
-      if (error || !response.ok) {
-        throwFromFetchError(error, response, true);
-      }
-      return data!;
     } finally {
       if (timer) clearTimeout(timer);
     }

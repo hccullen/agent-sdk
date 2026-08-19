@@ -1,30 +1,21 @@
-import createClient, { type Middleware } from "openapi-fetch";
-import type { paths } from "./gen/api-v2.js";
+import { CortiClient as SdkCortiClient } from "@corti/sdk";
 import { AgentsResource } from "./agents.js";
 import { ContextsResource } from "./contexts.js";
 import { RegistryResource } from "./registry.js";
 import { UsageResource } from "./usage.js";
 import { FeedbackResource } from "./feedback.js";
 import { AgentCardResource } from "./agentCard.js";
-
-const REGION_URLS: Record<string, string> = {
-  eu: "https://api.eu.corti.app",
-  us: "https://api.us.corti.app",
-};
+import { PKG_NAME, PKG_VERSION } from "./version.js";
 
 export interface CortiClientOptions {
   /**
-   * An existing `@corti/sdk` `CortiClient` to reuse for authentication and
-   * base URL resolution. When provided, the SDK calls `getAuthHeaders()` on
-   * every request for automatic token refresh, and derives the base URL
-   * from the SDK client's environment. This takes precedence over `token`,
-   * `tenant`, `region`, and `baseUrl`.
+   * An existing `@corti/sdk` `CortiClient` to reuse for authentication,
+   * base URL resolution, and all HTTP transport. When provided, this takes
+   * precedence over `token`, `tenant`, `region`, and `baseUrl`.
    *
-   * Requires `@corti/sdk` >= 3.0.0 as an optional peer dependency.
+   * Requires `@corti/sdk` >= 4.3.0-beta as a peer dependency.
    */
-  sdkClient?: {
-    getAuthHeaders: () => Promise<Headers>;
-  };
+  sdkClient?: SdkCortiClient;
   /** Bearer token for authentication. Ignored when `sdkClient` is provided. */
   token?: string;
   /** Tenant name for the `Tenant-Name` header. Ignored when `sdkClient` is provided. */
@@ -33,18 +24,18 @@ export interface CortiClientOptions {
   region?: "eu" | "us";
   /** Override the base URL entirely. Ignored when `sdkClient` is provided. */
   baseUrl?: string;
-  /** Custom fetch implementation (e.g. for testing). */
-  fetch?: typeof fetch;
   /**
    * Token provider for automatic refresh. If supplied (and no `sdkClient`),
    * the client calls this function before every request and uses its return
    * value instead of the static `token`.
    */
   tokenProvider?: () => string | Promise<string>;
+  /** Custom fetch implementation (e.g. for testing). Ignored when `sdkClient` is provided. */
+  fetch?: typeof fetch;
 }
 
 export class CortiClient {
-  readonly raw: ReturnType<typeof createClient<paths>>;
+  readonly sdk: SdkCortiClient;
   readonly baseUrl: string;
 
   readonly agents: AgentsResource;
@@ -55,48 +46,36 @@ export class CortiClient {
   readonly agentCard: AgentCardResource;
 
   constructor(opts: CortiClientOptions) {
-    if (!opts.sdkClient && !opts.token && !opts.tokenProvider) {
-      throw new Error(
-        "CortiClient requires either `sdkClient`, `token`, or `tokenProvider`.",
-      );
+    if (opts.sdkClient) {
+      this.sdk = opts.sdkClient;
+    } else {
+      if (!opts.token) {
+        throw new Error(
+          "CortiClient requires either `sdkClient` or `token`.",
+        );
+      }
+
+      const auth: Record<string, unknown> = { accessToken: opts.token };
+      if (opts.tokenProvider) {
+        auth.refreshAccessToken = async () => ({
+          accessToken: await opts.tokenProvider!(),
+        });
+      }
+
+      const sdkOpts: Record<string, unknown> = { auth };
+      if (opts.baseUrl) {
+        sdkOpts.baseUrl = opts.baseUrl;
+      } else {
+        sdkOpts.environment = opts.region ?? "eu";
+      }
+      if (opts.tenant) sdkOpts.tenantName = opts.tenant;
+      if (opts.fetch) sdkOpts.fetch = opts.fetch;
+      sdkOpts.analytics = { integration: PKG_NAME, integration_version: `v${PKG_VERSION}` };
+
+      this.sdk = new SdkCortiClient(sdkOpts as ConstructorParameters<typeof SdkCortiClient>[0]);
     }
 
-    const base = opts.baseUrl ?? REGION_URLS[opts.region ?? "eu"] ?? REGION_URLS.eu;
-    this.baseUrl = base.replace(/\/+$/, "");
-
-    this.raw = createClient<paths>({
-      baseUrl: this.baseUrl,
-      ...(opts.fetch && { fetch: opts.fetch }),
-    });
-
-    const authMiddleware: Middleware = {
-      onRequest: async ({ request, schemaPath }) => {
-        if (opts.sdkClient) {
-          const authHeaders = await opts.sdkClient.getAuthHeaders();
-          authHeaders.forEach((value, key) => {
-            request.headers.set(key, value);
-          });
-        } else {
-          const token = opts.tokenProvider
-            ? await opts.tokenProvider()
-            : opts.token!;
-          request.headers.set("Authorization", `Bearer ${token}`);
-          if (opts.tenant) {
-            request.headers.set("Tenant-Name", opts.tenant);
-          }
-        }
-
-        if (schemaPath.includes("/a2a")) {
-          if (!request.headers.has("A2A-Version")) {
-            request.headers.set("A2A-Version", "1.0");
-          }
-        }
-
-        return request;
-      },
-    };
-
-    this.raw.use(authMiddleware);
+    this.baseUrl = opts.baseUrl ?? `https://api.${opts.region ?? "eu"}.corti.app`;
 
     this.agents = new AgentsResource(this);
     this.contexts = new ContextsResource(this);
@@ -104,5 +83,9 @@ export class CortiClient {
     this.usage = new UsageResource(this);
     this.feedback = new FeedbackResource(this);
     this.agentCard = new AgentCardResource(this);
+  }
+
+  get agentic(): SdkCortiClient["agentic"] {
+    return this.sdk.agentic;
   }
 }

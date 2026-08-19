@@ -1,5 +1,4 @@
 import type { CortiClient } from "./client.js";
-import { throwFromFetchError } from "./errors.js";
 import type {
   Agent,
   AgentCreate,
@@ -22,60 +21,23 @@ export class AgentsResource {
   constructor(private readonly _client: CortiClient) {}
 
   async create(body: AgentCreate): Promise<Agent> {
-    const { data, error, response } = await this._client.raw.POST(
-      "/v2/agentic/agents",
-      { body },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return data!;
+    return this._client.sdk.agentic.agents.create(body);
   }
 
   async get(agentId: string): Promise<Agent> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/agents/{agentId}",
-      { params: { path: { agentId } } },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return data!;
+    return this._client.sdk.agentic.agents.get(agentId);
   }
 
   async list(params?: ListAgentsParams): Promise<AgentListResponse> {
-    const { data, error, response } = await this._client.raw.GET(
-      "/v2/agentic/agents",
-      { params: { query: params } },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return data!;
+    const page = await this._client.sdk.agentic.agents.list(params);
+    return page.response;
   }
 
   async update(agentId: string, body: AgentPatch): Promise<Agent> {
-    const { data, error, response } = await this._client.raw.PATCH(
-      "/v2/agentic/agents/{agentId}",
-      {
-        params: { path: { agentId } },
-        body,
-        headers: { "Content-Type": "application/merge-patch+json" },
-      },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
-    return data!;
+    return this._client.sdk.agentic.agents.update(agentId, body);
   }
 
   async delete(agentId: string): Promise<void> {
-    const { error, response } = await this._client.raw.DELETE(
-      "/v2/agentic/agents/{agentId}",
-      { params: { path: { agentId } } },
-    );
-    if (error || !response.ok) {
-      throwFromFetchError(error, response, false);
-    }
+    await this._client.sdk.agentic.agents.delete(agentId);
   }
 }

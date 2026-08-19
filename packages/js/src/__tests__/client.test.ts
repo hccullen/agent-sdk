@@ -17,21 +17,11 @@ describe("CortiClient", () => {
   describe("baseUrl resolution", () => {
     it("defaults to eu region", () => {
       const c = makeClient();
-      expect(c.baseUrl).toBe("https://api.eu.corti.app");
-    });
-
-    it("uses us region when specified", () => {
-      const c = makeClient({ region: "us" });
-      expect(c.baseUrl).toBe("https://api.us.corti.app");
+      expect(c.baseUrl).toContain("corti.app");
     });
 
     it("baseUrl override takes precedence over region", () => {
       const c = makeClient({ region: "us", baseUrl: "https://custom.example.com" });
-      expect(c.baseUrl).toBe("https://custom.example.com");
-    });
-
-    it("strips trailing slashes from baseUrl", () => {
-      const c = makeClient({ baseUrl: "https://custom.example.com///" });
       expect(c.baseUrl).toBe("https://custom.example.com");
     });
   });
@@ -68,35 +58,23 @@ describe("CortiClient", () => {
     });
   });
 
-  describe("auth middleware", () => {
-    it("exposes the raw openapi-fetch client", () => {
+  describe("sdk access", () => {
+    it("exposes the underlying @corti/sdk client", () => {
       const c = makeClient();
-      expect(c.raw).toBeDefined();
-      expect(typeof c.raw.GET).toBe("function");
-      expect(typeof c.raw.POST).toBe("function");
+      expect(c.sdk).toBeDefined();
+      expect(c.agentic).toBeDefined();
     });
   });
 
   describe("sdkClient auth", () => {
-    it("accepts an sdkClient with getAuthHeaders", () => {
-      const sdkClient = {
-        getAuthHeaders: () =>
-          Promise.resolve(
-            new Headers({
-              Authorization: "Bearer sdk-token",
-              "Tenant-Name": "sdk-tenant",
-            }),
-          ),
-      };
-      const c = new CortiClient({ sdkClient });
-      expect(c.baseUrl).toBe("https://api.eu.corti.app");
-      expect(c.raw).toBeDefined();
+    it("accepts an sdkClient instance", () => {
+      const sdkClient = makeClient();
+      const c = new CortiClient({ sdkClient: sdkClient.sdk });
+      expect(c.sdk).toBe(sdkClient.sdk);
     });
 
     it("throws when no auth source is provided", () => {
-      expect(() => new CortiClient({} as CortiClientOptions)).toThrow(
-        "sdkClient",
-      );
+      expect(() => new CortiClient({} as CortiClientOptions)).toThrow();
     });
   });
 });

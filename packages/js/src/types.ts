@@ -1,69 +1,79 @@
-import type { components } from "./gen/api-v2.js";
+import type { Corti } from "@corti/sdk";
 
-export type {
-  paths,
-  components,
-  operations,
-} from "./gen/api-v2.js";
+export type AgentID = Corti.CommonAgentIdValue;
+export type ConnectorID = Corti.CommonConnectorIdValue;
+export type ContextID = Corti.CommonContextIdValue;
+export type TaskID = Corti.CommonTaskIdValue;
+export type MessageID = Corti.CommonMessageIdValue;
+export type ArtifactID = Corti.CommonArtifactIdValue;
+export type UserID = Corti.AgentsUserIdValue;
 
-export type AgentID = components["schemas"]["CommonAgentIDValue"];
-export type ConnectorID = components["schemas"]["CommonConnectorIDValue"];
-export type ContextID = components["schemas"]["CommonContextIDValue"];
-export type TaskID = components["schemas"]["CommonTaskIDValue"];
-export type MessageID = components["schemas"]["CommonMessageIDValue"];
-export type ArtifactID = components["schemas"]["CommonArtifactIDValue"];
-export type UserID = components["schemas"]["AgentsUserIDValue"];
+export type Visibility = Corti.AgentsVisibility;
+export type Lifecycle = Corti.AgentsLifecycle;
 
-export type Visibility = components["schemas"]["AgentsVisibility"];
-export type Lifecycle = components["schemas"]["AgentsLifecycle"];
+export type Agent = Corti.AgenticAgentsResponse;
+export type AgentCreate = Corti.agentic.AgenticAgentsCreateRequest;
+export type AgentPatch = Corti.agentic.AgenticAgentsPatchRequest;
+export type AgentListResponse = Corti.AgenticAgentsListResponse;
 
-export type Agent = components["schemas"]["AgentsResponse"];
-export type AgentCreate = components["schemas"]["AgentsCreateRequest"];
-export type AgentPatch = components["schemas"]["AgentsPatchRequest"];
-export type AgentListResponse = components["schemas"]["AgentsListResponse"];
+export type ConnectorType = Corti.CommonConnectorType;
+export type ConnectorResponse = Corti.CommonConnectorResponse;
+export type ConnectorCreate = Corti.CommonConnectorCreateRequest;
+export type ConnectorPatch = Corti.agentic.agents.AgenticConnectorsPatchRequest;
+export type ConnectorAuth = Corti.CommonConnectorAuth;
+export type ConnectorListResponse = Corti.AgenticConnectorsListResponse;
 
-export type ConnectorType = components["schemas"]["CommonConnectorType"];
-export type ConnectorResponse = components["schemas"]["CommonConnectorResponse"];
-export type ConnectorCreate = components["schemas"]["CommonConnectorCreateRequest"];
-export type ConnectorPatch = components["schemas"]["ConnectorsPatchRequest"];
-export type ConnectorAuth = components["schemas"]["CommonConnectorAuth"];
-export type ConnectorListResponse = components["schemas"]["ConnectorsListResponse"];
+export type RegistryConnector = Corti.AgenticRegistryConnector;
+export type RegistryConnectorListResponse = Corti.AgenticRegistryConnectorsListResponse;
 
-export type RegistryConnector = components["schemas"]["RegistryConnectorResponse"];
-export type RegistryConnectorListResponse = components["schemas"]["RegistryConnectorListResponse"];
+export type Role = Corti.CommonRole;
+export type Part = Corti.CommonPart;
+export type Message = Corti.CommonMessage;
+export type Task = Corti.CommonTaskResponse;
+export type TaskState = Corti.CommonTaskState;
+export type TaskStatus = Corti.CommonTaskStatus;
+export type TaskListResponse = Corti.CommonTaskListResponse;
+export type Artifact = Corti.CommonArtifactResponse;
+export type Usage = Corti.CommonUsage;
 
-export type Role = components["schemas"]["CommonRole"];
-export type Part = components["schemas"]["CommonPart"];
-export type Message = components["schemas"]["CommonMessage"];
-export type Task = components["schemas"]["CommonTaskResponse"];
-export type TaskState = components["schemas"]["CommonTaskState"];
-export type TaskStatus = components["schemas"]["CommonTaskStatus"];
-export type TaskListResponse = components["schemas"]["CommonTaskListResponse"];
-export type Artifact = components["schemas"]["CommonArtifactResponse"];
-export type Usage = components["schemas"]["CommonUsage"];
+export type SendMessageRequest = Corti.AgenticAgentsSendMessageRequest;
 
-export type SendMessageRequest = components["schemas"]["A2ASendMessageRequest"];
-export type SendMessageResponse = components["schemas"]["A2ASendMessageResponse"];
-export type StreamResponse = components["schemas"]["A2AStreamResponse"];
+export interface SendMessageResponse {
+  task?: Corti.CommonTaskResponse;
+  message?: Corti.CommonMessage;
+}
 
-export type Context = components["schemas"]["Contexts"];
-export type ContextDetailResponse = components["schemas"]["ContextsDetailResponse"];
-export type ContextListResponse = components["schemas"]["ContextsListResponse"];
-export type ContextTraceResponse = components["schemas"]["ContextsTraceResponse"];
+export interface StreamResponse {
+  task?: Corti.CommonTaskResponse;
+  message?: Corti.CommonMessage;
+  statusUpdate?: {
+    taskId?: Corti.CommonTaskIdValue;
+    contextId?: Corti.CommonContextIdValue;
+    status?: Corti.CommonTaskStatus;
+    metadata?: Record<string, unknown>;
+  };
+  artifactUpdate?: {
+    taskId?: Corti.CommonTaskIdValue;
+    artifact?: Corti.CommonArtifactResponse;
+    lastChunk?: boolean;
+  };
+}
 
-export type AgentCard = components["schemas"]["AgentCardResponse"];
+export type Context = Corti.AgenticContext;
+export type ContextDetailResponse = Corti.AgenticContextsDetailResponse;
+export type ContextListResponse = Corti.AgenticContextsListResponse;
+export type ContextTraceResponse = Corti.AgenticContextsTraceResponse;
 
-export type FeedbackCreateRequest = components["schemas"]["FeedbackCreateRequest"];
-export type FeedbackResponse = components["schemas"]["FeedbackResponse"];
-export type FeedbackListResponse = components["schemas"]["FeedbackListResponse"];
+export type AgentCard = Corti.AgenticAgentCardResponse;
 
-export type UsageReportResponse = components["schemas"]["UsageReportResponse"];
-export type UsageGranularity = components["schemas"]["UsageGranularity"];
+export type FeedbackCreateRequest = Corti.agentic.contexts.tasks.AgenticFeedbackCreateRequest;
+export type FeedbackResponse = Corti.AgenticFeedbackResponse;
+export type FeedbackListResponse = Corti.AgenticFeedbackListResponse;
 
-export type ErrorResponse = components["schemas"]["CommonErrorResponse"];
-export type A2AErrorResponse = components["schemas"]["A2AErrorResponse"];
+export type UsageReportResponse = Corti.AgentsUsageReportResponse;
+export type UsageGranularity = Corti.AgentsUsageGranularity;
 
-export type PageToken = components["parameters"]["PageToken"];
+export type ErrorResponse = Corti.CommonErrorResponse;
 
 export type TextPart = { text: string };
 export type DataPart = { data: Record<string, unknown> };
