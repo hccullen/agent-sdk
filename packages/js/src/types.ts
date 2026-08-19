@@ -36,7 +36,7 @@ export type TaskListResponse = Corti.CommonTaskListResponse;
 export type Artifact = Corti.CommonArtifactResponse;
 export type Usage = Corti.CommonUsage;
 
-export type SendMessageRequest = Corti.A2ASendMessageRequest;
+export type SendMessageRequest = Corti.AgenticAgentsSendMessageRequest;
 
 export interface SendMessageResponse {
   task?: Corti.CommonTaskResponse;

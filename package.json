@@ -14,7 +14,7 @@
     "docs:preview": "vitepress preview docs"
   },
   "overrides": {
-    "@corti/sdk": "4.3.0-beta"
+    "@corti/sdk": "5.0.0"
   },
   "devDependencies": {
     "vitepress": "^1.6.4",

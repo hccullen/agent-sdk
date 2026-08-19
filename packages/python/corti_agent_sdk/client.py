@@ -7,6 +7,11 @@ from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 import httpx
 
+# ── Package identity ─────────────────────────────────────────────────────────
+
+PKG_NAME = "corti-agent-sdk"
+PKG_VERSION = "0.1.0a0"
+
 # ── Predefined environments ──────────────────────────────────────────────────
 
 ENVIRONMENTS: Dict[str, Dict[str, str]] = {
@@ -116,9 +121,19 @@ class CortiClient:
 
     async def _auth_headers(self) -> Dict[str, str]:
         token = await self._get_token()
+        analytics = _json.dumps(
+            {
+                "sdk_type": "python",
+                "sdk_version": PKG_VERSION,
+                "integration": PKG_NAME,
+                "integration_version": f"v{PKG_VERSION}",
+            },
+            separators=(",", ":"),
+        )
         return {
             "Authorization": f"Bearer {token}",
             "Tenant-Name": self.tenant_name,
+            "x-corti-analytics": analytics,
         }
 
     # ── HTTP helpers ──────────────────────────────────────────────────────────

@@ -16,8 +16,7 @@
   },
   "files": [
     "dist",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -50,12 +49,11 @@
     "llm"
   ],
   "author": "Corti <developer@corti.ai>",
-  "license": "MIT",
   "peerDependencies": {
-    "@corti/sdk": ">=4.3.0-beta"
+    "@corti/sdk": ">=5.0.0"
   },
   "devDependencies": {
-    "@corti/sdk": "4.3.0-beta",
+    "@corti/sdk": "5.0.0",
     "@types/js-yaml": "^4.0.9",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"

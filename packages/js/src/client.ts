@@ -5,6 +5,7 @@ import { RegistryResource } from "./registry.js";
 import { UsageResource } from "./usage.js";
 import { FeedbackResource } from "./feedback.js";
 import { AgentCardResource } from "./agentCard.js";
+import { PKG_NAME, PKG_VERSION } from "./version.js";
 
 export interface CortiClientOptions {
   /**
@@ -69,6 +70,7 @@ export class CortiClient {
       }
       if (opts.tenant) sdkOpts.tenantName = opts.tenant;
       if (opts.fetch) sdkOpts.fetch = opts.fetch;
+      sdkOpts.analytics = { integration: PKG_NAME, integration_version: `v${PKG_VERSION}` };
 
       this.sdk = new SdkCortiClient(sdkOpts as ConstructorParameters<typeof SdkCortiClient>[0]);
     }
