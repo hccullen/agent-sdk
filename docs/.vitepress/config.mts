@@ -1,7 +1,7 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
-  title: "@corti/agent-sdk",
+  title: "@newsioaps/agent-sdk",
   description: "Developer-friendly wrapper for building agents with the Corti SDK.",
   lang: "en-US",
   cleanUrls: true,
@@ -21,12 +21,11 @@ export default defineConfig({
 
   themeConfig: {
     logo: "/logo.svg",
-    siteTitle: "@corti/agent-sdk",
+    siteTitle: "@newsioaps/agent-sdk",
 
     nav: [
       { text: "Docs", link: "/" },
       { text: "Examples", link: "/examples/01-hello-agent" },
-      { text: "Python SDK", link: "/python/" },
       {
         text: "Links",
         items: [
@@ -62,7 +61,7 @@ export default defineConfig({
         {
           text: "Getting started",
           items: [
-            { text: "Introduction", link: "/#corti-agent-sdk" },
+            { text: "Introduction", link: "/#newsioaps-agent-sdk" },
             { text: "Install", link: "/#install" },
             { text: "Quick start", link: "/#quick-start" },
           ],
@@ -93,7 +92,6 @@ export default defineConfig({
           items: [
             { text: "API reference", link: "/#api-reference" },
             { text: "Examples", link: "/#examples" },
-            { text: "Python SDK", link: "/python/" },
           ],
         },
       ],
@@ -116,35 +114,6 @@ export default defineConfig({
           text: "Reference",
           items: [
             { text: "← Docs home", link: "/" },
-            { text: "Python SDK →", link: "/python/" },
-          ],
-        },
-      ],
-
-      "/python/": [
-        {
-          text: "Python SDK",
-          items: [
-            { text: "Overview", link: "/python/" },
-          ],
-        },
-        {
-          text: "Python examples",
-          items: [
-            { text: "01 · Hello, agent", link: "/python/01-hello-agent" },
-            { text: "02 · Connectors", link: "/python/02-connectors" },
-            { text: "03 · Workflow", link: "/python/03-workflow" },
-            { text: "04 · Parallel fan-out", link: "/python/04-parallel" },
-            { text: "05 · Streaming", link: "/python/05-streaming" },
-            { text: "06 · Credentials", link: "/python/06-credentials" },
-            { text: "07 · State graph", link: "/python/07-state-graph" },
-          ],
-        },
-        {
-          text: "Reference",
-          items: [
-            { text: "← Docs home", link: "/" },
-            { text: "TypeScript Examples →", link: "/examples/01-hello-agent" },
           ],
         },
       ],

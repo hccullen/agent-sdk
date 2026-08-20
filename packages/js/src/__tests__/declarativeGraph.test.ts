@@ -11,8 +11,9 @@ import {
   validateStateSchema,
 } from "../declarativeGraph.js";
 import type { WorkflowDefinition } from "../declarativeGraph.js";
-import type { CortiClient } from "../client.js";
+import type { AgentHandleFactory } from "../handle.js";
 import type { Agent } from "../types.js";
+import { MessageResponse } from "../response.js";
 import { stateGraph, END } from "../stateGraph.js";
 
 function mockAgent(id: string, name: string): Agent {
@@ -41,38 +42,26 @@ function mockTaskResponse(text: string) {
   };
 }
 
-function mockClient(agentResponses: Record<string, string> = {}): CortiClient {
-  const agents = new Map<string, Agent>();
-  const responseTexts = new Map<string, string>();
-  for (const [id, responseText] of Object.entries(agentResponses)) {
-    agents.set(id, mockAgent(id, id));
-    responseTexts.set(id, responseText);
-  }
-
-  return {
-    agents: {
-      get: vi.fn().mockImplementation(async (agentId: string) => {
-        const agent = agents.get(agentId);
-        if (!agent) throw new Error(`Agent not found: ${agentId}`);
-        return agent;
-      }),
-    },
-    sdk: {
-      agentic: {
-        agents: {
-          sendMessage: vi.fn().mockImplementation(async (agentId: string, _body: unknown) => {
-            const text = responseTexts.get(agentId) ?? "J45.909";
-            return mockTaskResponse(text);
-          }),
-          get: vi.fn().mockImplementation(async (agentId: string) => {
-            const agent = agents.get(agentId);
-            if (!agent) throw new Error(`Agent not found: ${agentId}`);
-            return agent;
-          }),
-        },
-      },
-    },
-  } as unknown as CortiClient;
+function mockFactory(agentResponses: Record<string, string> = {}): AgentHandleFactory {
+  const responseTexts = new Map(Object.entries(agentResponses));
+  return async (agentId: string) => {
+    const text = responseTexts.get(agentId) ?? "J45.909";
+    const handle = {
+      run: vi.fn().mockResolvedValue(
+        new MessageResponse({
+          task: {
+            id: "task.1",
+            contextId: "ctx.1",
+            status: {
+              state: "TASK_STATE_COMPLETED",
+              message: { role: "ROLE_AGENT", parts: [{ text }], messageId: "msg.1" },
+            },
+          },
+        })
+      ),
+    };
+    return handle as unknown as import("../handle.js").AgentHandle;
+  };
 }
 
 function triageWorkflow(): WorkflowDefinition {
@@ -148,8 +137,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-a": "urgent", "agent-b": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-a": "urgent", "agent-b": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "asthma" });
 
     expect(result.state.severity).toBe("urgent");
@@ -161,8 +150,8 @@ describe("DeclarativeGraph", () => {
 
   it("supports conditional routing via switch", async () => {
     const def = triageWorkflow();
-    const client = mockClient({ "agent-triage": "urgent", "agent-coder": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-triage": "urgent", "agent-coder": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "asthma" });
 
     expect(result.state.severity).toBe("urgent");
@@ -173,9 +162,9 @@ describe("DeclarativeGraph", () => {
 
   it("routes to end when switch condition is false", async () => {
     const def = triageWorkflow();
-    const client = mockClient({ "agent-triage": "mild", "agent-coder": "J45.909" });
+    const factory = mockFactory({ "agent-triage": "mild", "agent-coder": "J45.909" });
 
-    const compiled = await compileWorkflow(def, client);
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "cough" });
 
     expect(result.state.severity).toBe("mild");
@@ -214,8 +203,8 @@ describe("DeclarativeGraph", () => {
       max_iterations: 3,
     };
 
-    const client = mockClient({ "agent-loop": "looping" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-loop": "looping" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.terminatedBy).toBe("maxIterations");
@@ -244,8 +233,8 @@ describe("DeclarativeGraph", () => {
       max_iterations: 5,
     };
 
-    const client = mockClient({ "agent-loop": "looping" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-loop": "looping" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.terminatedBy).toBe("maxIterations");
@@ -270,8 +259,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "orphan" }],
     };
 
-    const client = mockClient({ "agent-x": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-x": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.terminatedBy).toBe("noEdge");
@@ -295,8 +284,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-a": "J45.909" });
-    await expect(compileWorkflow(def, client)).rejects.toThrow();
+    const factory = mockFactory({ "agent-a": "J45.909" });
+    await expect(compileWorkflow(def, factory)).rejects.toThrow();
   });
 
   it("agent_call wraps AgentHandle and merges response into state", async () => {
@@ -320,12 +309,11 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-1": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-1": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "asthma" });
 
     expect(result.state.result).toBe("J45.909");
-    expect(client.agents.get).toHaveBeenCalledWith("agent-1");
   });
 
   it("rejects invalid JSON: missing document", () => {
@@ -400,8 +388,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-1": "bad" });
-    await expect(compileWorkflow(def, client)).rejects.toThrow();
+    const factory = mockFactory({ "agent-1": "bad" });
+    await expect(compileWorkflow(def, factory)).rejects.toThrow();
   });
 
   it("supports agent-decided routing via route_from", async () => {
@@ -432,8 +420,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "decider" }],
     };
 
-    const client = mockClient({ "agent-1": "coder", "agent-2": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-1": "coder", "agent-2": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.state.choice).toBe("coder");
@@ -465,8 +453,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-1": "J45.909" });
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory({ "agent-1": "J45.909" });
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "asthma" });
 
     expect(result.state.codes).toBe("J45.909");
@@ -515,12 +503,12 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({
+    const factory = mockFactory({
       "agent-er": "J45.909",
       "agent-coder": "J45.909",
     });
 
-    const compiled = await compileWorkflow(def, client);
+    const compiled = await compileWorkflow(def, factory);
 
     const urgentResult = await runWorkflow(compiled, { severity: "urgent" });
     expect(urgentResult.state.result).toBe("J45.909");
@@ -554,8 +542,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient({ "agent-1": "J45.909" });
-    const result = await executeWorkflow(json, client, { note: "asthma" });
+    const factory = mockFactory({ "agent-1": "J45.909" });
+    const result = await executeWorkflow(json, factory, { note: "asthma" });
 
     expect(result.state.result).toBe("J45.909");
     expect(result.iterations).toBe(1);
@@ -584,8 +572,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { note: "asthma", severity: "urgent" });
 
     expect(result.state.full_text).toBe("asthma — severity: urgent");
@@ -616,8 +604,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "decide" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.state.tier).toBe("A");
@@ -650,36 +638,33 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: {
-        forEach: (cb: (value: string, key: string) => void) => {
-          cb("application/json", "content-type");
+    const mockHttpPort = {
+      fetch: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          forEach: (cb: (value: string, key: string) => void) => {
+            cb("application/json", "content-type");
+          },
+          get: (name: string) => (name === "content-type" ? "application/json" : null),
         },
-        get: (name: string) => (name === "content-type" ? "application/json" : null),
-      },
-      json: async () => ({ name: "John Doe", age: 42 }),
-      text: async () => JSON.stringify({ name: "John Doe", age: 42 }),
-    }) as unknown as typeof fetch;
+        json: async () => ({ name: "John Doe", age: 42 }),
+        text: async () => JSON.stringify({ name: "John Doe", age: 42 }),
+      }),
+    };
 
-    try {
-      const client = mockClient();
-      const compiled = await compileWorkflow(def, client);
-      const result = await runWorkflow(compiled, { patientId: "123", token: "abc" });
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
+    const result = await runWorkflow(compiled, { patientId: "123", token: "abc" }, { httpPort: mockHttpPort });
 
-      expect(result.state.patient_name).toBe("John Doe");
-      expect(result.state.patient_age).toBe(42);
-      expect(result.iterations).toBe(1);
-      expect(result.terminatedBy).toBe("end");
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        "https://api.example.com/patients/123",
-        expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer abc" } }),
-      );
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    expect(result.state.patient_name).toBe("John Doe");
+    expect(result.state.patient_age).toBe(42);
+    expect(result.iterations).toBe(1);
+    expect(result.terminatedBy).toBe("end");
+    expect(mockHttpPort.fetch).toHaveBeenCalledWith(
+      "https://api.example.com/patients/123",
+      expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer abc" } }),
+    );
   });
 
   it("http_call throws on non-2xx response", async () => {
@@ -703,25 +688,22 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      headers: {
-        forEach: () => {},
-        get: () => "text/plain",
-      },
-      json: async () => ({}),
-      text: async () => "Not Found",
-    }) as unknown as typeof fetch;
+    const mockHttpPort = {
+      fetch: vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: {
+          forEach: () => {},
+          get: () => "text/plain",
+        },
+        json: async () => ({}),
+        text: async () => "Not Found",
+      }),
+    };
 
-    try {
-      const client = mockClient();
-      const compiled = await compileWorkflow(def, client);
-      await expect(runWorkflow(compiled, {})).rejects.toThrow("404");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
+    await expect(runWorkflow(compiled, {}, { httpPort: mockHttpPort })).rejects.toThrow("404");
   });
 
   it("http_call supports POST with body", async () => {
@@ -746,34 +728,31 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const originalFetch = globalThis.fetch;
     let capturedBody: string | undefined;
-    globalThis.fetch = vi.fn().mockImplementation((_url: string, opts: RequestInit) => {
-      capturedBody = opts.body as string;
-      return Promise.resolve({
-        ok: true,
-        status: 201,
-        headers: {
-          forEach: (cb: (value: string, key: string) => void) => {
-            cb("application/json", "content-type");
+    const mockHttpPort = {
+      fetch: vi.fn().mockImplementation((_url: string, opts: { method: string; headers: Record<string, string>; body?: string }) => {
+        capturedBody = opts.body;
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          headers: {
+            forEach: (cb: (value: string, key: string) => void) => {
+              cb("application/json", "content-type");
+            },
+            get: (name: string) => (name === "content-type" ? "application/json" : null),
           },
-          get: (name: string) => (name === "content-type" ? "application/json" : null),
-        },
-        json: async () => ({ id: "new-123" }),
-        text: async () => '{"id":"new-123"}',
-      });
-    }) as unknown as typeof fetch;
+          json: async () => ({ id: "new-123" }),
+          text: async () => '{"id":"new-123"}',
+        });
+      }),
+    };
 
-    try {
-      const client = mockClient();
-      const compiled = await compileWorkflow(def, client);
-      const result = await runWorkflow(compiled, { itemName: "widget" });
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
+    const result = await runWorkflow(compiled, { itemName: "widget" }, { httpPort: mockHttpPort });
 
-      expect(result.state.created_id).toBe("new-123");
-      expect(JSON.parse(capturedBody!)).toEqual({ name: "widget" });
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    expect(result.state.created_id).toBe("new-123");
+    expect(JSON.parse(capturedBody!)).toEqual({ name: "widget" });
   });
 
   it("interrupt pauses and resumes with onInterrupt callback", async () => {
@@ -799,8 +778,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "review" }, { source: "finalize", target: "__end__" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
 
     const onInterrupt = vi.fn().mockResolvedValue("yes");
     const result = await runWorkflow(compiled, { codes: "J45.909" }, { onInterrupt });
@@ -835,8 +814,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "review" }, { source: "finalize", target: "__end__" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
 
     const result = await runWorkflow(compiled, {}, { onInterrupt: async () => "no" });
 
@@ -863,91 +842,89 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
 
     await expect(runWorkflow(compiled, {})).rejects.toThrow("onInterrupt");
   });
 
   it("combined workflow: agent_call → set_state → http_call → interrupt → end", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: {
-        forEach: (cb: (value: string, key: string) => void) => {
-          cb("application/json", "content-type");
+    const mockHttpPort = {
+      fetch: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          forEach: (cb: (value: string, key: string) => void) => {
+            cb("application/json", "content-type");
+          },
+          get: (name: string) => (name === "content-type" ? "application/json" : null),
         },
-        get: (name: string) => (name === "content-type" ? "application/json" : null),
-      },
-      json: async () => ({ validated: true }),
-      text: async () => '{"validated":true}',
-    }) as unknown as typeof fetch;
+        json: async () => ({ validated: true }),
+        text: async () => '{"validated":true}',
+      }),
+    };
 
-    try {
-      const def: WorkflowDefinition = {
-        document: { name: "combined", version: "1.0.0" },
-        nodes: [
-          {
-            id: "triage",
-            type: "agent_call",
-            config: {
-              agent: "agent-triage",
-              input: "state.note",
-              output: { severity: "response.text" },
-            },
+    const def: WorkflowDefinition = {
+      document: { name: "combined", version: "1.0.0" },
+      nodes: [
+        {
+          id: "triage",
+          type: "agent_call",
+          config: {
+            agent: "agent-triage",
+            input: "state.note",
+            output: { severity: "response.text" },
           },
-          {
-            id: "enrich",
-            type: "set_state",
-            config: {
-              set: { label: "state.severity + ' priority'" },
-            },
+        },
+        {
+          id: "enrich",
+          type: "set_state",
+          config: {
+            set: { label: "state.severity + ' priority'" },
           },
-          {
-            id: "validate",
-            type: "http_call",
-            config: {
-              url: "'https://api.example.com/validate'",
-              method: "POST",
-              body: "{\"severity\": state.severity}",
-              output: { validated: "response.body.validated" },
-            },
+        },
+        {
+          id: "validate",
+          type: "http_call",
+          config: {
+            url: "'https://api.example.com/validate'",
+            method: "POST",
+            body: "{\"severity\": state.severity}",
+            output: { validated: "response.body.validated" },
           },
-          {
-            id: "review",
-            type: "interrupt",
-            config: {
-              prompt: "'Severity: ' + state.severity + '. Validated: ' + (state.validated ? 'yes' : 'no') + '. Approve?'",
-              field: "approved",
-              route_from: "state.approved == 'yes' ? '__end__' : '__end__'",
-            },
+        },
+        {
+          id: "review",
+          type: "interrupt",
+          config: {
+            prompt: "'Severity: ' + state.severity + '. Validated: ' + (state.validated ? 'yes' : 'no') + '. Approve?'",
+            field: "approved",
+            route_from: "state.approved == 'yes' ? '__end__' : '__end__'",
           },
-          { id: "__end__", type: "end" },
-        ],
-        edges: [
-          { source: "__start__", target: "triage" },
-          { source: "triage", target: "enrich" },
-          { source: "enrich", target: "validate" },
-          { source: "validate", target: "review" },
-        ],
-      };
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "triage" },
+        { source: "triage", target: "enrich" },
+        { source: "enrich", target: "validate" },
+        { source: "validate", target: "review" },
+      ],
+    };
 
-      const client = mockClient({ "agent-triage": "urgent" });
-      const compiled = await compileWorkflow(def, client);
-      const result = await runWorkflow(compiled, { note: "asthma" }, {
-        onInterrupt: async () => "yes",
-      });
+    const factory = mockFactory({ "agent-triage": "urgent" });
+    const compiled = await compileWorkflow(def, factory);
+    const result = await runWorkflow(compiled, { note: "asthma" }, {
+      onInterrupt: async () => "yes",
+      httpPort: mockHttpPort,
+    });
 
-      expect(result.state.severity).toBe("urgent");
-      expect(result.state.label).toBe("urgent priority");
-      expect(result.state.validated).toBe(true);
-      expect(result.state.approved).toBe("yes");
-      expect(result.iterations).toBe(4);
-      expect(result.terminatedBy).toBe("end");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    expect(result.state.severity).toBe("urgent");
+    expect(result.state.label).toBe("urgent priority");
+    expect(result.state.validated).toBe(true);
+    expect(result.state.approved).toBe("yes");
+    expect(result.iterations).toBe(4);
+    expect(result.terminatedBy).toBe("end");
   });
 
   it("wait node delays execution by duration", async () => {
@@ -973,8 +950,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const start = Date.now();
     const result = await runWorkflow(compiled, {});
     const elapsed = Date.now() - start;
@@ -983,6 +960,42 @@ describe("DeclarativeGraph", () => {
     expect(result.state.done).toBe(true);
     expect(result.iterations).toBe(2);
     expect(result.terminatedBy).toBe("end");
+  });
+
+  it("wait node uses injected timerPort instead of setTimeout", async () => {
+    const def: WorkflowDefinition = {
+      document: { name: "wait-port", version: "1.0.0" },
+      nodes: [
+        {
+          id: "wait",
+          type: "wait",
+          config: { duration: "5" },
+        },
+        {
+          id: "after",
+          type: "set_state",
+          config: { set: { done: "true" } },
+        },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "wait" },
+        { source: "wait", target: "after" },
+        { source: "after", target: "__end__" },
+      ],
+    };
+
+    const mockTimerPort = { wait: vi.fn().mockResolvedValue(undefined) };
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
+    const start = Date.now();
+    const result = await runWorkflow(compiled, {}, { timerPort: mockTimerPort });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(50);
+    expect(mockTimerPort.wait).toHaveBeenCalledWith(5000);
+    expect(result.state.done).toBe(true);
+    expect(result.iterations).toBe(2);
   });
 
   it("wait node with until in the past executes immediately", async () => {
@@ -1003,8 +1016,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const start = Date.now();
     const result = await runWorkflow(compiled, {});
     const elapsed = Date.now() - start;
@@ -1036,8 +1049,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "wait" }, { source: "a", target: "__end__" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, { go: "a" });
 
     expect(result.state.reached).toBe(true);
@@ -1057,8 +1070,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     await expect(runWorkflow(compiled, {})).rejects.toThrow("duration or until");
   });
 
@@ -1101,8 +1114,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.state.a_val).toBe(1);
@@ -1147,8 +1160,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const result = await runWorkflow(compiled, {});
 
     expect(result.state.winner).toBe("fast");
@@ -1191,8 +1204,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     await expect(runWorkflow(compiled, {})).rejects.toThrow("Parallel branch failed");
   });
 
@@ -1327,8 +1340,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client, {
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory, {
       enrichFn: async (state) => ({ enriched: (state.note as string).toUpperCase() }),
     });
     const result = await runWorkflow(compiled, { note: "asthma" });
@@ -1358,8 +1371,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client, {
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory, {
       fetchFn: async () => ({ tag: "urgent", count: 42 }),
     });
     const result = await runWorkflow(compiled, {});
@@ -1390,8 +1403,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "decide" }, { source: "process", target: "__end__" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client, {
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory, {
       decideFn: async () => ({ tier: "A" }),
     });
     const result = await runWorkflow(compiled, {});
@@ -1414,8 +1427,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     await expect(runWorkflow(compiled, {})).rejects.toThrow("No handler registered");
   });
 
@@ -1432,8 +1445,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client, {
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory, {
       fn: async () => ({ value: "compiled" }),
     });
     const result = await runWorkflow(compiled, {}, {
@@ -1486,8 +1499,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const gen = runWorkflowInteractive(compiled, { codes: "J45.909" });
 
     const first = await gen.next();
@@ -1530,8 +1543,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const gen = runWorkflowInteractive(compiled, {});
     const first = await gen.next();
     const interrupt = first.value as { kind: string; checkpoint: string };
@@ -1560,8 +1573,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const gen = runWorkflowInteractive(compiled, {});
 
     const result = await gen.next();
@@ -1592,8 +1605,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
     const gen = runWorkflowInteractive(compiled, { data: "test" });
     const first = await gen.next();
     const interrupt = first.value as { kind: string; checkpoint: string };
@@ -1628,8 +1641,8 @@ describe("DeclarativeGraph", () => {
       ],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
 
     const gen1 = runWorkflowInteractive(compiled, {});
     const first = await gen1.next();
@@ -1656,8 +1669,8 @@ describe("DeclarativeGraph", () => {
       edges: [{ source: "__start__", target: "__end__" }],
     };
 
-    const client = mockClient();
-    const compiled = await compileWorkflow(def, client);
+    const factory = mockFactory();
+    const compiled = await compileWorkflow(def, factory);
 
     await expect(
       (async () => {

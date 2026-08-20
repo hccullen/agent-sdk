@@ -1,7 +1,7 @@
 import { AgentHandle } from "./handle.js";
+import type { AgentHandleFactory } from "./handle.js";
 import { MessageResponse } from "./response.js";
 import type { Part } from "./types.js";
-import type { CortiClient } from "./client.js";
 import {
   compileWorkflow,
   runWorkflow,
@@ -27,12 +27,12 @@ export type EdgeRouter<S extends AnyState> =
   | ((state: S) => string | END);
 
 export class StateGraph<S extends AnyState> {
-  private readonly _client: CortiClient | undefined;
+  private readonly _factory: AgentHandleFactory | undefined;
   private readonly _nodes = new Map<string, NodeFn<S>>();
   private readonly _edges = new Map<string, EdgeRouter<S>>();
 
-  constructor(client?: CortiClient) {
-    this._client = client;
+  constructor(factory?: AgentHandleFactory) {
+    this._factory = factory;
   }
 
   addNode(name: string, fn: NodeFn<S>): this {
@@ -53,7 +53,7 @@ export class StateGraph<S extends AnyState> {
     const { def, handlers } = this._build(entryNode);
     const compiled = await compileWorkflow(
       def,
-      this._client ?? {} as CortiClient,
+      this._factory,
       handlers,
     );
     return runWorkflow(compiled, initialState, opts) as Promise<import("./declarativeGraph.js").StateGraphResult<S>>;
@@ -77,7 +77,7 @@ export class StateGraph<S extends AnyState> {
         handlers[handlerName] = async (state: AnyState) => {
           const delta = await fn(state as S);
           const target = routeFn({ ...state, ...delta } as S);
-          return { ...delta, __next: target === END ? "__end__" : target };
+          return { delta, next: target === END ? "__end__" : target };
         };
         nodes.push({
           id: name,
@@ -117,8 +117,8 @@ export class StateGraph<S extends AnyState> {
   }
 }
 
-export function stateGraph<S extends AnyState>(client?: CortiClient): StateGraph<S> {
-  return new StateGraph<S>(client);
+export function stateGraph<S extends AnyState>(factory?: AgentHandleFactory): StateGraph<S> {
+  return new StateGraph<S>(factory);
 }
 
 export function agentNode<S extends AnyState>(

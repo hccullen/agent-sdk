@@ -98,22 +98,16 @@ describe("StateGraph", () => {
 
   it("agentNode wraps an AgentHandle", async () => {
     const mockClient = {
-      sdk: {
-        agentic: {
-          agents: {
-            sendMessage: vi.fn().mockResolvedValue({
-              task: {
-                id: "task.1",
-                contextId: "ctx.1",
-                status: {
-                  state: "TASK_STATE_COMPLETED",
-                  message: { role: "ROLE_AGENT", parts: [{ text: "J45.909" }], messageId: "msg.1" },
-                },
-              },
-            }),
+      sendMessage: vi.fn().mockResolvedValue({
+        task: {
+          id: "task.1",
+          contextId: "ctx.1",
+          status: {
+            state: "TASK_STATE_COMPLETED",
+            message: { role: "ROLE_AGENT", parts: [{ text: "J45.909" }], messageId: "msg.1" },
           },
         },
-      },
+      }),
     } as unknown as CortiClient;
 
     const agent = new AgentHandle(

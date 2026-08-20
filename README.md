@@ -1,15 +1,13 @@
 # agent-sdk
 
 Developer-friendly wrappers around the Corti SDK for building multi-agent
-systems. TypeScript and Python are kept in lockstep and share the same API
-shape.
+systems in TypeScript.
 
 ## Packages
 
 | Path                  | Package               | Language   |
 | --------------------- | --------------------- | ---------- |
 | `packages/js/`        | `@newsioaps/agent-sdk`    | TypeScript |
-| `packages/python/`    | `corti-agent-sdk`     | Python     |
 
 ## Quick links
 

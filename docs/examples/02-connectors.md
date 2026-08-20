@@ -37,7 +37,7 @@ MCP_URL=https://my-mcp.example.com MCP_TOKEN=sk-... npm run connectors
 
 ## Connector types
 
-All connectors are created with the `connectors` helper exported from `@corti/agent-sdk`. Pass the result array to `agents.create({ connectors: [...] })` or `agent.update({ connectors: [...] })`.
+All connectors are created with the `connectors` helper exported from `@newsioaps/agent-sdk`. Pass the result array to `agents.create({ connectors: [...] })` or `agent.update({ connectors: [...] })`.
 
 | Factory | Underlying type | Required fields | Optional fields |
 |---|---|---|---|
@@ -133,7 +133,7 @@ Source: `examples/ts/02-connectors.ts`
  *
  * Run: `npm run connectors`
  */
-import { AgentsClient, connectors } from "@corti/agent-sdk";
+import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {

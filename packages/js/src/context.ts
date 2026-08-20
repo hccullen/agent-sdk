@@ -5,7 +5,6 @@ import { MessageResponse } from "./response.js";
 import type {
   Part,
   SendMessageRequest,
-  SendMessageResponse,
   StreamResponse,
   Task,
 } from "./types.js";
@@ -68,11 +67,11 @@ export class AgentContext {
     const body = this.buildRequest(parts, opts);
 
     try {
-      const result = await this._client.sdk.agentic.agents.sendMessage(
+      const result = await this._client.sendMessage(
         this._agentId,
         body,
         { abortSignal: controller.signal },
-      ) as SendMessageResponse;
+      );
 
       if (this._contextId === undefined && result.task?.contextId) {
         this._contextId = result.task.contextId;
@@ -96,13 +95,13 @@ export class AgentContext {
     const body = this.buildRequest(parts);
 
     try {
-      const stream = await this._client.sdk.agentic.agents.streamMessage(
+      const stream = await this._client.streamMessage(
         this._agentId,
         body,
         { abortSignal: controller.signal },
       );
 
-      for await (const event of stream as AsyncIterable<StreamResponse>) {
+      for await (const event of stream) {
         if (this._contextId === undefined) {
           const cid =
             (event as { task?: { contextId?: string } }).task?.contextId ??
@@ -119,10 +118,9 @@ export class AgentContext {
   async getTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      return await this._client.sdk.agentic.agents.tasks.get(
+      return await this._client.getTask(
         this._agentId,
         taskId,
-        undefined,
         { abortSignal: controller.signal },
       );
     } finally {
@@ -133,7 +131,7 @@ export class AgentContext {
   async cancelTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      return await this._client.sdk.agentic.agents.tasks.cancel(
+      return await this._client.cancelTask(
         this._agentId,
         taskId,
         { abortSignal: controller.signal },

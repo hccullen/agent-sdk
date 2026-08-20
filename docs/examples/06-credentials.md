@@ -154,7 +154,7 @@ Source: `examples/ts/06-credentials.ts`
  *
  * Run: `npm run credentials`
  */
-import { AgentsClient, connectors } from "@corti/agent-sdk";
+import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {

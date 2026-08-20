@@ -58,19 +58,28 @@ describe("CortiClient", () => {
     });
   });
 
-  describe("sdk access", () => {
-    it("exposes the underlying @corti/sdk client", () => {
+  describe("messaging methods", () => {
+    it("exposes sendMessage, streamMessage, getTask, cancelTask", () => {
       const c = makeClient();
-      expect(c.sdk).toBeDefined();
-      expect(c.agentic).toBeDefined();
+      expect(c.sendMessage).toBeDefined();
+      expect(c.streamMessage).toBeDefined();
+      expect(c.getTask).toBeDefined();
+      expect(c.cancelTask).toBeDefined();
+    });
+
+    it("exposes createAgentHandle and agentHandleFactory", () => {
+      const c = makeClient();
+      expect(c.createAgentHandle).toBeDefined();
+      expect(c.agentHandleFactory).toBeDefined();
     });
   });
 
   describe("sdkClient auth", () => {
     it("accepts an sdkClient instance", () => {
-      const sdkClient = makeClient();
-      const c = new CortiClient({ sdkClient: sdkClient.sdk });
-      expect(c.sdk).toBe(sdkClient.sdk);
+      const mockSdk = { agentic: { agents: {} } };
+      const c = new CortiClient({ sdkClient: mockSdk as never });
+      expect(c).toBeDefined();
+      expect(c.agents).toBeDefined();
     });
 
     it("throws when no auth source is provided", () => {

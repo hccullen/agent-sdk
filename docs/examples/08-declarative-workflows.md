@@ -83,7 +83,7 @@ Each node has a `type` and a `config` object. The config fields are CEL expressi
 | `interrupt` | Pause execution and ask an external actor (human-in-the-loop). | `prompt`, `field`, `route_from?` |
 | `wait` | Delay execution for a duration or until a timestamp. | `duration?` (seconds), `until?` (ISO 8601), `route_from?` |
 | `parallel` | Run multiple sub-graphs concurrently, then join. | `branches: [{ name, node, input }]`, `join: "all" \| "any"`, `output`, `route_from?` |
-| `callback` | Run an arbitrary TypeScript / Python handler registered by name. | `handler` (name), `output?`, `route_from?` |
+| `callback` | Run an arbitrary handler function registered by name. | `handler` (name), `output?`, `route_from?` |
 | `end` | Terminate the run. No config. | — |
 
 ### `agent_call`
@@ -177,7 +177,7 @@ handlers["normaliseFn"] = async (state) => ({
 });
 ```
 
-`callback` is the escape hatch for logic that doesn't fit a CEL expression — arbitrary TypeScript / Python code, database queries, SDK calls, etc. The handler receives the current state and returns a partial state patch. If `output` is omitted, all fields from the handler result (except `__next`) are merged directly. A handler can set `__next` in its return value to override routing.
+`callback` is the escape hatch for logic that doesn't fit a CEL expression — arbitrary code, database queries, SDK calls, etc. The handler receives the current state and returns a partial state patch. If `output` is omitted, all fields from the handler result (except `__next`) are merged directly. A handler can set `__next` in its return value to override routing.
 
 ## CEL expressions
 
@@ -453,7 +453,7 @@ import {
   analyzeGraphStructure,
   runWorkflowInteractive,
   resumeWorkflow,
-} from "@corti/agent-sdk";
+} from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {

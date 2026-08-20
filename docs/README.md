@@ -1,6 +1,6 @@
 # docs/
 
-VitePress-powered documentation site for `@corti/agent-sdk`.
+VitePress-powered documentation site for `@newsioaps/agent-sdk`.
 
 ## View locally
 
@@ -30,6 +30,6 @@ The build output is static HTML + JS. Drop `docs/.vitepress/dist/` on any
 static host — GitHub Pages, Netlify, Cloudflare Pages, S3, etc.
 
 Content lives in Markdown files: `index.md` (main docs), `examples/*.md`
-(TypeScript examples), and `python/*.md` (Python SDK docs). The VitePress
+(TypeScript examples). The VitePress
 config is in `.vitepress/config.mts`. Custom Vue components and theme
 overrides are in `.vitepress/theme/`.

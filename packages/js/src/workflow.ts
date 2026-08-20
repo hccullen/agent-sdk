@@ -76,7 +76,7 @@ export class Workflow {
         const prevResponse = stepResponses[stepResponses.length - 1];
 
         if (!isFirst && step.when !== undefined && !step.when(prevResponse)) {
-          return { __skip: true, __next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__" };
+          return { next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__" };
         }
 
         const stepInput: string | Part[] =
@@ -100,12 +100,11 @@ export class Workflow {
 
         if (response.status === "failed") {
           stoppedEarly = true;
-          return { __next: "__end__" };
+          return { next: "__end__" };
         }
 
         return {
-          __output: response.text ?? "",
-          __next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__",
+          next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__",
         };
       };
 
@@ -128,7 +127,7 @@ export class Workflow {
     };
 
     const parsed = parseWorkflowDefinition(def);
-    const compiled = await compileWorkflow(parsed, {} as never, handlers);
+    const compiled = await compileWorkflow(parsed, undefined, handlers);
     await runWorkflow(compiled, { __input: input });
 
     if (stepResponses.length === 0) {

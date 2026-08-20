@@ -327,14 +327,6 @@ The SDK's `AgentHandle.update()` maps directly to `client.PATCH()`.
 
 ---
 
-## Python SDK parity
-
-The Python SDK (`packages/python/`) will be rebuilt in parallel using
-[openapi-python-client](https://github.com/openapi-python-client/openapi-python-client)
-or a similar generator, following the same v2-only architecture. The AGENTS.md
-parity checklist will be updated to reflect the new file mapping.
-
----
 
 ## Open questions
 

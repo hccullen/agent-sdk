@@ -10,6 +10,8 @@ import type {
   StreamResponse,
 } from "./types.js";
 
+export type AgentHandleFactory = (agentId: string) => Promise<AgentHandle>;
+
 export class AgentHandle {
   private _agent: Agent;
 
@@ -89,16 +91,16 @@ export class AgentHandle {
   }
 
   async update(patch: AgentPatch): Promise<AgentHandle> {
-    const updated = await this._client.sdk.agentic.agents.update(this._agent.id, patch);
+    const updated = await this._client.agents.update(this._agent.id, patch);
     return new AgentHandle(updated, this._client);
   }
 
   async refresh(): Promise<AgentHandle> {
-    const agent = await this._client.sdk.agentic.agents.get(this._agent.id);
+    const agent = await this._client.agents.get(this._agent.id);
     return new AgentHandle(agent, this._client);
   }
 
   async delete(): Promise<void> {
-    await this._client.sdk.agentic.agents.delete(this._agent.id);
+    await this._client.agents.delete(this._agent.id);
   }
 }

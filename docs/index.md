@@ -1,9 +1,9 @@
 ---
-title: "@corti/agent-sdk — docs"
+title: "@newsioaps/agent-sdk — docs"
 description: Developer-friendly wrapper for building agents with the Corti SDK.
 ---
 
-# @corti/agent-sdk
+# @newsioaps/agent-sdk
 
 A thin, opinionated wrapper around the Corti SDK that makes building multi-agent systems feel like writing ordinary TypeScript — no raw `experts` arrays, no manual context plumbing, no boilerplate for MCP auth.
 
@@ -17,7 +17,7 @@ A thin, opinionated wrapper around the Corti SDK that makes building multi-agent
 ## Install
 
 ```bash
-npm install @corti/agent-sdk @corti/sdk
+npm install @newsioaps/agent-sdk @corti/sdk
 ```
 
 `@corti/sdk` is a peer dependency — install it alongside the wrapper.
@@ -26,7 +26,7 @@ npm install @corti/agent-sdk @corti/sdk
 
 ```typescript
 import { CortiClient } from "@corti/sdk";
-import { AgentsClient, connectors } from "@corti/agent-sdk";
+import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
 
 const client = new CortiClient({
   tenantName: "my-tenant",
@@ -125,7 +125,7 @@ Agent lifecycle (`ephemeral` vs `persistent`) is separate from conversation thre
 The `connectors` helper turns common expert types into the raw `experts` shape the API expects. Everything is typed.
 
 ```typescript
-import { connectors } from "@corti/agent-sdk";
+import { connectors } from "@newsioaps/agent-sdk";
 
 connectors.mcp({ mcpUrl: "https://mcp.example.com" });
 connectors.registry({ name: "coding-expert" });      // ICD-10 / medical coding
@@ -234,7 +234,7 @@ const r = await agent.run("What's the ICD-10 code for asthma?");
 `workflow()` builds a deterministic chain of steps. Each step's output feeds the next. Steps can be bare `AgentHandle`s, `Parallel` groups, or configuration objects with `when`, `transform`, and `retries`.
 
 ```typescript
-import { workflow, parallel } from "@corti/agent-sdk";
+import { workflow, parallel } from "@newsioaps/agent-sdk";
 
 const result = await workflow([
   summarizer,                                  // bare handle
@@ -296,7 +296,7 @@ A `StateGraph` is a routing graph that carries a typed shared-state object acros
 ### Minimal example
 
 ```typescript
-import { stateGraph, agentNode, END } from "@corti/agent-sdk";
+import { stateGraph, agentNode, END } from "@newsioaps/agent-sdk";
 
 interface TriageState {
   note: string;
@@ -386,7 +386,7 @@ Nine node types cover agent calls, conditional routing, state transforms, HTTP c
 | `interrupt` | Pause for human-in-the-loop input. |
 | `wait` | Delay for a duration or until a timestamp. |
 | `parallel` | Run sub-graphs concurrently, then join. |
-| `callback` | Run a registered TypeScript / Python handler. |
+| `callback` | Run a registered handler function. |
 | `end` | Terminate the run. |
 
 ### Minimal example
@@ -395,7 +395,7 @@ Nine node types cover agent calls, conditional routing, state transforms, HTTP c
 import {
   executeWorkflow,
   parseWorkflowDefinition,
-} from "@corti/agent-sdk";
+} from "@newsioaps/agent-sdk";
 
 const definition = {
   document: { name: "triage-flow", version: "1.0.0" },
@@ -558,7 +558,7 @@ Keys in the store are the MCP server names — either the `name` you passed to `
 
 ## Examples
 
-Every pattern on this page has a runnable counterpart under `examples/ts/`. They use the published `@corti/sdk` and the local `@corti/agent-sdk`, and clean up the agents they create. Click any row for a deep-dive walkthrough with annotated code.
+Every pattern on this page has a runnable counterpart under `examples/ts/`. They use the published `@corti/sdk` and the local `@newsioaps/agent-sdk`, and clean up the agents they create. Click any row for a deep-dive walkthrough with annotated code.
 
 | Script | Deep dive | Shows |
 |---|---|---|
@@ -572,23 +572,3 @@ Every pattern on this page has a runnable counterpart under `examples/ts/`. They
 | `npm run declarative-workflows` | [08 — Declarative workflows](/examples/08-declarative-workflows) | JSON / YAML DSL, nine node types, CEL expressions, HITL checkpoints, `toDefinition()`. |
 
 Setup: `npm install` at the repo root, copy `examples/ts/.env.example` to `.env`, then run any of the scripts above from `examples/ts/`.
-
-## Python
-
-A sibling package, `corti-agent-sdk`, provides the same API in Python — same primitives, same behaviour, Python idioms. See the [Python SDK docs](/python/) for the full reference and examples.
-
-```python
-from corti_agent_sdk import CortiClient, AgentsClient, connectors
-
-async with CortiClient(...) as client:
-    agents = AgentsClient(client)
-    agent = await agents.create(
-        name="coder",
-        description="ICD-10 codes",
-        connectors=[connectors.registry(name="coding-expert")],
-    )
-    r = await agent.create_context().send_text("Hypertension?")
-    print(r.text)
-```
-
-[→ Full Python SDK docs, API reference & examples](/python/)
