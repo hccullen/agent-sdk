@@ -141,6 +141,27 @@ describe("MessageResponse", () => {
     });
   });
 
+  describe("fromTask", () => {
+    it("fromTask wraps a task object", () => {
+      const task = {
+        id: "task.fromTask",
+        contextId: "ctx.fromTask",
+        status: { state: "TASK_STATE_COMPLETED" },
+      };
+      const r = MessageResponse.fromTask(task as never);
+      expect(r.taskId).toBe("task.fromTask");
+      expect(r.contextId).toBe("ctx.fromTask");
+      expect(r.state).toBe("TASK_STATE_COMPLETED");
+    });
+  });
+
+  describe("raw getter", () => {
+    it("raw returns {} when neither task nor message present", () => {
+      const r = new MessageResponse({});
+      expect(r.raw).toEqual({});
+    });
+  });
+
   describe("status mapping", () => {
     it.each([
       ["TASK_STATE_SUBMITTED", "submitted"],
@@ -149,6 +170,8 @@ describe("MessageResponse", () => {
       ["TASK_STATE_FAILED", "failed"],
       ["TASK_STATE_CANCELED", "canceled"],
       ["TASK_STATE_INPUT_REQUIRED", "input-required"],
+      ["TASK_STATE_AUTH_REQUIRED", "auth-required"],
+      ["TASK_STATE_REJECTED", "rejected"],
     ])("maps %s to %s", (state, expected) => {
       const r = new MessageResponse({
         task: {

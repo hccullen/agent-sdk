@@ -121,4 +121,46 @@ describe("AgentHandle", () => {
       { name: "coder-v2" },
     );
   });
+
+  it("stream wraps string input and yields events", async () => {
+    const events: import("../types.js").StreamResponse[] = [
+      { task: { id: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_WORKING" } } },
+      { statusUpdate: { taskId: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_COMPLETED" } } },
+    ];
+    const { client, mock } = makeMockClient();
+    mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
+      for (const e of events) yield e;
+    })());
+
+    const h = new AgentHandle(agentResponse, client);
+    const collected: import("../types.js").StreamResponse[] = [];
+    for await (const e of h.stream("hello")) {
+      collected.push(e);
+    }
+
+    expect(collected).toHaveLength(2);
+    const call = mock.streamMessage.mock.calls[0];
+    expect(call[1].message.parts).toEqual([{ text: "hello" }]);
+  });
+
+  it("stream passes Part[] input directly without wrapping", async () => {
+    const { client, mock } = makeMockClient();
+    mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
+      yield { task: { id: "t1", status: { state: "TASK_STATE_COMPLETED" } } };
+    })());
+
+    const h = new AgentHandle(agentResponse, client);
+    const parts = [{ text: "hello" }, { data: { foo: "bar" } }];
+    for await (const _ of h.stream(parts)) { /* drain */ }
+
+    const call = mock.streamMessage.mock.calls[0];
+    expect(call[1].message.parts).toBe(parts);
+  });
+
+  it("delete delegates to agents.delete with the agent id", async () => {
+    const { client, mock } = makeMockClient();
+    const h = new AgentHandle(agentResponse, client);
+    await h.delete();
+    expect(mock.agents.delete).toHaveBeenCalledWith(agentResponse.id);
+  });
 });
