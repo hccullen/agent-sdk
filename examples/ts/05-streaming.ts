@@ -8,7 +8,7 @@
  *
  * Run: `npm run streaming`
  */
-import { CortiClient, collectText, StreamCollector } from "@newsioaps/agent-sdk";
+import { CortiClient, collectText, StreamCollector, collectCitations, toMarkdown } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {
@@ -86,6 +86,30 @@ async function main() {
   console.log("\n");
   console.log(`Collector done: ${collector.done}`);
   console.log(`Collector text (${collector.text.length} chars): ${collector.text}`);
+
+  // ── Approach 3: collectCitations() — for search-enabled agents ─────────
+  //
+  // When an agent has a search connector, the server embeds citation
+  // metadata in the final chunk. `collectCitations()` streams text deltas
+  // just like `collectText()`, but on the final event it also extracts
+  // structured citations (offsets, URLs, titles, snippets).
+  // `toMarkdown()` renders them as inline `[n]` markers + a Sources section.
+
+  console.log("\n--- collectCitations() ---\n");
+
+  const ctx3 = handle.createContext();
+  const stream3 = await ctx3.streamMessage([
+    { text: "Who won the 2026 World Cup?" },
+  ]);
+
+  for await (const chunk of collectCitations(stream3)) {
+    if (chunk.delta) process.stdout.write(chunk.delta);
+
+    if (chunk.done) {
+      console.log("\n");
+      console.log(toMarkdown(chunk.text, chunk.citations));
+    }
+  }
 
   // Clean up the ephemeral agent
   await handle.delete();
