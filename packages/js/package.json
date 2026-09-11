@@ -55,6 +55,7 @@
   "devDependencies": {
     "@corti/sdk": "5.0.0",
     "@types/js-yaml": "^4.0.9",
+    "@vitest/coverage-v8": "^3.2.4",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
   },

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentContext } from "../context.js";
 import { MessageResponse } from "../response.js";
+import { dataPart } from "../types.js";
 import type { SendMessageResponse, StreamResponse } from "../types.js";
 
 const taskResponse: SendMessageResponse = {
@@ -134,6 +135,153 @@ describe("AgentContext", () => {
       for await (const _ of ctx.streamMessage([{ text: "Hi" }])) { /* drain */ }
 
       expect(ctx.id).toBe("stream-ctx");
+    });
+  });
+
+  it("getTask delegates to client.getTask with agent id and abort signal", async () => {
+    const mockTask = { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_COMPLETED" } };
+    const { client, mock } = makeMockClient();
+    mock.getTask = vi.fn().mockResolvedValue(mockTask);
+    const ctx = new AgentContext(client, "agent-1");
+    const result = await ctx.getTask("task.1");
+    expect(result).toEqual(mockTask);
+    expect(mock.getTask).toHaveBeenCalledWith("agent-1", "task.1", expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+  });
+
+  it("cancelTask delegates to client.cancelTask with agent id and abort signal", async () => {
+    const mockTask = { id: "task.1", status: { state: "TASK_STATE_CANCELED" } };
+    const { client, mock } = makeMockClient();
+    mock.cancelTask = vi.fn().mockResolvedValue(mockTask);
+    const ctx = new AgentContext(client, "agent-1");
+    const result = await ctx.cancelTask("task.1");
+    expect(result).toEqual(mockTask);
+    expect(mock.cancelTask).toHaveBeenCalledWith("agent-1", "task.1", expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+  });
+
+  describe("auth-required connector flow", () => {
+    // When an MCP connector with bearer auth returns 401, the task transitions
+    // to TASK_STATE_AUTH_REQUIRED. The client must then send a new message
+    // containing a data part with the token and optional headers (e.g.
+    // End-User-Id, End-User-Persona for ClinicalKey). The resume message must
+    // also include a text part — auth data parts are extracted before
+    // processing, leaving an empty parts array otherwise.
+    //
+    // Verified end-to-end against staging-eu with the clinicalkey-expert
+    // registry connector: the registry connector name is "clinicalkey-expert"
+    // but the auth-required hint returns mcp_name "clinicalkey" (the underlying
+    // MCP server name). The mcp_name in the auth data part must match the hint,
+    // not the registry connector name.
+
+    const authRequiredResponse: SendMessageResponse = {
+      task: {
+        id: "task.auth.1",
+        contextId: "ctx.auth.1",
+        status: {
+          state: "TASK_STATE_AUTH_REQUIRED",
+          message: {
+            role: "ROLE_AGENT",
+            parts: [
+              { text: "MCP server 'clinicalkey' requires authorization." },
+              { data: { mcp_name: "clinicalkey", type: "token" } },
+            ],
+            messageId: "msg.auth.1",
+          },
+        },
+      },
+    };
+
+    const completedAfterAuth: SendMessageResponse = {
+      task: {
+        id: "task.auth.1",
+        contextId: "ctx.auth.1",
+        status: {
+          state: "TASK_STATE_COMPLETED",
+          message: {
+            role: "ROLE_AGENT",
+            parts: [{ text: "Based on ClinicalKey, rest and hydrate." }],
+            messageId: "msg.auth.2",
+          },
+        },
+      },
+    };
+
+    it("detects auth-required status from MCP connector 401", async () => {
+      const { client, mock } = makeMockClient(async () => authRequiredResponse);
+      const ctx = new AgentContext(client, "agent-1");
+      const r = await ctx.sendText("What should I do if I have a fever?");
+      expect(r.status).toBe("auth-required");
+      expect(r.taskId).toBe("task.auth.1");
+    });
+
+    it("resumes by sending auth data part + text part with contextId", async () => {
+      let callCount = 0;
+      const { client, mock } = makeMockClient(async () => {
+        callCount++;
+        return callCount === 1 ? authRequiredResponse : completedAfterAuth;
+      });
+
+      const ctx = new AgentContext(client, "agent-1");
+
+      // First message → auth-required
+      const first = await ctx.sendText("What should I do if I have a fever?");
+      expect(first.status).toBe("auth-required");
+
+      // Resume with auth data + text part.
+      // The mcp_name must match the auth hint (the underlying MCP server name),
+      // which may differ from the registry connector name (e.g. "clinicalkey-expert").
+      const elsevierToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test-token";
+      const authPart = dataPart({
+        type: "token",
+        mcp_name: "clinicalkey",
+        token: elsevierToken,
+        headers: {
+          "End-User-Id": "test-user-001",
+          "End-User-Persona": "Physician",
+        },
+      });
+
+      const second = await ctx.sendMessage([
+        authPart,
+        { text: "What should I do if I have a fever?" },
+      ]);
+
+      expect(second.status).toBe("completed");
+      expect(second.text).toBe("Based on ClinicalKey, rest and hydrate.");
+
+      // Verify the resume message included contextId (taskId is matched server-side)
+      const resumeCall = mock.sendMessage.mock.calls[1];
+      const resumeBody = resumeCall[1] as { message: { contextId?: string; parts: unknown[] } };
+      expect(resumeBody.message.contextId).toBe("ctx.auth.1");
+      expect(resumeBody.message.parts).toHaveLength(2);
+    });
+
+    it("auth-required response exposes the MCP connector name hint", async () => {
+      const { client } = makeMockClient(async () => authRequiredResponse);
+      const ctx = new AgentContext(client, "agent-1");
+      const r = await ctx.sendText("question");
+      // The auth hint is in the status message parts — a data part containing
+      // the mcp_name (underlying MCP server, not the registry connector name)
+      // and type. The client must extract mcp_name from here, not assume it
+      // matches the connector name.
+      const statusParts = r.task?.status?.message?.parts ?? [];
+      const dataHint = statusParts.find((p: Record<string, unknown>) => "data" in p);
+      expect(dataHint).toBeDefined();
+      expect((dataHint as { data: Record<string, string> }).data.mcp_name).toBe("clinicalkey");
+      expect((dataHint as { data: Record<string, string> }).data.type).toBe("token");
+    });
+
+    it("mcp_name in auth hint may differ from the registry connector name", async () => {
+      // Verified against staging-eu: registry connector "clinicalkey-expert"
+      // produces an auth-required hint with mcp_name "clinicalkey".
+      // The auth data part must use the hint's mcp_name, not the connector name.
+      const { client } = makeMockClient(async () => authRequiredResponse);
+      const ctx = new AgentContext(client, "agent-1");
+      const r = await ctx.sendText("question");
+      expect(r.status).toBe("auth-required");
+      const statusParts = r.task?.status?.message?.parts ?? [];
+      const dataHint = statusParts.find((p: Record<string, unknown>) => "data" in p) as { data: { mcp_name: string } };
+      // The hint says "clinicalkey", not "clinicalkey-expert"
+      expect(dataHint.data.mcp_name).not.toMatch(/expert$/);
     });
   });
 });

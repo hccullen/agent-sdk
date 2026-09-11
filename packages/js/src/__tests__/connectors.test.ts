@@ -126,6 +126,10 @@ describe("auth factories", () => {
     });
   });
 
+  it("auth.oauth2() without args returns { type: 'oauth2' }", () => {
+    expect(auth.oauth2()).toEqual({ type: "oauth2" });
+  });
+
   it("auth.bearer() includes ref when provided", () => {
     expect(auth.bearer("secret-ref")).toEqual({ type: "bearer", ref: "secret-ref" });
   });
@@ -136,5 +140,60 @@ describe("auth factories", () => {
 
   it("auth.inherit() returns { type: 'inherit' }", () => {
     expect(auth.inherit()).toEqual({ type: "inherit" });
+  });
+});
+
+describe("auth factory round-trip via connectors.mcp", () => {
+  it("bearer auth passes through connectors.mcp unchanged", () => {
+    const c = connectors.mcp({
+      name: "test",
+      url: "https://mcp.example.com",
+      auth: auth.bearer("my-ref"),
+    });
+    expect(c.auth).toEqual({ type: "bearer", ref: "my-ref" });
+  });
+
+  it("inherit auth passes through connectors.mcp unchanged", () => {
+    const c = connectors.mcp({
+      name: "test",
+      url: "https://mcp.example.com",
+      auth: auth.inherit(),
+    });
+    expect(c.auth).toEqual({ type: "inherit" });
+  });
+
+  it("oauth2 auth passes through connectors.mcp with scope and redirectUrl", () => {
+    const c = connectors.mcp({
+      name: "test",
+      url: "https://mcp.example.com",
+      auth: auth.oauth2({ scope: "read", redirectUrl: "https://app.example.com/cb" }),
+    });
+    expect(c.auth).toEqual({
+      type: "oauth2",
+      scope: "read",
+      redirectUrl: "https://app.example.com/cb",
+    });
+  });
+
+  it("none auth passes through connectors.mcp unchanged", () => {
+    const c = connectors.mcp({
+      name: "test",
+      url: "https://mcp.example.com",
+      auth: auth.none(),
+    });
+    expect(c.auth).toEqual({ type: "none" });
+  });
+
+  // NOTE: The API docs list apiKey as a supported auth type, but the dev-weu API
+  // rejects it with "Connector auth type 'apiKey' is not supported." The SDK
+  // factory still produces the shape for forward-compatibility, but consumers
+  // should use bearer, inherit, oauth2, or none until the API supports it.
+  it("apiKey auth factory produces the right shape (API may reject)", () => {
+    const c = connectors.mcp({
+      name: "test",
+      url: "https://mcp.example.com",
+      auth: auth.apiKey("key-ref"),
+    });
+    expect(c.auth).toEqual({ type: "apiKey", ref: "key-ref" });
   });
 });

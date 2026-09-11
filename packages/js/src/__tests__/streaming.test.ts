@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseSSEStream, parseA2AStream } from "../streaming.js";
+import { describe, expect, it, vi } from "vitest";
+import { makeAbortController, parseSSEStream, parseA2AStream } from "../streaming.js";
 import type { StreamResponse } from "../types.js";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -140,5 +140,38 @@ describe("parseA2AStream", () => {
       `data: ${JSON.stringify(e1)}\n\ndata: ${JSON.stringify(e2)}\n\n`,
     ]);
     expect(results).toEqual([e1, e2]);
+  });
+});
+
+describe("makeAbortController", () => {
+  it("returns a non-aborted controller when no options given", () => {
+    const { controller, timer } = makeAbortController();
+    expect(controller.signal.aborted).toBe(false);
+    expect(timer).toBeUndefined();
+  });
+
+  it("returns an already-aborted controller when abortSignal is already aborted", () => {
+    const external = new AbortController();
+    external.abort();
+    const { controller } = makeAbortController({ abortSignal: external.signal });
+    expect(controller.signal.aborted).toBe(true);
+  });
+
+  it("aborts the controller when the external signal fires", () => {
+    const external = new AbortController();
+    const { controller } = makeAbortController({ abortSignal: external.signal });
+    expect(controller.signal.aborted).toBe(false);
+    external.abort();
+    expect(controller.signal.aborted).toBe(true);
+  });
+
+  it("sets a timeout timer that aborts after N seconds", () => {
+    vi.useFakeTimers();
+    const { controller, timer } = makeAbortController({ timeoutInSeconds: 5 });
+    expect(controller.signal.aborted).toBe(false);
+    expect(timer).toBeDefined();
+    vi.advanceTimersByTime(5000);
+    expect(controller.signal.aborted).toBe(true);
+    vi.useRealTimers();
   });
 });

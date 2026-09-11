@@ -1789,4 +1789,33 @@ edges:
     const result = validateStateSchema({ anything: true }, {});
     expect(result.valid).toBe(true);
   });
+
+  it("parseWorkflowDefinition accepts a JSON string input", () => {
+    const json = JSON.stringify({
+      document: { name: "string-input", version: "1.0.0" },
+      nodes: [
+        { id: "a", type: "set_state", config: { set: { x: "1" } } },
+        { id: "__end__", type: "end" },
+      ],
+      edges: [
+        { source: "__start__", target: "a" },
+        { source: "a", target: "__end__" },
+      ],
+    });
+    const def = parseWorkflowDefinition(json);
+    expect(def.document.name).toBe("string-input");
+    expect(def.nodes).toHaveLength(2);
+  });
+
+  it("rejects when __end__ node has non-end type", () => {
+    expect(() =>
+      parseWorkflowDefinition({
+        document: { name: "bad-end-type", version: "1.0.0" },
+        nodes: [
+          { id: "__end__", type: "set_state", config: { set: { x: "1" } } },
+        ],
+        edges: [{ source: "__start__", target: "__end__" }],
+      }),
+    ).toThrow('must have type "end"');
+  });
 });
