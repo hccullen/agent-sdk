@@ -63,8 +63,11 @@ export interface StreamResponse {
   };
   artifactUpdate?: {
     taskId?: Corti.CommonTaskIdValue;
+    contextId?: Corti.CommonContextIdValue;
     artifact?: Corti.CommonArtifactResponse;
     lastChunk?: boolean;
+    /** When true, this chunk's text is an incremental delta to append. Absent on the first chunk (which creates the artifact) and on the final chunk (which carries the complete text with `lastChunk: true`). */
+    append?: boolean;
   };
 }
 

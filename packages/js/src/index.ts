@@ -36,8 +36,8 @@ export type { WorkflowDefinition, WorkflowNode, CompiledGraph, AgentCallConfig, 
 
 export { CortiError, CortiTimeoutError, CortiSDKError, CortiSDKErrorCodes } from "./errors.js";
 
-export { parseSSEStream, parseA2AStream, makeAbortController } from "./streaming.js";
-export type { SSEEvent, AbortOptions } from "./streaming.js";
+export { parseSSEStream, parseA2AStream, makeAbortController, collectText, StreamCollector } from "./streaming.js";
+export type { SSEEvent, AbortOptions, StreamTextChunk } from "./streaming.js";
 
 export type {
   AgentID,

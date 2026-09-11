@@ -90,6 +90,145 @@ export async function* parseA2AStream(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Text accumulation helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * A text chunk yielded by {@link collectText}.
+ */
+export interface StreamTextChunk {
+  /** The incremental text fragment from this event. Empty on the final `lastChunk` event when the server sends the complete text separately. */
+  delta: string;
+  /** All text accumulated so far. On the final event this is the authoritative complete text from the server. */
+  text: string;
+  /** `true` when the stream has reached the final `lastChunk` event. */
+  done: boolean;
+}
+
+/**
+ * Extract text from an `artifactUpdate` event's artifact parts.
+ * Returns the concatenated text from all `text` parts, or an empty string
+ * if there are no text parts.
+ */
+function artifactText(artifact: { parts?: Array<Record<string, unknown>> } | undefined): string {
+  if (!artifact?.parts) return "";
+  return artifact.parts
+    .filter((p): p is { text: string } => "text" in p && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("");
+}
+
+/**
+ * Consume a `StreamResponse` async iterable and yield accumulated text chunks.
+ *
+ * This is the primary helper for token-by-token streaming. It handles the
+ * three kinds of `artifactUpdate` events the server sends:
+ *
+ * 1. **First chunk** (no `append`, no `lastChunk`): the initial token fragment.
+ * 2. **Append chunks** (`append: true`): incremental token fragments.
+ * 3. **Final chunk** (`lastChunk: true`): the complete text — used as the
+ *    authoritative version, replacing the accumulated deltas.
+ *
+ * Non-`artifactUpdate` events (task, statusUpdate, message) are skipped
+ * silently.
+ *
+ * @example
+ * ```ts
+ * const stream = await ctx.streamMessage([{ text: "Explain photosynthesis." }]);
+ * for await (const chunk of collectText(stream)) {
+ *   process.stdout.write(chunk.delta);   // print each token as it arrives
+ *   if (chunk.done) console.log("\n\nComplete:", chunk.text);
+ * }
+ * ```
+ *
+ * @returns an async generator of {@link StreamTextChunk} objects.
+ */
+export async function* collectText(
+  stream: AsyncIterable<StreamResponse>,
+): AsyncGenerator<StreamTextChunk> {
+  let accumulated = "";
+
+  for await (const event of stream) {
+    if (!event.artifactUpdate) continue;
+
+    const au = event.artifactUpdate;
+    const chunkText = artifactText(au.artifact);
+
+    if (au.lastChunk) {
+      // The final event carries the authoritative complete text.
+      yield { delta: "", text: chunkText, done: true };
+      return;
+    }
+
+    // First chunk (no append) and append chunks are incremental deltas.
+    accumulated += chunkText;
+    yield { delta: chunkText, text: accumulated, done: false };
+  }
+}
+
+/**
+ * A stateful collector for consumers who iterate the raw event stream
+ * themselves but want automatic text accumulation as a side effect.
+ *
+ * Call {@link StreamCollector.update} with each `StreamResponse` event.
+ * Read {@link StreamCollector.text} for the accumulated text and
+ * {@link StreamCollector.done} to check whether the stream is finished.
+ *
+ * @example
+ * ```ts
+ * const collector = new StreamCollector();
+ * for await (const event of ctx.streamMessage([{ text: "Hello" }])) {
+ *   const delta = collector.update(event);
+ *   if (delta) process.stdout.write(delta);
+ * }
+ * console.log("\nFinal:", collector.text);
+ * ```
+ */
+export class StreamCollector {
+  private _text = "";
+  private _done = false;
+
+  /** The accumulated text so far. On completion this is the authoritative full text from the server. */
+  get text(): string {
+    return this._text;
+  }
+
+  /** `true` once a `lastChunk` artifact event has been received. */
+  get done(): boolean {
+    return this._done;
+  }
+
+  /**
+   * Process a single `StreamResponse` event.
+   *
+   * @returns The incremental text delta (may be empty string), or `null`
+   *   if the event is not an `artifactUpdate`.
+   */
+  update(event: StreamResponse): string | null {
+    if (!event.artifactUpdate) return null;
+
+    const au = event.artifactUpdate;
+    const chunkText = artifactText(au.artifact);
+
+    if (au.lastChunk) {
+      // The final event carries the authoritative complete text.
+      this._text = chunkText;
+      this._done = true;
+      return ""; // no new delta — the text was already accumulated
+    }
+
+    this._text += chunkText;
+    return chunkText;
+  }
+
+  /** Reset the collector to its initial state for reuse. */
+  reset(): void {
+    this._text = "";
+    this._done = false;
+  }
+}
+
 export interface AbortOptions {
   timeoutInSeconds?: number;
   abortSignal?: AbortSignal;
