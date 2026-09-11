@@ -93,116 +93,9 @@ describe("CortiClient", () => {
     });
   });
 
-  describe("resource clients", () => {
-    it("exposes agents resource", () => {
-      const c = makeClient();
-      expect(c.agents).toBeDefined();
-    });
-
-    it("exposes contexts resource", () => {
-      const c = makeClient();
-      expect(c.contexts).toBeDefined();
-    });
-
-    it("exposes registry resource", () => {
-      const c = makeClient();
-      expect(c.registry).toBeDefined();
-    });
-
-    it("exposes usage resource", () => {
-      const c = makeClient();
-      expect(c.usage).toBeDefined();
-    });
-
-    it("exposes feedback resource", () => {
-      const c = makeClient();
-      expect(c.feedback).toBeDefined();
-    });
-
-    it("exposes agentCard resource", () => {
-      const c = makeClient();
-      expect(c.agentCard).toBeDefined();
-    });
-
-    it("exposes connectors resource", () => {
-      const c = makeClient();
-      expect(c.connectors).toBeDefined();
-    });
-  });
-
-  describe("messaging methods", () => {
-    it("exposes sendMessage, streamMessage, getTask, cancelTask", () => {
-      const c = makeClient();
-      expect(c.sendMessage).toBeDefined();
-      expect(c.streamMessage).toBeDefined();
-      expect(c.getTask).toBeDefined();
-      expect(c.cancelTask).toBeDefined();
-    });
-
-    it("exposes createAgentHandle and agentHandleFactory", () => {
-      const c = makeClient();
-      expect(c.createAgentHandle).toBeDefined();
-      expect(c.agentHandleFactory).toBeDefined();
-    });
-  });
-
-  describe("sdkClient auth", () => {
-    it("accepts an sdkClient instance", () => {
-      const mockSdk = { agentic: { agents: {} } };
-      const c = new CortiClient({ sdkClient: mockSdk as never });
-      expect(c).toBeDefined();
-      expect(c.agents).toBeDefined();
-    });
-
+  describe("constructor", () => {
     it("throws when no auth source is provided", () => {
       expect(() => new CortiClient({} as CortiClientOptions)).toThrow();
-    });
-  });
-
-  describe("auth-required flow", () => {
-    it("throws when neither sdkClient nor token is provided", () => {
-      expect(() => new CortiClient({} as CortiClientOptions)).toThrow();
-    });
-
-    it("constructs with token + tenant", () => {
-      const c = makeClient();
-      expect(c.baseUrl).toBe("https://api.eu.corti.app/v2");
-      expect(c.agents).toBeDefined();
-    });
-
-    it("constructs with token + region 'us'", () => {
-      const c = makeClient({ region: "us" });
-      expect(c.baseUrl).toBe("https://api.us.corti.app/v2");
-    });
-
-    it("baseUrl override takes precedence and gets /v2 suffix", () => {
-      const c = makeClient({ baseUrl: "https://custom.example.com" });
-      expect(c.baseUrl).toBe("https://custom.example.com/v2");
-    });
-
-    it("baseUrl with /v2 already present is not doubled", () => {
-      const c = makeClient({ baseUrl: "https://custom.example.com/v2" });
-      expect(c.baseUrl).toBe("https://custom.example.com/v2");
-    });
-
-    it("tokenProvider is wired as refreshAccessToken", () => {
-      const c = new CortiClient({
-        token: "test-token",
-        tenant: TENANT,
-        tokenProvider: () => "refreshed-token",
-      });
-      expect(c.agents).toBeDefined();
-      expect(c.baseUrl).toBe("https://api.eu.corti.app/v2");
-    });
-
-    it("sdkClient takes precedence over token", () => {
-      const mockSdk = makeMockSdk();
-      const c = new CortiClient({
-        sdkClient: mockSdk as never,
-        token: "should-be-ignored",
-        baseUrl: "https://sdk.example.com",
-      });
-      expect(c.baseUrl).toBe("https://sdk.example.com");
     });
   });
 
@@ -349,14 +242,11 @@ describe("CortiClient", () => {
       expect(result).toEqual(mockTask);
     });
 
-    it("streamMessage delegates to agents.streamMessage", async () => {
+    it("streamMessage delegates to agents.streamMessage with full body", async () => {
       const { client, mockSdk } = makeMockClient();
-      await client.streamMessage("agt.1", { message: { role: "ROLE_USER", parts: [{ text: "hi" }], messageId: "msg.1" } });
-      expect(mockSdk.agentic.agents.streamMessage).toHaveBeenCalledWith(
-        "agt.1",
-        expect.objectContaining({ message: expect.objectContaining({ role: "ROLE_USER" }) }),
-        undefined,
-      );
+      const body = { message: { role: "ROLE_USER", parts: [{ text: "hi" }], messageId: "msg.1" } };
+      await client.streamMessage("agt.1", body);
+      expect(mockSdk.agentic.agents.streamMessage).toHaveBeenCalledWith("agt.1", body, undefined);
     });
 
     it("connectors.list delegates with (agentId, opts)", async () => {

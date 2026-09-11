@@ -262,26 +262,13 @@ describe("AgentContext", () => {
       // The auth hint is in the status message parts — a data part containing
       // the mcp_name (underlying MCP server, not the registry connector name)
       // and type. The client must extract mcp_name from here, not assume it
-      // matches the connector name.
+      // matches the connector name. Verified against staging-eu: registry
+      // connector "clinicalkey-expert" produces mcp_name "clinicalkey".
       const statusParts = r.task?.status?.message?.parts ?? [];
       const dataHint = statusParts.find((p: Record<string, unknown>) => "data" in p);
       expect(dataHint).toBeDefined();
       expect((dataHint as { data: Record<string, string> }).data.mcp_name).toBe("clinicalkey");
       expect((dataHint as { data: Record<string, string> }).data.type).toBe("token");
-    });
-
-    it("mcp_name in auth hint may differ from the registry connector name", async () => {
-      // Verified against staging-eu: registry connector "clinicalkey-expert"
-      // produces an auth-required hint with mcp_name "clinicalkey".
-      // The auth data part must use the hint's mcp_name, not the connector name.
-      const { client } = makeMockClient(async () => authRequiredResponse);
-      const ctx = new AgentContext(client, "agent-1");
-      const r = await ctx.sendText("question");
-      expect(r.status).toBe("auth-required");
-      const statusParts = r.task?.status?.message?.parts ?? [];
-      const dataHint = statusParts.find((p: Record<string, unknown>) => "data" in p) as { data: { mcp_name: string } };
-      // The hint says "clinicalkey", not "clinicalkey-expert"
-      expect(dataHint.data.mcp_name).not.toMatch(/expert$/);
     });
   });
 });
