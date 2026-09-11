@@ -11,13 +11,13 @@ next:
 
 `streamMessage()` returns an `AsyncIterable<StreamResponse>` that yields events as the agent generates its reply — status updates first, then **token-by-token** `artifactUpdate` events as each token is produced by the model.
 
-The SDK provides two helpers that handle text accumulation for you so you don't have to manually concatenate fragments:
+The SDK provides helpers that handle text accumulation and citation extraction for you so you don't have to manually concatenate fragments or parse metadata:
 
 <ConceptGrid>
 <ConceptCard title="collectText(stream)">Wraps the event stream and yields `{ delta, text, done }` per token. The simplest way to get real-time text.</ConceptCard>
 <ConceptCard title="StreamCollector">Stateful collector for when you need to inspect every raw event (status, metadata) while still accumulating text.</ConceptCard>
-<ConceptCard title="artifactUpdate">The event type that carries generated text. First chunk creates the artifact, `append: true` chunks are incremental, `lastChunk: true` carries the complete text.</ConceptCard>
-<ConceptCard title="Context tracking">The stream tracks the same `contextId` as `sendMessage()`. Mix the two freely on one context.</ConceptCard>
+<ConceptCard title="collectCitations(stream)">Like `collectText` but also extracts citation metadata from the final chunk — offsets, URLs, titles, snippets.</ConceptCard>
+<ConceptCard title="toMarkdown(text, citations)">Renders text + citations as markdown with inline `[n]` markers and a `## Sources` section.</ConceptCard>
 </ConceptGrid>
 
 ## Run it
@@ -158,6 +158,47 @@ const reply = await ctx.sendText("And meiosis?");
 console.log(reply.text);   // agent remembers the prior exchange
 ```
 
+## Approach 3: collectCitations() — citations from search-enabled agents
+
+When an agent has a search connector (like `web-search-expert`), the server embeds citation markers in the generated text and resolves them against search result data parts. `collectCitations()` wraps the stream like `collectText()`, but on the final `lastChunk` event it also extracts structured citation metadata — offsets, source URLs, titles, snippets, and site names.
+
+```typescript
+import { collectCitations, toMarkdown } from "@newsioaps/agent-sdk";
+
+const stream = await ctx.streamMessage([{ text: "Who won the 2026 World Cup?" }]);
+
+for await (const chunk of collectCitations(stream)) {
+  if (chunk.delta) process.stdout.write(chunk.delta);
+
+  if (chunk.done) {
+    console.log("\n");
+    console.log(toMarkdown(chunk.text, chunk.citations));
+  }
+}
+```
+
+During streaming, `chunk.citations` is an empty array. On the final event (`done: true`), citations are populated from the text part's `metadata.citations` and resolved against the data parts' source data.
+
+| Field | Description |
+|-------|-------------|
+| `chunk.citations` | Array of `Citation` objects (empty until `done: true`). |
+| `citation.offset` | Character offset in the text where the citation marker belongs. |
+| `citation.url` | Source URL. |
+| `citation.title` | Source page title (if available). |
+| `citation.snippet` | Snippet of source content supporting the claim. |
+| `citation.siteName` | Site name (e.g. `"fifa.com"`). |
+
+### Rendering with toMarkdown()
+
+`toMarkdown(text, citations)` inserts `[1]`, `[2]` markers at the citation offsets and appends a `## Sources` section. Same-URL citations share the same number.
+
+```typescript
+const md = toMarkdown("Spain won the World Cup.", [
+  { offset: 5, url: "https://fifa.com/final", title: "FIFA Final" },
+]);
+// → "Spain won the World Cup.[1]\n\n## Sources\n[1] FIFA Final — https://fifa.com/final"
+```
+
 ## Full code
 
 Source: `examples/ts/05-streaming.ts`
@@ -173,7 +214,7 @@ Source: `examples/ts/05-streaming.ts`
  *
  * Run: `npm run streaming`
  */
-import { CortiClient, collectText, StreamCollector } from "@newsioaps/agent-sdk";
+import { CortiClient, collectText, StreamCollector, collectCitations, toMarkdown } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {
@@ -219,6 +260,21 @@ async function main() {
   console.log("\nCollector done:", collector.done);
   console.log("Collector text:", collector.text);
 
+  // Approach 3: collectCitations() + toMarkdown — for search-enabled agents
+  console.log("\n--- collectCitations() ---\n");
+  const ctx3 = handle.createContext();
+  const stream3 = await ctx3.streamMessage([
+    { text: "Who won the 2026 World Cup?" },
+  ]);
+
+  for await (const chunk of collectCitations(stream3)) {
+    if (chunk.delta) process.stdout.write(chunk.delta);
+    if (chunk.done) {
+      console.log("\n");
+      console.log(toMarkdown(chunk.text, chunk.citations));
+    }
+  }
+
   await handle.delete();
 }
 
@@ -250,6 +306,14 @@ it exits, which separates it into its component colors.
 <span style="color: #5a6478">  usage: {"corti":{"usage":{"creditsConsumed":0.04}}}</span>
 Collector done: true
 Collector text: Rainbows form when sunlight enters raindrops and is bent...
+
+<span style="color: #5a6478">--- collectCitations() ---</span>
+Spain won the World Cup.
+
+Spain won the World Cup.[1]
+
+## Sources
+[1] FIFA World Cup 2026 Final — https://fifa.com/final
 </OutputBlock>
 
 ::: info

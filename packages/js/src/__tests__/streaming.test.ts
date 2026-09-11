@@ -1093,6 +1093,45 @@ describe("collectCitations", () => {
     expect(chunks).toHaveLength(1);
     expect(chunks[0].citations).toEqual([]);
   });
+
+  it("skips citations with non-number offset", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            {
+              text: "Bad offset.",
+              metadata: {
+                citations: [
+                  { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: "5" as unknown as number },
+                  { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 3 },
+                ],
+                offsetUnit: "chars",
+              },
+            },
+            {
+              data: { results: [makeSearchResult("https://x.com", "X", "x")] },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    // Only the valid numeric offset is kept; the string offset is skipped
+    expect(chunks[0].citations).toHaveLength(1);
+    expect(chunks[0].citations![0].offset).toBe(3);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1105,7 +1144,7 @@ describe("toMarkdown", () => {
       { offset: 3, url: "https://a.com" },
       { offset: 6, url: "https://b.com" },
     ]);
-    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
   });
 
   it("appends Sources section with numbered entries", () => {
@@ -1125,7 +1164,7 @@ describe("toMarkdown", () => {
       { offset: 3, url: "https://same.com" },
       { offset: 6, url: "https://same.com" },
     ]);
-    expect(md).toBe("ABC[1]DEF[1]\n\n## Sources\n[1] https://same.com — https://same.com");
+    expect(md).toBe("ABC[1]DEF[1]\n\n## Sources\n[1] https://same.com");
   });
 
   it("handles citations at the same offset", () => {
@@ -1133,14 +1172,14 @@ describe("toMarkdown", () => {
       { offset: 5, url: "https://a.com" },
       { offset: 5, url: "https://b.com" },
     ]);
-    expect(md).toBe("ABCDE[1][2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+    expect(md).toBe("ABCDE[1][2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
   });
 
   it("handles citation offset beyond text length", () => {
     const md = toMarkdown("short", [
       { offset: 100, url: "https://a.com" },
     ]);
-    expect(md).toBe("short[1]\n\n## Sources\n[1] https://a.com — https://a.com");
+    expect(md).toBe("short[1]\n\n## Sources\n[1] https://a.com");
   });
 
   it("uses siteName when title is missing", () => {
@@ -1154,7 +1193,8 @@ describe("toMarkdown", () => {
     const md = toMarkdown("text", [
       { offset: 4, url: "https://example.com" },
     ]);
-    expect(md).toContain("[1] https://example.com — https://example.com");
+    expect(md).toContain("[1] https://example.com");
+    expect(md).not.toContain("https://example.com — https://example.com");
   });
 
   it("sorts citations by offset before inserting", () => {
@@ -1162,7 +1202,7 @@ describe("toMarkdown", () => {
       { offset: 6, url: "https://b.com" },
       { offset: 3, url: "https://a.com" },
     ]);
-    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
   });
 
   it("handles single citation", () => {
@@ -1175,7 +1215,7 @@ describe("toMarkdown", () => {
   it("preserves text exactly when no citations overlap with content", () => {
     const text = "Line one\nLine two\n";
     const md = toMarkdown(text, [{ offset: text.length, url: "https://a.com" }]);
-    expect(md).toBe("Line one\nLine two\n[1]\n\n## Sources\n[1] https://a.com — https://a.com");
+    expect(md).toBe("Line one\nLine two\n[1]\n\n## Sources\n[1] https://a.com");
   });
 });
 

@@ -260,22 +260,6 @@ export interface StreamTextWithCitations {
 }
 
 /**
- * Resolve a JSON pointer like "/results/0/snippet" into a data object.
- * Returns the value at that path, or undefined if the path doesn't exist.
- */
-function resolveLocator(data: unknown, locator: string): unknown {
-  if (!locator || locator === "") return data;
-  const parts = locator.split("/").filter(Boolean);
-  let current: unknown = data;
-  for (const part of parts) {
-    if (current === null || current === undefined) return undefined;
-    if (typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
-/**
  * Extract the parent result object from a locator path.
  * Given "/results/0/snippet", returns data.results[0].
  * Given "" (empty), returns the whole data object.
@@ -332,7 +316,7 @@ function extractCitationsFromEvent(event: StreamResponse): Citation[] {
 
   const citations: Citation[] = [];
   for (const raw of rawCitations) {
-    if (raw.offset === undefined) continue;
+    if (typeof raw.offset !== "number") continue;
 
     const data = raw.data_part_id ? dataMap.get(raw.data_part_id) : undefined;
     if (!data) continue;
@@ -448,8 +432,8 @@ export function toMarkdown(text: string, citations: Citation[]): string {
     seenUrls.add(url);
     const citation = sorted.find((c) => c.url === url);
     if (citation) {
-      const title = citation.title || citation.siteName || url;
-      sources.push(`[${num}] ${title} — ${url}`);
+      const title = citation.title || citation.siteName;
+      sources.push(title ? `[${num}] ${title} — ${url}` : `[${num}] ${url}`);
     }
   }
 
