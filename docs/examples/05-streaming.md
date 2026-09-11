@@ -9,12 +9,14 @@ next:
 
 # 05 — Streaming
 
-`streamMessage()` returns an `AsyncIterable<StreamEvent>` that yields events as the agent generates its reply — status updates first, then partial or complete message chunks as tokens arrive.
+`streamMessage()` returns an `AsyncIterable<StreamResponse>` that yields events as the agent generates its reply — status updates first, then **token-by-token** `artifactUpdate` events as each token is produced by the model.
+
+The SDK provides two helpers that handle text accumulation for you so you don't have to manually concatenate fragments:
 
 <ConceptGrid>
-<ConceptCard title="streamMessage(parts)">Sends a message and returns a promise that resolves to an async iterable. `await` it first, then `for await...of` the events.</ConceptCard>
-<ConceptCard title="statusUpdate">Signals a task state change: `working` → `completed` or `failed`. Useful for progress indicators.</ConceptCard>
-<ConceptCard title="message">Carries one or more message parts. Filter to `kind === "text"` to extract the generated tokens.</ConceptCard>
+<ConceptCard title="collectText(stream)">Wraps the event stream and yields `{ delta, text, done }` per token. The simplest way to get real-time text.</ConceptCard>
+<ConceptCard title="StreamCollector">Stateful collector for when you need to inspect every raw event (status, metadata) while still accumulating text.</ConceptCard>
+<ConceptCard title="artifactUpdate">The event type that carries generated text. First chunk creates the artifact, `append: true` chunks are incremental, `lastChunk: true` carries the complete text.</ConceptCard>
 <ConceptCard title="Context tracking">The stream tracks the same `contextId` as `sendMessage()`. Mix the two freely on one context.</ConceptCard>
 </ConceptGrid>
 
@@ -24,101 +26,137 @@ next:
 npm run streaming
 ```
 
-You'll see status tokens (`[working]`, `[completed]`) interspersed with the generated text written to stdout in real time.
+You'll see status tokens (`[working]`, `[completed]`) interspersed with the generated text written to stdout in real time, token by token.
+
+## How token-by-token streaming works
+
+The API sends three kinds of `artifactUpdate` events during generation:
+
+| Event | `append` | `lastChunk` | Content |
+|-------|----------|-------------|---------|
+| First chunk | absent | absent | First token fragment (creates the artifact) |
+| Append chunks | `true` | absent | Incremental token fragments |
+| Final chunk | absent | `true` | **Complete text** (authoritative) |
+
+The final `lastChunk` event carries the full text as the server's authoritative version. Both `collectText()` and `StreamCollector` use this to replace the accumulated deltas, so the final text is always correct even if an intermediate chunk was missed.
 
 ## Event types
 
-Each yielded value is a `StreamEvent`. The two fields are mutually exclusive — each event has one or the other, never both.
+Each yielded `StreamResponse` has exactly one of these fields:
 
-| Field | Type | When it fires |
-|---|---|---|
-| `event.statusUpdate` | `{ status: { state: TaskState } }` | When the task state transitions: typically `"working"` at the start and `"completed"` or `"failed"` at the end. |
-| `event.message` | `{ parts: MessagePart[] }` | When the agent produces output. May fire multiple times with partial content before a final message event. |
+| Field | When it fires |
+|-------|---------------|
+| `event.task` | When the task is created or state changes |
+| `event.statusUpdate` | Task state transitions: `working` → `completed` / `failed`. The final event carries usage metadata. |
+| `event.message` | Direct message response (no task lifecycle) |
+| `event.artifactUpdate` | Incremental text tokens during generation |
 
-A `MessagePart` has a `kind` discriminant:
+## Approach 1: collectText() — the easy way
+
+`collectText()` wraps the stream and yields `{ delta, text, done }` for every artifact chunk. This is the recommended way to consume token streaming.
 
 ```typescript
-// Text part — the generated tokens
-{ kind: "text"; text: string }
+import { collectText } from "@newsioaps/agent-sdk";
 
-// Data part — structured JSON output
-{ kind: "data"; data: unknown }
+const stream = await ctx.streamMessage([{ text: "Describe how photosynthesis works." }]);
 
-// File part — binary attachment
-{ kind: "file"; file: { name: string; mimeType: string; bytes: string } }
+for await (const chunk of collectText(stream)) {
+  // delta: the incremental text fragment (empty string on the final event)
+  if (chunk.delta) process.stdout.write(chunk.delta);
+
+  // done: true when the stream is complete
+  if (chunk.done) {
+    console.log("\n\nComplete text:", chunk.text);
+  }
+}
 ```
 
-For text streaming, filter to `kind === "text"` and write `part.text` to your output.
+| Field | Description |
+|-------|-------------|
+| `chunk.delta` | The incremental text fragment from this event. Empty string on the final `lastChunk` event. |
+| `chunk.text` | All text accumulated so far. On the final event, this is the authoritative complete text from the server. |
+| `chunk.done` | `true` when the `lastChunk` event has been received. |
+
+## Approach 2: StreamCollector — when you need the raw events too
+
+If you want to inspect status updates, metadata, or non-text parts while still accumulating text, use `StreamCollector`:
+
+```typescript
+import { StreamCollector } from "@newsioaps/agent-sdk";
+
+const collector = new StreamCollector();
+const stream = await ctx.streamMessage([{ text: "Explain rainbows." }]);
+
+for await (const event of stream) {
+  // Inspect status updates and metadata
+  if (event.statusUpdate) {
+    console.log(`[${event.statusUpdate.status?.state}]`);
+    if (event.statusUpdate.metadata) {
+      console.log("  usage:", event.statusUpdate.metadata);
+    }
+  }
+
+  // Accumulate text — update() returns the delta or null
+  const delta = collector.update(event);
+  if (delta) process.stdout.write(delta);
+}
+
+console.log("\nFinal text:", collector.text);  // authoritative complete text
+console.log("Done:", collector.done);          // true
+```
+
+`StreamCollector.update(event)` returns:
+- The incremental text delta (string, may be empty) for `artifactUpdate` events
+- `null` for all other event types (task, statusUpdate, message)
 
 ## Walkthrough
 
-### 1 · Call streamMessage()
+### 1 · Create a context and start the stream
 
 ```typescript
-const ctx = agent.createContext();
-
-// streamMessage returns Promise<AsyncIterable<StreamEvent>>
+const ctx = handle.createContext();
 const stream = await ctx.streamMessage([
-  { kind: "text", text: "Describe how photosynthesis works." },
+  { text: "Describe how photosynthesis works." },
 ]);
 ```
 
-Pass an array of `MessagePart`s — the same shape as `sendMessage()`. `await` the call to get the iterable; the network request starts here.
+Pass an array of `Part`s — the same shape as `sendMessage()`. `await` the call to get the iterable; the network request starts here.
 
-### 2 · Iterate events
+### 2 · Consume tokens with collectText()
 
 ```typescript
-for await (const event of stream) {
-  if (event.statusUpdate) {
-    process.stdout.write(`[${event.statusUpdate.status.state}] `);
-  }
-
-  if (event.message) {
-    const texts = event.message.parts
-      .filter((p): p is { kind: "text"; text: string } => p.kind === "text")
-      .map((p) => p.text);
-    if (texts.length) process.stdout.write(texts.join(""));
-  }
+for await (const chunk of collectText(stream)) {
+  if (chunk.delta) process.stdout.write(chunk.delta);
+  if (chunk.done) console.log("\n\nComplete:", chunk.text);
 }
-process.stdout.write("\n");
 ```
 
-1. The first event is typically a `statusUpdate` with state `"working"`.
-2. One or more `message` events follow, each carrying partial text. Write them to stdout without a newline to see the streaming effect.
-3. A final `statusUpdate` with state `"completed"` (or `"failed"`) signals the end of the stream.
-4. The `for await...of` loop exits when the iterable is exhausted — no manual cleanup needed.
+1. The first artifact event yields the first token fragment.
+2. Subsequent `append: true` events yield incremental tokens — write them to stdout without a newline to see the streaming effect.
+3. The final `lastChunk: true` event yields `done: true` with the complete authoritative text.
+4. A terminal `statusUpdate` with state `completed` (or `failed`) follows.
+5. The `for await...of` loop exits when the iterable is exhausted.
 
-### 3 · Type-safe part filtering
+### 3 · Context tracking
 
-```typescript
-// The type predicate narrows the part type so TypeScript knows p.text exists
-.filter((p): p is { kind: "text"; text: string } => p.kind === "text")
-```
-
-Without the predicate, `p.text` would be a type error because `MessagePart` is a discriminated union. The predicate narrows it to the text variant.
-
-## Context tracking
-
-`streamMessage()` and `sendMessage()` share the same `contextId` bookkeeping. You can freely interleave them on a single context:
+`streamMessage()` tracks the same `contextId` as `sendMessage()`. You can freely interleave them:
 
 ```typescript
-const ctx = agent.createContext();
+const ctx = handle.createContext();
 
 // First turn — streaming
-const stream = await ctx.streamMessage([{ kind: "text", text: "Explain mitosis." }]);
-for await (const event of stream) { /* ... */ }
+const stream = await ctx.streamMessage([{ text: "Explain mitosis." }]);
+for await (const chunk of collectText(stream)) {
+  if (chunk.delta) process.stdout.write(chunk.delta);
+}
 
 // ctx.id is now populated
-console.log(ctx.id);   // "ctx_abc123"
+console.log(ctx.id);   // "ctx.0192f4c8..."
 
 // Second turn — non-streaming, same thread
 const reply = await ctx.sendText("And meiosis?");
 console.log(reply.text);   // agent remembers the prior exchange
 ```
-
-::: info
-The `contextId` is extracted from the first streamed event. By the time the `for await` loop exits, `ctx.id` is populated and subsequent calls on the same context will continue the conversation thread.
-:::
 
 ## Full code
 
@@ -126,71 +164,96 @@ Source: `examples/ts/05-streaming.ts`
 
 ```typescript
 /**
- * 05 — Streaming responses.
+ * 05 — Streaming responses with token-by-token accumulation.
  *
- * Use `ctx.streamMessage()` to receive the agent's reply as a stream of
- * `StreamEvent` objects. The same `contextId` bookkeeping applies: the
- * first event carries the context ID, and it is tracked automatically for
- * subsequent calls on this context.
+ * The Corti API streams `artifactUpdate` events as the agent generates its
+ * reply — one small text fragment per event. Use `collectText()` to turn
+ * that event stream into a simple `{ delta, text, done }` iterator that
+ * handles the accumulation for you.
  *
  * Run: `npm run streaming`
  */
-import { AgentsClient } from "@newsioaps/agent-sdk";
+import { CortiClient, collectText, StreamCollector } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client";
 
 async function main() {
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
 
-  const agent = await agents.create({
+  const agent = await client.agents.create({
     name: "stream-demo",
-    description: "Demonstrates streaming replies.",
+    description: "Demonstrates token-by-token streaming.",
     systemPrompt: "Reply in 4–6 sentences so the user can see streaming in action.",
   });
+  const handle = await client.createAgentHandle(agent.id);
 
-  const ctx = agent.createContext();
+  const ctx = handle.createContext();
+
+  // Approach 1: collectText() — the easy way
+  console.log("--- collectText() ---\n");
   const stream = await ctx.streamMessage([
-    { kind: "text", text: "Describe how photosynthesis works." },
+    { text: "Describe how photosynthesis works." },
   ]);
 
-  for await (const event of stream) {
-    // Intermediate status updates (working → completed/failed).
-    if (event.statusUpdate) {
-      process.stdout.write(`[${event.statusUpdate.status.state}] `);
-    }
-
-    // Final or intermediate message with text parts from the agent.
-    if (event.message) {
-      const texts = event.message.parts
-        .filter((p): p is { kind: "text"; text: string } => p.kind === "text")
-        .map((p) => p.text);
-      if (texts.length) process.stdout.write(texts.join(""));
-    }
+  for await (const chunk of collectText(stream)) {
+    if (chunk.delta) process.stdout.write(chunk.delta);
+    if (chunk.done) console.log("\n\nComplete text:", chunk.text);
   }
-  process.stdout.write("\n");
-  console.log("Context ID:", ctx.id);
+
+  // Approach 2: StreamCollector — when you need the raw events too
+  console.log("\n--- StreamCollector ---\n");
+  const ctx2 = handle.createContext();
+  const stream2 = await ctx2.streamMessage([
+    { text: "Explain how rainbows form in 3 sentences." },
+  ]);
+
+  const collector = new StreamCollector();
+  for await (const event of stream2) {
+    if (event.statusUpdate) {
+      console.log(`[${event.statusUpdate.status?.state}]`);
+      if (event.statusUpdate.metadata) console.log("  metadata:", event.statusUpdate.metadata);
+    }
+    const delta = collector.update(event);
+    if (delta) process.stdout.write(delta);
+  }
+
+  console.log("\nCollector done:", collector.done);
+  console.log("Collector text:", collector.text);
+
+  await handle.delete();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch((err) => { console.error(err); process.exit(1); });
 ```
 
 ## What to expect
 
 <OutputBlock>
-<span style="color: #5a6478">[working] </span>Photosynthesis is the process by which plants, algae, and some
-bacteria convert light energy into chemical energy stored as glucose.
-It occurs in two main stages: the light-dependent reactions in the
-thylakoid membranes, where water is split and ATP is generated, and
-the Calvin cycle in the stroma, where CO2 is fixed into sugars.
-Oxygen is released as a by-product of the water-splitting step.
-Without photosynthesis, virtually all life on Earth would cease to exist.<span style="color: #5a6478"> [completed]</span>
-<span style="color: #f99470">Context ID:</span> ctx_01abc123def456
+<span style="color: #5a6478">--- collectText() ---</span>
+Photosynthesis is the process by which plants, algae, and some
+bacteria convert light energy into chemical energy stored as
+glucose. It occurs in two main stages: the light-dependent
+reactions in the thylakoid membranes, where water is split and
+ATP is generated, and the Calvin cycle in the stroma, where CO2
+is fixed into sugars. Oxygen is released as a by-product of the
+water-splitting step. Without photosynthesis, virtually all life
+on Earth would cease to exist.
+
+Complete text: Photosynthesis is the process by which plants, algae...
+
+<span style="color: #5a6478">--- StreamCollector ---</span>
+<span style="color: #5a6478">[working]</span>
+Rainbows form when sunlight enters raindrops and is bent, or
+refracted, as it passes from air into water. Inside the drop,
+the light reflects off the back surface and then bends again as
+it exits, which separates it into its component colors.
+<span style="color: #5a6478">[completed]</span>
+<span style="color: #5a6478">  usage: {"corti":{"usage":{"creditsConsumed":0.04}}}</span>
+Collector done: true
+Collector text: Rainbows form when sunlight enters raindrops and is bent...
 </OutputBlock>
 
 ::: info
-The tokens appear incrementally as they are generated — in a terminal you'll see the text build character by character rather than appearing all at once.
+The tokens appear incrementally as they are generated — in a terminal you'll see the text build word by word rather than appearing all at once.
 :::
 
 ### Next steps
