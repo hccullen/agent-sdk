@@ -23,10 +23,20 @@ import type {
   FeedbackResponse,
   FeedbackListResponse,
   AgentCard,
+  ConnectorCreate,
+  ConnectorPatch,
+  ConnectorListResponse,
+  ConnectorResponse,
   SendMessageRequest,
   SendMessageResponse,
   StreamResponse,
 } from "./types.js";
+
+export interface RequestOptions {
+  abortSignal?: AbortSignal;
+  timeoutInSeconds?: number;
+  maxRetries?: number;
+}
 
 export interface CortiClientOptions {
   /**
@@ -58,9 +68,9 @@ export interface CortiClientOptions {
 export interface ListAgentsParams {
   pageSize?: number;
   pageToken?: string;
-  visibility?: Visibility[];
+  visibility?: Visibility | Visibility[];
   lifecycle?: Lifecycle;
-  label?: string[];
+  label?: string | string[];
   q?: string;
 }
 
@@ -72,49 +82,73 @@ export interface ListContextsParams {
   pageToken?: string;
 }
 
+export interface ListTasksParams {
+  pageSize?: number;
+  pageToken?: string;
+  contextId?: string;
+}
+
 export interface AgentsResource {
-  create(body: AgentCreate): Promise<Agent>;
-  get(agentId: string): Promise<Agent>;
-  list(params?: ListAgentsParams): Promise<AgentListResponse>;
-  update(agentId: string, body: AgentPatch): Promise<Agent>;
-  delete(agentId: string): Promise<void>;
+  create(body: AgentCreate, opts?: RequestOptions): Promise<Agent>;
+  get(agentId: string, opts?: RequestOptions): Promise<Agent>;
+  list(params?: ListAgentsParams, opts?: RequestOptions): Promise<AgentListResponse>;
+  update(agentId: string, body: AgentPatch, opts?: RequestOptions): Promise<Agent>;
+  delete(agentId: string, opts?: RequestOptions): Promise<void>;
 }
 
 export interface ContextsResource {
-  list(params?: ListContextsParams): Promise<ContextListResponse>;
-  get(contextId: string, historyLength?: number): Promise<ContextDetailResponse>;
-  delete(contextId: string): Promise<void>;
-  getTrace(contextId: string, params?: { pageSize?: number; pageToken?: string }): Promise<ContextTraceResponse>;
-  listTasks(contextId: string, params?: { pageSize?: number; pageToken?: string }): Promise<TaskListResponse>;
-  getTask(contextId: string, taskId: string): Promise<Task>;
-  getArtifact(contextId: string, taskId: string, artifactId: string): Promise<Artifact>;
+  list(params?: ListContextsParams, opts?: RequestOptions): Promise<ContextListResponse>;
+  get(contextId: string, historyLength?: number, opts?: RequestOptions): Promise<ContextDetailResponse>;
+  delete(contextId: string, opts?: RequestOptions): Promise<void>;
+  getTrace(contextId: string, params?: { pageSize?: number; pageToken?: string }, opts?: RequestOptions): Promise<ContextTraceResponse>;
+  listTasks(contextId: string, params?: { pageSize?: number; pageToken?: string }, opts?: RequestOptions): Promise<TaskListResponse>;
+  getTask(contextId: string, taskId: string, opts?: RequestOptions): Promise<Task>;
+  getArtifact(contextId: string, taskId: string, artifactId: string, opts?: RequestOptions): Promise<Artifact>;
+}
+
+export interface ConnectorsResource {
+  list(agentId: string, opts?: RequestOptions): Promise<ConnectorListResponse>;
+  create(agentId: string, body: ConnectorCreate, opts?: RequestOptions): Promise<ConnectorResponse>;
+  get(agentId: string, connectorId: string, opts?: RequestOptions): Promise<ConnectorResponse>;
+  update(agentId: string, connectorId: string, body: ConnectorPatch, opts?: RequestOptions): Promise<ConnectorResponse>;
+  delete(agentId: string, connectorId: string, opts?: RequestOptions): Promise<void>;
 }
 
 export interface RegistryResource {
-  list(params?: { q?: string; pageSize?: number; pageToken?: string }): Promise<RegistryConnectorListResponse>;
-  get(connectorId: string): Promise<RegistryConnector>;
+  list(params?: { q?: string; pageSize?: number; pageToken?: string }, opts?: RequestOptions): Promise<RegistryConnectorListResponse>;
+  get(connectorId: string, opts?: RequestOptions): Promise<RegistryConnector>;
 }
 
 export interface UsageResource {
-  get(agentId: string, params?: { from?: Date; to?: Date; granularity?: UsageGranularity }): Promise<UsageReportResponse>;
+  get(agentId: string, params?: { from?: Date; to?: Date; granularity?: UsageGranularity }, opts?: RequestOptions): Promise<UsageReportResponse>;
 }
 
 export interface FeedbackResource {
-  create(contextId: string, taskId: string, body: FeedbackCreateRequest): Promise<FeedbackResponse>;
-  list(contextId: string, taskId: string): Promise<FeedbackListResponse>;
-  delete(contextId: string, taskId: string, feedbackId: string): Promise<void>;
+  create(contextId: string, taskId: string, body: FeedbackCreateRequest, opts?: RequestOptions): Promise<FeedbackResponse>;
+  list(contextId: string, taskId: string, opts?: RequestOptions): Promise<FeedbackListResponse>;
+  delete(contextId: string, taskId: string, feedbackId: string, opts?: RequestOptions): Promise<void>;
 }
 
 export interface AgentCardResource {
-  get(agentId: string): Promise<AgentCard>;
+  get(agentId: string, opts?: RequestOptions): Promise<AgentCard>;
+  getUrl(agentId: string, opts?: RequestOptions): Promise<URL>;
+}
+
+function toRequestOptions(opts?: RequestOptions): unknown {
+  return opts;
+}
+
+function ensureV2Prefix(url: string): string {
+  return url.endsWith("/v2") ? url : `${url.replace(/\/$/, "")}/v2`;
 }
 
 export class CortiClient {
   private readonly _sdk: SdkCortiClient;
-  readonly baseUrl: string;
+  readonly baseUrl: string | undefined;
 
   readonly agents: AgentsResource;
   readonly contexts: ContextsResource;
+  readonly connectors: ConnectorsResource;
   readonly registry: RegistryResource;
   readonly usage: UsageResource;
   readonly feedback: FeedbackResource;
@@ -123,6 +157,7 @@ export class CortiClient {
   constructor(opts: CortiClientOptions) {
     if (opts.sdkClient) {
       this._sdk = opts.sdkClient;
+      this.baseUrl = opts.baseUrl;
     } else {
       if (!opts.token) {
         throw new Error(
@@ -139,7 +174,7 @@ export class CortiClient {
 
       const sdkOpts: Record<string, unknown> = { auth };
       if (opts.baseUrl) {
-        sdkOpts.baseUrl = opts.baseUrl;
+        sdkOpts.baseUrl = ensureV2Prefix(opts.baseUrl);
       } else {
         sdkOpts.environment = opts.region ?? "eu";
       }
@@ -148,59 +183,75 @@ export class CortiClient {
       sdkOpts.analytics = { integration: PKG_NAME, integration_version: `v${PKG_VERSION}` };
 
       this._sdk = new SdkCortiClient(sdkOpts as ConstructorParameters<typeof SdkCortiClient>[0]);
+      this.baseUrl = opts.baseUrl
+        ? ensureV2Prefix(opts.baseUrl)
+        : `https://api.${opts.region ?? "eu"}.corti.app/v2`;
     }
-
-    this.baseUrl = opts.baseUrl ?? `https://api.${opts.region ?? "eu"}.corti.app`;
 
     const sdk = this._sdk;
 
     this.agents = {
-      create: (body) => sdk.agentic.agents.create(body),
-      get: (agentId) => sdk.agentic.agents.get(agentId),
-      list: async (params) => (await sdk.agentic.agents.list(params)).response,
-      update: (agentId, body) => sdk.agentic.agents.update(agentId, body),
-      delete: (agentId) => sdk.agentic.agents.delete(agentId),
+      create: (body, ro) => sdk.agentic.agents.create(body, toRequestOptions(ro) as never),
+      get: (agentId, ro) => sdk.agentic.agents.get(agentId, toRequestOptions(ro) as never),
+      list: async (params, ro) => (await sdk.agentic.agents.list(params, toRequestOptions(ro) as never)).response,
+      update: (agentId, body, ro) => sdk.agentic.agents.update(agentId, body, toRequestOptions(ro) as never),
+      delete: (agentId, ro) => sdk.agentic.agents.delete(agentId, toRequestOptions(ro) as never),
     };
 
     this.contexts = {
-      list: async (params) => (await sdk.agentic.contexts.list(params)).response,
-      get: (contextId, historyLength) =>
+      list: async (params, ro) => (await sdk.agentic.contexts.list(params, toRequestOptions(ro) as never)).response,
+      get: (contextId, historyLength, ro) =>
         sdk.agentic.contexts.get(
           contextId,
           historyLength !== undefined ? { historyLength } : undefined,
+          toRequestOptions(ro) as never,
         ),
-      delete: (contextId) => sdk.agentic.contexts.delete(contextId),
-      getTrace: async (contextId, params) =>
-        (await sdk.agentic.contexts.trace(contextId, params)).response,
-      listTasks: async (contextId, params) =>
-        (await sdk.agentic.contexts.tasks.list(contextId, params)).response,
-      getTask: (contextId, taskId) =>
-        sdk.agentic.contexts.tasks.get(contextId, taskId),
-      getArtifact: (contextId, taskId, artifactId) =>
-        sdk.agentic.contexts.tasks.artifacts.get(contextId, taskId, artifactId),
+      delete: (contextId, ro) => sdk.agentic.contexts.delete(contextId, toRequestOptions(ro) as never),
+      getTrace: async (contextId, params, ro) =>
+        (await sdk.agentic.contexts.trace(contextId, params, toRequestOptions(ro) as never)).response,
+      listTasks: async (contextId, params, ro) =>
+        (await sdk.agentic.contexts.tasks.list(contextId, params, toRequestOptions(ro) as never)).response,
+      getTask: (contextId, taskId, ro) =>
+        sdk.agentic.contexts.tasks.get(contextId, taskId, toRequestOptions(ro) as never),
+      getArtifact: (contextId, taskId, artifactId, ro) =>
+        sdk.agentic.contexts.tasks.artifacts.get(contextId, taskId, artifactId, toRequestOptions(ro) as never),
+    };
+
+    this.connectors = {
+      list: async (agentId, ro) =>
+        await sdk.agentic.agents.connectors.list(agentId, toRequestOptions(ro) as never),
+      create: (agentId, body, ro) =>
+        sdk.agentic.agents.connectors.create(agentId, body, toRequestOptions(ro) as never),
+      get: (agentId, connectorId, ro) =>
+        sdk.agentic.agents.connectors.get(agentId, connectorId, toRequestOptions(ro) as never),
+      update: (agentId, connectorId, body, ro) =>
+        sdk.agentic.agents.connectors.update(agentId, connectorId, body, toRequestOptions(ro) as never),
+      delete: (agentId, connectorId, ro) =>
+        sdk.agentic.agents.connectors.delete(agentId, connectorId, toRequestOptions(ro) as never),
     };
 
     this.registry = {
-      list: async (params) =>
-        (await sdk.agentic.registry.connectors.list(params)).response,
-      get: (connectorId) => sdk.agentic.registry.connectors.get(connectorId),
+      list: async (params, ro) =>
+        (await sdk.agentic.registry.connectors.list(params, toRequestOptions(ro) as never)).response,
+      get: (connectorId, ro) => sdk.agentic.registry.connectors.get(connectorId, toRequestOptions(ro) as never),
     };
 
     this.usage = {
-      get: (agentId, params) => sdk.agentic.agents.usage(agentId, params),
+      get: (agentId, params, ro) => sdk.agentic.agents.usage(agentId, params, toRequestOptions(ro) as never),
     };
 
     this.feedback = {
-      create: (contextId, taskId, body) =>
-        sdk.agentic.contexts.tasks.feedback.create(contextId, taskId, body),
-      list: (contextId, taskId) =>
-        sdk.agentic.contexts.tasks.feedback.list(contextId, taskId),
-      delete: (contextId, taskId, feedbackId) =>
-        sdk.agentic.contexts.tasks.feedback.delete(contextId, taskId, feedbackId),
+      create: (contextId, taskId, body, ro) =>
+        sdk.agentic.contexts.tasks.feedback.create(contextId, taskId, body, toRequestOptions(ro) as never),
+      list: (contextId, taskId, ro) =>
+        sdk.agentic.contexts.tasks.feedback.list(contextId, taskId, toRequestOptions(ro) as never),
+      delete: (contextId, taskId, feedbackId, ro) =>
+        sdk.agentic.contexts.tasks.feedback.delete(contextId, taskId, feedbackId, toRequestOptions(ro) as never),
     };
 
     this.agentCard = {
-      get: (agentId) => sdk.agentic.agents.card(agentId),
+      get: (agentId, ro) => sdk.agentic.agents.card(agentId, toRequestOptions(ro) as never),
+      getUrl: (agentId) => sdk.agentic.agents.getCardUrl(agentId),
     };
   }
 
@@ -218,6 +269,22 @@ export class CortiClient {
     opts?: { abortSignal?: AbortSignal },
   ): Promise<AsyncIterable<StreamResponse>> {
     return this._sdk.agentic.agents.streamMessage(agentId, body, opts) as Promise<AsyncIterable<StreamResponse>>;
+  }
+
+  async listTasks(
+    agentId: string,
+    params?: ListTasksParams,
+    opts?: RequestOptions,
+  ): Promise<TaskListResponse> {
+    return (await this._sdk.agentic.agents.tasks.list(agentId, params, toRequestOptions(opts) as never)).response;
+  }
+
+  async subscribe(
+    agentId: string,
+    taskId: string,
+    opts?: RequestOptions,
+  ): Promise<AsyncIterable<StreamResponse>> {
+    return this._sdk.agentic.agents.tasks.subscribe(agentId, taskId, toRequestOptions(opts) as never) as Promise<AsyncIterable<StreamResponse>>;
   }
 
   async getTask(

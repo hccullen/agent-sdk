@@ -144,3 +144,6 @@ __pycache__/
 *.egg-info/
 .venv/
 .mypy_cache/
+
+# opencode
+.opencode/

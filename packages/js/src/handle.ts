@@ -1,13 +1,15 @@
 import type { CortiClient } from "./client.js";
 import { AgentContext } from "./context.js";
 import type { SendMessageOptions } from "./context.js";
-import type { AbortOptions } from "./streaming.js";
 import type { MessageResponse } from "./response.js";
 import type {
   Agent,
   AgentPatch,
   Part,
   StreamResponse,
+  Visibility,
+  Lifecycle,
+  UserID,
 } from "./types.js";
 
 export type AgentHandleFactory = (agentId: string) => Promise<AgentHandle>;
@@ -42,11 +44,11 @@ export class AgentHandle {
     return this._agent.model;
   }
 
-  get visibility(): string {
+  get visibility(): Visibility {
     return this._agent.visibility;
   }
 
-  get lifecycle(): string {
+  get lifecycle(): Lifecycle {
     return this._agent.lifecycle;
   }
 
@@ -56,6 +58,18 @@ export class AgentHandle {
 
   get labels(): Record<string, string> | undefined {
     return this._agent.labels;
+  }
+
+  get createdAt(): Date | undefined {
+    return this._agent.createdAt;
+  }
+
+  get updatedAt(): Date | undefined {
+    return this._agent.updatedAt;
+  }
+
+  get createdBy(): UserID | undefined {
+    return this._agent.createdBy;
   }
 
   get raw(): Agent {
@@ -82,7 +96,7 @@ export class AgentHandle {
 
   async *stream(
     input: string | Part[],
-    opts?: AbortOptions,
+    opts?: SendMessageOptions,
   ): AsyncGenerator<StreamResponse> {
     const ctx = new AgentContext(this._client, this._agent.id);
     const parts: Part[] =

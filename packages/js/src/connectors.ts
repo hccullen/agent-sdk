@@ -6,7 +6,6 @@ export type AgentConnectorCreate = Corti.CommonAgentConnectorCreate;
 export type A2AConnectorCreate = Corti.CommonA2AConnectorCreate;
 export type SchemaConnectorCreate = Corti.CommonSchemaConnectorCreate;
 export type ConnectorCreateRequest = Corti.CommonConnectorCreateRequest;
-export type ConnectorAuth = Corti.CommonConnectorAuth;
 
 export const connectors = {
   registry(
@@ -25,7 +24,7 @@ export const connectors = {
     name: string;
     url: string;
     enabled?: boolean;
-    auth?: ConnectorAuth;
+    auth?: Corti.CommonConnectorAuth;
   }): McpConnectorCreate {
     return {
       type: "mcp",
@@ -75,21 +74,24 @@ export const connectors = {
 };
 
 export const auth = {
-  none(): ConnectorAuth {
+  none(): Corti.CommonConnectorAuth {
     return { type: "none" };
   },
-  bearer(): ConnectorAuth {
-    return { type: "bearer" };
+  bearer(ref?: string): Corti.CommonConnectorAuth {
+    return { type: "bearer", ...(ref !== undefined && { ref }) };
   },
-  apiKey(ref?: string): ConnectorAuth {
+  apiKey(ref?: string): Corti.CommonConnectorAuth {
     return { type: "apiKey", ...(ref !== undefined && { ref }) };
   },
-  oauth2(opts: { scope?: string; redirectUrl?: string; ref?: string }): ConnectorAuth {
+  oauth2(opts: { scope?: string; redirectUrl?: string; ref?: string }): Corti.CommonConnectorAuth {
     return {
       type: "oauth2",
       ...(opts.scope !== undefined && { scope: opts.scope }),
       ...(opts.redirectUrl !== undefined && { redirectUrl: opts.redirectUrl }),
       ...(opts.ref !== undefined && { ref: opts.ref }),
     };
+  },
+  inherit(): Corti.CommonConnectorAuth {
+    return { type: "inherit" };
   },
 };

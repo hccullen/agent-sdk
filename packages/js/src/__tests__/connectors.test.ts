@@ -125,4 +125,16 @@ describe("auth factories", () => {
       redirectUrl: "https://app.corti.ai/oauth/callback",
     });
   });
+
+  it("auth.bearer() includes ref when provided", () => {
+    expect(auth.bearer("secret-ref")).toEqual({ type: "bearer", ref: "secret-ref" });
+  });
+
+  it("auth.bearer() returns { type: 'bearer' } without ref", () => {
+    expect(auth.bearer()).toEqual({ type: "bearer" });
+  });
+
+  it("auth.inherit() returns { type: 'inherit' }", () => {
+    expect(auth.inherit()).toEqual({ type: "inherit" });
+  });
 });

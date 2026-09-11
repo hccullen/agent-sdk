@@ -46,7 +46,7 @@ describe("CortiClient.agents", () => {
     expect(mockSdk.agentic.agents.create).toHaveBeenCalledWith({
       name: "coder",
       description: "Returns ICD-10 codes.",
-    });
+    }, undefined);
   });
 
   it("get delegates to sdk.agentic.agents.get", async () => {
@@ -55,7 +55,7 @@ describe("CortiClient.agents", () => {
     const result = await client.agents.get("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
 
     expect(result).toEqual(agentResponse);
-    expect(mockSdk.agentic.agents.get).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
+    expect(mockSdk.agentic.agents.get).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40", undefined);
   });
 
   it("list delegates to sdk.agentic.agents.list and returns response", async () => {
@@ -72,7 +72,7 @@ describe("CortiClient.agents", () => {
       visibility: ["private"],
       lifecycle: "persistent",
       q: "coder",
-    });
+    }, undefined);
   });
 
   it("update delegates to sdk.agentic.agents.update", async () => {
@@ -94,6 +94,7 @@ describe("CortiClient.agents", () => {
     expect(mockSdk.agentic.agents.update).toHaveBeenCalledWith(
       "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
       { name: "coder-v2", model: null },
+      undefined,
     );
   });
 
@@ -102,6 +103,6 @@ describe("CortiClient.agents", () => {
 
     await client.agents.delete("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
 
-    expect(mockSdk.agentic.agents.delete).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
+    expect(mockSdk.agentic.agents.delete).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40", undefined);
   });
 });

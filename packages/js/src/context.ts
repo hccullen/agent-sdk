@@ -18,6 +18,7 @@ export interface SendMessageOptions extends AbortOptions {
   returnImmediately?: boolean;
   acceptedOutputModes?: string[];
   metadata?: Record<string, unknown>;
+  tenant?: string;
 }
 
 export class AgentContext {
@@ -56,6 +57,7 @@ export class AgentContext {
     const req: SendMessageRequest = { message };
     if (Object.keys(configuration).length > 0) req.configuration = configuration;
     if (opts?.metadata) req.metadata = opts.metadata;
+    if (opts?.tenant) req.tenant = opts.tenant;
     return req;
   }
 
@@ -89,10 +91,10 @@ export class AgentContext {
 
   async *streamMessage(
     parts: Part[],
-    opts?: AbortOptions,
+    opts?: SendMessageOptions,
   ): AsyncGenerator<StreamResponse> {
     const { controller, timer } = makeAbortController(opts);
-    const body = this.buildRequest(parts);
+    const body = this.buildRequest(parts, opts);
 
     try {
       const stream = await this._client.streamMessage(

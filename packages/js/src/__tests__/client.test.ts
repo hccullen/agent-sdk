@@ -20,9 +20,14 @@ describe("CortiClient", () => {
       expect(c.baseUrl).toContain("corti.app");
     });
 
-    it("baseUrl override takes precedence over region", () => {
+    it("baseUrl override takes precedence over region and appends /v2", () => {
       const c = makeClient({ region: "us", baseUrl: "https://custom.example.com" });
-      expect(c.baseUrl).toBe("https://custom.example.com");
+      expect(c.baseUrl).toBe("https://custom.example.com/v2");
+    });
+
+    it("baseUrl with /v2 already present is not doubled", () => {
+      const c = makeClient({ baseUrl: "https://custom.example.com/v2" });
+      expect(c.baseUrl).toBe("https://custom.example.com/v2");
     });
   });
 
@@ -55,6 +60,11 @@ describe("CortiClient", () => {
     it("exposes agentCard resource", () => {
       const c = makeClient();
       expect(c.agentCard).toBeDefined();
+    });
+
+    it("exposes connectors resource", () => {
+      const c = makeClient();
+      expect(c.connectors).toBeDefined();
     });
   });
 
