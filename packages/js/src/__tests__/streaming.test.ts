@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeAbortController, parseSSEStream, parseA2AStream, collectText, StreamCollector } from "../streaming.js";
+import { makeAbortController, parseSSEStream, parseA2AStream, collectText, StreamCollector, collectCitations, toMarkdown } from "../streaming.js";
 import type { StreamResponse } from "../types.js";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -662,5 +662,579 @@ describe("integration: collectText with parseA2AStream", () => {
 
     expect(collector.done).toBe(true);
     expect(collector.text).toBe("ABC");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Citation test fixtures
+// ---------------------------------------------------------------------------
+
+function makeCitationEvent(
+  text: string,
+  citations: Array<{ data_part_id: string; locator: string; offset: number }>,
+  dataResults: Record<string, unknown>[],
+): StreamResponse {
+  return {
+    artifactUpdate: {
+      taskId: "task.1",
+      contextId: "ctx.1",
+      lastChunk: true,
+      artifact: {
+        artifactId: "art.1",
+        parts: [
+          {
+            text,
+            metadata: {
+              citations,
+              offsetUnit: "chars",
+            },
+          },
+          {
+            data: { results: dataResults },
+            metadata: { dataPartId: "tool_data_01", toolName: "search" },
+          },
+        ],
+      },
+    },
+  };
+}
+
+function makeSearchResult(
+  url: string,
+  title: string,
+  snippet: string,
+  siteName?: string,
+  faviconUrl?: string,
+): Record<string, unknown> {
+  return {
+    site: {
+      name: siteName || new URL(url).hostname,
+      favicon_url: faviconUrl || `https://${new URL(url).hostname}/favicon.ico`,
+    },
+    snippet,
+    title,
+    type: "web_result",
+    url,
+    source: { provider: "tavily", retrieved_at: "2026-09-11T12:00:00Z" },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// collectCitations
+// ---------------------------------------------------------------------------
+
+describe("collectCitations", () => {
+  it("yields deltas during streaming then citations on lastChunk", async () => {
+    const results = [
+      makeSearchResult("https://fifa.com/final", "FIFA World Cup 2026 Final", "Spain claimed ultimate glory..."),
+      makeSearchResult("https://espn.com/world-cup", "World Cup Final Recap", "Spain beat Argentina 1-0..."),
+    ];
+    const events: StreamResponse[] = [
+      { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_SUBMITTED" } } },
+      { statusUpdate: { taskId: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_WORKING" } } },
+      {
+        artifactUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          artifact: { artifactId: "art.1", parts: [{ text: "Spain " }] },
+        },
+      },
+      {
+        artifactUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          artifact: { artifactId: "art.1", parts: [{ text: "won the World Cup." }] },
+          append: true,
+        },
+      },
+      makeCitationEvent(
+        "Spain won the World Cup.",
+        [
+          { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 5 },
+          { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 22 },
+        ],
+        results,
+      ),
+    ];
+
+    const chunks: { delta: string; text: string; done: boolean; citations: unknown[] }[] = [];
+    for await (const chunk of collectCitations(makeAsyncIterable(events))) {
+      chunks.push(chunk);
+    }
+
+    // 2 streaming chunks + 1 lastChunk
+    expect(chunks).toHaveLength(3);
+
+    // Streaming chunks: deltas present, citations empty
+    expect(chunks[0].delta).toBe("Spain ");
+    expect(chunks[0].done).toBe(false);
+    expect(chunks[0].citations).toEqual([]);
+
+    expect(chunks[1].delta).toBe("won the World Cup.");
+    expect(chunks[1].done).toBe(false);
+    expect(chunks[1].citations).toEqual([]);
+
+    // Final chunk: delta empty, citations populated
+    expect(chunks[2].delta).toBe("");
+    expect(chunks[2].done).toBe(true);
+    expect(chunks[2].citations).toHaveLength(2);
+    expect(chunks[2].citations![0]).toMatchObject({
+      offset: 5,
+      url: "https://fifa.com/final",
+      title: "FIFA World Cup 2026 Final",
+      snippet: "Spain claimed ultimate glory...",
+      siteName: "fifa.com",
+    });
+    expect(chunks[2].citations![1]).toMatchObject({
+      offset: 22,
+      url: "https://espn.com/world-cup",
+      title: "World Cup Final Recap",
+      snippet: "Spain beat Argentina 1-0...",
+      siteName: "espn.com",
+    });
+  });
+
+  it("extracts citations with correct source info from data parts", async () => {
+    const results = [
+      makeSearchResult("https://example.com/1", "Result One", "Snippet one", "example.com", "https://example.com/icon.png"),
+      makeSearchResult("https://example.com/2", "Result Two", "Snippet two"),
+      makeSearchResult("https://example.com/3", "Result Three", "Snippet three"),
+    ];
+    const event = makeCitationEvent(
+      "Text with refs.",
+      [
+        { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 },
+        { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 5 },
+        { data_part_id: "tool_data_01", locator: "/results/2/snippet", offset: 10 },
+      ],
+      results,
+    );
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toHaveLength(3);
+    expect(chunks[0].citations![0]).toMatchObject({
+      offset: 0,
+      url: "https://example.com/1",
+      title: "Result One",
+      snippet: "Snippet one",
+      siteName: "example.com",
+      faviconUrl: "https://example.com/icon.png",
+    });
+    expect(chunks[0].citations![1]).toMatchObject({
+      offset: 5,
+      url: "https://example.com/2",
+      title: "Result Two",
+      snippet: "Snippet two",
+    });
+    expect(chunks[0].citations![2]).toMatchObject({
+      offset: 10,
+      url: "https://example.com/3",
+      title: "Result Three",
+      snippet: "Snippet three",
+    });
+  });
+
+  it("handles empty locator (whole data object)", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            {
+              text: "Some text.",
+              metadata: {
+                citations: [{ data_part_id: "tool_data_01", locator: "", offset: 4 }],
+                offsetUnit: "chars",
+              },
+            },
+            {
+              data: { url: "https://top-level.com", title: "Top Level Result", snippet: "Top snippet" },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toHaveLength(1);
+    expect(chunks[0].citations![0]).toMatchObject({
+      offset: 4,
+      url: "https://top-level.com",
+      title: "Top Level Result",
+      snippet: "Top snippet",
+    });
+  });
+
+  it("returns empty citations when no citation metadata exists", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            { text: "No citations here." },
+            {
+              data: { results: [makeSearchResult("https://x.com", "X", "x")] },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toEqual([]);
+  });
+
+  it("returns empty citations when data part is missing", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            {
+              text: "Missing data.",
+              metadata: {
+                citations: [{ data_part_id: "nonexistent", locator: "/results/0/snippet", offset: 0 }],
+                offsetUnit: "chars",
+              },
+            },
+            {
+              data: { results: [makeSearchResult("https://x.com", "X", "x")] },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toEqual([]);
+  });
+
+  it("returns empty citations when url is missing from source", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            {
+              text: "No URL.",
+              metadata: {
+                citations: [{ data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 }],
+                offsetUnit: "chars",
+              },
+            },
+            {
+              data: { results: [{ title: "No URL Result", snippet: "snippet" }] },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toEqual([]);
+  });
+
+  it("skips non-artifactUpdate events", async () => {
+    const events: StreamResponse[] = [
+      { task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } },
+      { statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } } },
+    ];
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable(events))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(0);
+  });
+
+  it("handles empty stream", async () => {
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(0);
+  });
+
+  it("handles multiple data parts with different dataPartIds", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            {
+              text: "Multiple sources.",
+              metadata: {
+                citations: [
+                  { data_part_id: "data_a", locator: "/results/0/snippet", offset: 0 },
+                  { data_part_id: "data_b", locator: "/results/0/snippet", offset: 10 },
+                ],
+                offsetUnit: "chars",
+              },
+            },
+            {
+              data: { results: [makeSearchResult("https://a.com", "Source A", "A snippet")] },
+              metadata: { dataPartId: "data_a", toolName: "search" },
+            },
+            {
+              data: { results: [makeSearchResult("https://b.com", "Source B", "B snippet")] },
+              metadata: { dataPartId: "data_b", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toHaveLength(2);
+    expect(chunks[0].citations![0]).toMatchObject({ url: "https://a.com", title: "Source A" });
+    expect(chunks[0].citations![1]).toMatchObject({ url: "https://b.com", title: "Source B" });
+  });
+
+  it("deduplicates by preserving all citations (even if same URL)", async () => {
+    const results = [
+      makeSearchResult("https://same.com", "Same URL", "Snippet 1"),
+      makeSearchResult("https://same.com", "Same URL", "Snippet 2"),
+    ];
+    const event = makeCitationEvent(
+      "Two refs same URL.",
+      [
+        { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 },
+        { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 5 },
+      ],
+      results,
+    );
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toHaveLength(2);
+    expect(chunks[0].citations![0].url).toBe("https://same.com");
+    expect(chunks[0].citations![1].url).toBe("https://same.com");
+  });
+
+  it("handles missing text part metadata entirely", async () => {
+    const event: StreamResponse = {
+      artifactUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        lastChunk: true,
+        artifact: {
+          artifactId: "art.1",
+          parts: [
+            { text: "No metadata at all." },
+            {
+              data: { results: [makeSearchResult("https://x.com", "X", "x")] },
+              metadata: { dataPartId: "tool_data_01", toolName: "search" },
+            },
+          ],
+        },
+      },
+    };
+
+    const chunks = [];
+    for await (const chunk of collectCitations(makeAsyncIterable([event]))) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].citations).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toMarkdown
+// ---------------------------------------------------------------------------
+
+describe("toMarkdown", () => {
+  it("inserts [n] markers at citation offsets", () => {
+    const md = toMarkdown("ABCDEF", [
+      { offset: 3, url: "https://a.com" },
+      { offset: 6, url: "https://b.com" },
+    ]);
+    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+  });
+
+  it("appends Sources section with numbered entries", () => {
+    const md = toMarkdown("Hello world.", [
+      { offset: 12, url: "https://example.com/page", title: "Example Page" },
+    ]);
+    expect(md).toContain("## Sources");
+    expect(md).toContain("[1] Example Page — https://example.com/page");
+  });
+
+  it("handles empty citations array", () => {
+    expect(toMarkdown("unchanged text", [])).toBe("unchanged text");
+  });
+
+  it("assigns sequential numbers by URL", () => {
+    const md = toMarkdown("ABCDEF", [
+      { offset: 3, url: "https://same.com" },
+      { offset: 6, url: "https://same.com" },
+    ]);
+    expect(md).toBe("ABC[1]DEF[1]\n\n## Sources\n[1] https://same.com — https://same.com");
+  });
+
+  it("handles citations at the same offset", () => {
+    const md = toMarkdown("ABCDE", [
+      { offset: 5, url: "https://a.com" },
+      { offset: 5, url: "https://b.com" },
+    ]);
+    expect(md).toBe("ABCDE[1][2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+  });
+
+  it("handles citation offset beyond text length", () => {
+    const md = toMarkdown("short", [
+      { offset: 100, url: "https://a.com" },
+    ]);
+    expect(md).toBe("short[1]\n\n## Sources\n[1] https://a.com — https://a.com");
+  });
+
+  it("uses siteName when title is missing", () => {
+    const md = toMarkdown("text", [
+      { offset: 4, url: "https://example.com", siteName: "example.com" },
+    ]);
+    expect(md).toContain("[1] example.com — https://example.com");
+  });
+
+  it("uses URL when both title and siteName are missing", () => {
+    const md = toMarkdown("text", [
+      { offset: 4, url: "https://example.com" },
+    ]);
+    expect(md).toContain("[1] https://example.com — https://example.com");
+  });
+
+  it("sorts citations by offset before inserting", () => {
+    const md = toMarkdown("ABCDEF", [
+      { offset: 6, url: "https://b.com" },
+      { offset: 3, url: "https://a.com" },
+    ]);
+    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com — https://a.com\n[2] https://b.com — https://b.com");
+  });
+
+  it("handles single citation", () => {
+    const md = toMarkdown("Hello world.", [
+      { offset: 12, url: "https://example.com", title: "Example" },
+    ]);
+    expect(md).toBe("Hello world.[1]\n\n## Sources\n[1] Example — https://example.com");
+  });
+
+  it("preserves text exactly when no citations overlap with content", () => {
+    const text = "Line one\nLine two\n";
+    const md = toMarkdown(text, [{ offset: text.length, url: "https://a.com" }]);
+    expect(md).toBe("Line one\nLine two\n[1]\n\n## Sources\n[1] https://a.com — https://a.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration: collectCitations + toMarkdown
+// ---------------------------------------------------------------------------
+
+describe("integration: collectCitations + toMarkdown", () => {
+  it("end-to-end: stream → collectCitations → toMarkdown", async () => {
+    const results = [
+      makeSearchResult("https://fifa.com/final", "FIFA World Cup 2026 Final", "Spain claimed ultimate glory..."),
+      makeSearchResult("https://espn.com/world-cup", "World Cup Recap", "Spain beat Argentina 1-0..."),
+    ];
+    const events: StreamResponse[] = [
+      { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_SUBMITTED" } } },
+      { statusUpdate: { taskId: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_WORKING" } } },
+      {
+        artifactUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          artifact: { artifactId: "art.1", parts: [{ text: "Spain " }] },
+        },
+      },
+      {
+        artifactUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          artifact: { artifactId: "art.1", parts: [{ text: "won the World Cup." }] },
+          append: true,
+        },
+      },
+      makeCitationEvent(
+        "Spain won the World Cup.",
+        [
+          { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 5 },
+          { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 22 },
+        ],
+        results,
+      ),
+    ];
+
+    const sseChunks = events.map((e) => `data: ${JSON.stringify(e)}\n\n`);
+    const stream = parseA2AStream(makeStream(sseChunks));
+
+    let finalText = "";
+    let finalCitations: { offset: number; url: string; title?: string; snippet?: string; siteName?: string; faviconUrl?: string }[] = [];
+    for await (const chunk of collectCitations(stream)) {
+      if (chunk.done) {
+        finalText = chunk.text;
+        finalCitations = chunk.citations;
+      }
+    }
+
+    const md = toMarkdown(finalText, finalCitations);
+
+    expect(md).toContain("[1]");
+    expect(md).toContain("[2]");
+    expect(md).toContain("## Sources");
+    expect(md).toContain("FIFA World Cup 2026 Final — https://fifa.com/final");
+    expect(md).toContain("World Cup Recap — https://espn.com/world-cup");
   });
 });

@@ -229,6 +229,237 @@ export class StreamCollector {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Citation extraction
+// ---------------------------------------------------------------------------
+
+export interface Citation {
+  /** Character offset in the text where this citation should be displayed. */
+  offset: number;
+  /** Source URL. */
+  url: string;
+  /** Source page title. */
+  title?: string;
+  /** Snippet of source content that supports the claim. */
+  snippet?: string;
+  /** Site name (e.g. "fifa.com"). */
+  siteName?: string;
+  /** Favicon URL for the source site. */
+  faviconUrl?: string;
+}
+
+export interface StreamTextWithCitations {
+  /** Incremental text fragment (empty on final event). */
+  delta: string;
+  /** Accumulated text so far (authoritative on done). */
+  text: string;
+  /** True when the lastChunk event has been received. */
+  done: boolean;
+  /** Extracted citations (empty until done=true, then populated from lastChunk metadata). */
+  citations: Citation[];
+}
+
+/**
+ * Resolve a JSON pointer like "/results/0/snippet" into a data object.
+ * Returns the value at that path, or undefined if the path doesn't exist.
+ */
+function resolveLocator(data: unknown, locator: string): unknown {
+  if (!locator || locator === "") return data;
+  const parts = locator.split("/").filter(Boolean);
+  let current: unknown = data;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Extract the parent result object from a locator path.
+ * Given "/results/0/snippet", returns data.results[0].
+ * Given "" (empty), returns the whole data object.
+ */
+function extractSourceResult(data: unknown, locator: string): Record<string, unknown> | undefined {
+  if (!locator) {
+    return typeof data === "object" && data !== null ? data as Record<string, unknown> : undefined;
+  }
+  const parts = locator.split("/").filter(Boolean);
+  let current: unknown = data;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[parts[i]];
+  }
+  return typeof current === "object" && current !== null ? current as Record<string, unknown> : undefined;
+}
+
+/**
+ * Extract citations from a lastChunk artifactUpdate event.
+ * Reads text part metadata.citations and resolves them against data parts.
+ */
+function extractCitationsFromEvent(event: StreamResponse): Citation[] {
+  const au = event.artifactUpdate;
+  if (!au?.artifact?.parts) return [];
+
+  const textParts = au.artifact.parts.filter((p) => "text" in p && typeof (p as { text: unknown }).text === "string");
+  const dataParts = au.artifact.parts.filter((p) => "data" in p);
+
+  if (textParts.length === 0) return [];
+
+  const textPartWithCitations = textParts.find((p) => {
+    const meta = (p as { metadata?: Record<string, unknown> }).metadata;
+    return meta && Array.isArray(meta.citations);
+  });
+  if (!textPartWithCitations) return [];
+
+  const meta = (textPartWithCitations as { metadata: Record<string, unknown> }).metadata;
+  const rawCitations = meta.citations as Array<{
+    data_part_id?: string;
+    locator?: string;
+    offset?: number;
+  }>;
+
+  if (!Array.isArray(rawCitations) || rawCitations.length === 0) return [];
+
+  const dataMap = new Map<string, unknown>();
+  for (const dp of dataParts) {
+    const dpMeta = (dp as { metadata?: Record<string, unknown> }).metadata;
+    const dpId = dpMeta?.dataPartId as string | undefined;
+    if (dpId) {
+      dataMap.set(dpId, (dp as { data: unknown }).data);
+    }
+  }
+
+  const citations: Citation[] = [];
+  for (const raw of rawCitations) {
+    if (raw.offset === undefined) continue;
+
+    const data = raw.data_part_id ? dataMap.get(raw.data_part_id) : undefined;
+    if (!data) continue;
+
+    const sourceResult = extractSourceResult(data, raw.locator ?? "");
+    if (!sourceResult) continue;
+
+    const site = sourceResult.site as Record<string, unknown> | undefined;
+    const url = sourceResult.url as string | undefined;
+    if (!url) continue;
+
+    citations.push({
+      offset: raw.offset,
+      url,
+      title: sourceResult.title as string | undefined,
+      snippet: sourceResult.snippet as string | undefined,
+      siteName: site?.name as string | undefined,
+      faviconUrl: site?.favicon_url as string | undefined,
+    });
+  }
+
+  return citations;
+}
+
+/**
+ * Consume a `StreamResponse` stream and yield text deltas + extracted citations.
+ *
+ * Works like {@link collectText} for the streaming portion — each artifact
+ * chunk yields `{ delta, text, done: false, citations: [] }`. On the
+ * `lastChunk` event, citations are extracted from the text part's
+ * `metadata.citations` and resolved against the data parts' source data.
+ *
+ * @example
+ * ```ts
+ * const stream = await ctx.streamMessage([{ text: "Who won the World Cup?" }]);
+ * for await (const chunk of collectCitations(stream)) {
+ *   if (chunk.delta) process.stdout.write(chunk.delta);
+ *   if (chunk.done) {
+ *     console.log(toMarkdown(chunk.text, chunk.citations));
+ *   }
+ * }
+ * ```
+ */
+export async function* collectCitations(
+  stream: AsyncIterable<StreamResponse>,
+): AsyncGenerator<StreamTextWithCitations> {
+  let accumulated = "";
+
+  for await (const event of stream) {
+    if (!event.artifactUpdate) continue;
+
+    const au = event.artifactUpdate;
+    const chunkText = artifactText(au.artifact);
+
+    if (au.lastChunk) {
+      const citations = extractCitationsFromEvent(event);
+      yield { delta: "", text: chunkText, done: true, citations };
+      return;
+    }
+
+    accumulated += chunkText;
+    yield { delta: chunkText, text: accumulated, done: false, citations: [] };
+  }
+}
+
+/**
+ * Render text + citations as markdown with inline `[n]` markers and a
+ * Sources section.
+ *
+ * Citations are inserted at their character offsets in the text. If
+ * multiple citations share the same offset, they are rendered as
+ * `[1][2]`. A `## Sources` section is appended with numbered entries.
+ *
+ * @example
+ * ```ts
+ * const md = toMarkdown("Spain won the World Cup.", [
+ *   { offset: 23, url: "https://fifa.com/...", title: "FIFA Final" },
+ * ]);
+ * // → "Spain won the World Cup.[1]\n\n## Sources\n[1] FIFA Final — https://fifa.com/..."
+ * ```
+ */
+export function toMarkdown(text: string, citations: Citation[]): string {
+  if (citations.length === 0) return text;
+
+  const sorted = [...citations].sort((a, b) => a.offset - b.offset);
+
+  let result = "";
+  let lastPos = 0;
+  const numberForUrl = new Map<string, number>();
+  let nextNumber = 1;
+
+  for (const citation of sorted) {
+    const offset = Math.min(citation.offset, text.length);
+
+    let num = numberForUrl.get(citation.url);
+    if (num === undefined) {
+      num = nextNumber++;
+      numberForUrl.set(citation.url, num);
+    }
+
+    result += text.slice(lastPos, offset);
+    result += `[${num}]`;
+    lastPos = offset;
+  }
+
+  result += text.slice(lastPos);
+
+  const sources: string[] = [];
+  const seenUrls = new Set<string>();
+  const sortedByNumber = [...numberForUrl.entries()].sort((a, b) => a[1] - b[1]);
+  for (const [url, num] of sortedByNumber) {
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    const citation = sorted.find((c) => c.url === url);
+    if (citation) {
+      const title = citation.title || citation.siteName || url;
+      sources.push(`[${num}] ${title} — ${url}`);
+    }
+  }
+
+  if (sources.length > 0) {
+    result += `\n\n## Sources\n${sources.join("\n")}`;
+  }
+
+  return result;
+}
+
 export interface AbortOptions {
   timeoutInSeconds?: number;
   abortSignal?: AbortSignal;
