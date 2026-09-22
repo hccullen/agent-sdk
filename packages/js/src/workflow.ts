@@ -1,12 +1,15 @@
+import type {
+  WorkflowDefinition,
+  WorkflowHandlers,
+} from "./declarativeGraph.js";
+import {
+  compileWorkflow,
+  parseWorkflowDefinition,
+  runWorkflow,
+} from "./declarativeGraph.js";
 import { AgentHandle } from "./handle.js";
 import { MessageResponse } from "./response.js";
 import type { Part } from "./types.js";
-import {
-  parseWorkflowDefinition,
-  compileWorkflow,
-  runWorkflow,
-} from "./declarativeGraph.js";
-import type { WorkflowDefinition, WorkflowHandlers } from "./declarativeGraph.js";
 
 export interface Runnable {
   run(input: string | Part[]): Promise<MessageResponse>;
@@ -33,9 +36,13 @@ function parallelToRunnable(p: Parallel): Runnable {
     run: async (input: string | Part[]) => {
       const { fulfilled } = await p.run(input);
       if (fulfilled.length === 0) {
-        throw new Error("[AgentSDK] All parallel steps failed — no output to merge.");
+        throw new Error(
+          "[AgentSDK] All parallel steps failed — no output to merge.",
+        );
       }
-      return MessageResponse.fromText(fulfilled.map((r) => r.text ?? "").join("\n\n"));
+      return MessageResponse.fromText(
+        fulfilled.map((r) => r.text ?? "").join("\n\n"),
+      );
     },
   };
 }
@@ -43,17 +50,20 @@ function parallelToRunnable(p: Parallel): Runnable {
 function normaliseWorkflow(step: WorkflowStepDef): WorkflowStep {
   if (step instanceof AgentHandle) return { agent: step };
   if (step instanceof Parallel) return { agent: parallelToRunnable(step) };
-  if (step.agent instanceof Parallel) return { ...step, agent: parallelToRunnable(step.agent) };
+  if (step.agent instanceof Parallel)
+    return { ...step, agent: parallelToRunnable(step.agent) };
   return step;
 }
 
-const _delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const _delay = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
 
 export class Workflow {
   private readonly _steps: WorkflowStep[];
 
   constructor(steps: WorkflowStepDef[]) {
-    if (steps.length === 0) throw new Error("[AgentSDK] Workflow must have at least one step.");
+    if (steps.length === 0)
+      throw new Error("[AgentSDK] Workflow must have at least one step.");
     this._steps = steps.map(normaliseWorkflow);
   }
 
@@ -76,7 +86,9 @@ export class Workflow {
         const prevResponse = stepResponses[stepResponses.length - 1];
 
         if (!isFirst && step.when !== undefined && !step.when(prevResponse)) {
-          return { next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__" };
+          return {
+            next: i < this._steps.length - 1 ? `step_${i + 1}` : "__end__",
+          };
         }
 
         const stepInput: string | Part[] =
@@ -131,7 +143,9 @@ export class Workflow {
     await runWorkflow(compiled, { __input: input });
 
     if (stepResponses.length === 0) {
-      throw new Error("[AgentSDK] All workflow steps were skipped — no output produced.");
+      throw new Error(
+        "[AgentSDK] All workflow steps were skipped — no output produced.",
+      );
     }
 
     return {
@@ -146,7 +160,9 @@ export function workflow(steps: WorkflowStepDef[]): Workflow {
   return new Workflow(steps);
 }
 
-export type ParallelStep = AgentHandle | { agent: AgentHandle; input?: string | Part[] };
+export type ParallelStep =
+  | AgentHandle
+  | { agent: AgentHandle; input?: string | Part[] };
 
 export interface ParallelResult {
   results: PromiseSettledResult<MessageResponse>[];
@@ -158,7 +174,8 @@ export class Parallel {
   private readonly _steps: ParallelStep[];
 
   constructor(steps: ParallelStep[]) {
-    if (steps.length === 0) throw new Error("[AgentSDK] Parallel must have at least one step.");
+    if (steps.length === 0)
+      throw new Error("[AgentSDK] Parallel must have at least one step.");
     this._steps = steps;
   }
 
@@ -166,7 +183,9 @@ export class Parallel {
     const promises = this._steps.map((step) => {
       const agent = step instanceof AgentHandle ? step : step.agent;
       const stepInput =
-        !(step instanceof AgentHandle) && step.input !== undefined ? step.input : input;
+        !(step instanceof AgentHandle) && step.input !== undefined
+          ? step.input
+          : input;
       return agent.run(stepInput);
     });
 

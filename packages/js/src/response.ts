@@ -50,7 +50,16 @@ export class MessageResponse {
     return this._task?.status?.state;
   }
 
-  get status(): "completed" | "failed" | "working" | "submitted" | "canceled" | "input-required" | "rejected" | "auth-required" | undefined {
+  get status():
+    | "completed"
+    | "failed"
+    | "working"
+    | "submitted"
+    | "canceled"
+    | "input-required"
+    | "rejected"
+    | "auth-required"
+    | undefined {
     const state = this.state;
     if (!state) return undefined;
     return state.replace("TASK_STATE_", "").toLowerCase().replace(/_/g, "-") as
@@ -68,7 +77,10 @@ export class MessageResponse {
     const msg = this.message;
     if (!msg || msg.role === "ROLE_USER") return null;
     const joined = (msg.parts ?? [])
-      .filter((p: Part): p is { text: string } => "text" in p && typeof p.text === "string")
+      .filter(
+        (p: Part): p is { text: string } =>
+          "text" in p && typeof p.text === "string",
+      )
       .map((p) => p.text)
       .join("");
     return joined === "" ? null : joined;

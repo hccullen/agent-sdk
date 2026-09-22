@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectors, auth } from "../connectors.js";
+import { auth, connectors } from "../src/connectors.js";
 
 describe("connectors.registry", () => {
   it("builds a minimal registry connector", () => {
@@ -21,8 +21,15 @@ describe("connectors.registry", () => {
 
 describe("connectors.mcp", () => {
   it("builds a minimal MCP connector", () => {
-    const c = connectors.mcp({ name: "my-mcp", url: "https://mcp.example.com" });
-    expect(c).toEqual({ type: "mcp", name: "my-mcp", url: "https://mcp.example.com" });
+    const c = connectors.mcp({
+      name: "my-mcp",
+      url: "https://mcp.example.com",
+    });
+    expect(c).toEqual({
+      type: "mcp",
+      name: "my-mcp",
+      url: "https://mcp.example.com",
+    });
   });
 
   it("includes auth when provided", () => {
@@ -86,7 +93,10 @@ describe("connectors.schema", () => {
     });
     expect(c.type).toBe("schema");
     expect(c.name).toBe("submit_code");
-    expect(c.schema).toEqual({ type: "object", properties: { code: { type: "string" } } });
+    expect(c.schema).toEqual({
+      type: "object",
+      properties: { code: { type: "string" } },
+    });
   });
 
   it("includes description and transition when provided", () => {
@@ -111,7 +121,10 @@ describe("auth factories", () => {
   });
 
   it("auth.apiKey() includes ref when provided", () => {
-    expect(auth.apiKey("secret-ref")).toEqual({ type: "apiKey", ref: "secret-ref" });
+    expect(auth.apiKey("secret-ref")).toEqual({
+      type: "apiKey",
+      ref: "secret-ref",
+    });
   });
 
   it("auth.oauth2() includes scope, redirectUrl, ref", () => {
@@ -131,7 +144,10 @@ describe("auth factories", () => {
   });
 
   it("auth.bearer() includes ref when provided", () => {
-    expect(auth.bearer("secret-ref")).toEqual({ type: "bearer", ref: "secret-ref" });
+    expect(auth.bearer("secret-ref")).toEqual({
+      type: "bearer",
+      ref: "secret-ref",
+    });
   });
 
   it("auth.bearer() returns { type: 'bearer' } without ref", () => {
@@ -166,7 +182,10 @@ describe("auth factory round-trip via connectors.mcp", () => {
     const c = connectors.mcp({
       name: "test",
       url: "https://mcp.example.com",
-      auth: auth.oauth2({ scope: "read", redirectUrl: "https://app.example.com/cb" }),
+      auth: auth.oauth2({
+        scope: "read",
+        redirectUrl: "https://app.example.com/cb",
+      }),
     });
     expect(c.auth).toEqual({
       type: "oauth2",

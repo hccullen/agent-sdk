@@ -1,15 +1,15 @@
 import type { CortiClient } from "./client.js";
-import { AgentContext } from "./context.js";
 import type { SendMessageOptions } from "./context.js";
+import { AgentContext } from "./context.js";
 import type { MessageResponse } from "./response.js";
 import type {
   Agent,
   AgentPatch,
+  Lifecycle,
   Part,
   StreamResponse,
-  Visibility,
-  Lifecycle,
   UserID,
+  Visibility,
 } from "./types.js";
 
 export type AgentHandleFactory = (agentId: string) => Promise<AgentHandle>;
@@ -99,8 +99,7 @@ export class AgentHandle {
     opts?: SendMessageOptions,
   ): AsyncGenerator<StreamResponse> {
     const ctx = new AgentContext(this._client, this._agent.id);
-    const parts: Part[] =
-      typeof input === "string" ? [{ text: input }] : input;
+    const parts: Part[] = typeof input === "string" ? [{ text: input }] : input;
     yield* ctx.streamMessage(parts, opts);
   }
 

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { MessageResponse } from "../response.js";
-import type { SendMessageResponse } from "../types.js";
+import { MessageResponse } from "../src/response.js";
+import type { SendMessageResponse } from "../src/types.js";
 
-function makeTaskResponse(overrides: Partial<SendMessageResponse> = {}): SendMessageResponse {
+function makeTaskResponse(
+  overrides: Partial<SendMessageResponse> = {},
+): SendMessageResponse {
   return {
     task: {
       id: "task.1",
@@ -16,9 +18,7 @@ function makeTaskResponse(overrides: Partial<SendMessageResponse> = {}): SendMes
         },
         timestamp: "2026-05-19T12:00:01Z",
       },
-      artifacts: [
-        { artifactId: "art.1", parts: [{ text: "J45.909" }] },
-      ],
+      artifacts: [{ artifactId: "art.1", parts: [{ text: "J45.909" }] }],
     },
     ...overrides,
   };
@@ -177,7 +177,15 @@ describe("MessageResponse", () => {
         task: {
           id: "t",
           contextId: "c",
-          status: { state: state as SendMessageResponse["task"] extends infer T ? T extends { status: infer S } ? S extends { state: infer St } ? St : never : never : never },
+          status: {
+            state: state as SendMessageResponse["task"] extends infer T
+              ? T extends { status: infer S }
+                ? S extends { state: infer St }
+                  ? St
+                  : never
+                : never
+              : never,
+          },
         },
       });
       expect(r.status).toBe(expected);

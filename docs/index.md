@@ -22,28 +22,43 @@ npm install @newsioaps/agent-sdk @corti/sdk
 
 `@corti/sdk` is a peer dependency — install it alongside the wrapper.
 
+### Subpath imports
+
+The root import is a convenience barrel; each area of the SDK is also available as a narrower subpath import, so you only pull in what you use:
+
+```typescript
+import { CortiClient } from "@newsioaps/agent-sdk/client";
+import { AgentHandle } from "@newsioaps/agent-sdk/handle";
+import { AgentContext } from "@newsioaps/agent-sdk/context";
+import { workflow, parallel } from "@newsioaps/agent-sdk/workflow";
+import { stateGraph, agentNode, END } from "@newsioaps/agent-sdk/graph";
+import { compileWorkflow } from "@newsioaps/agent-sdk/declarative-graph";
+import { StreamCollector, collectText } from "@newsioaps/agent-sdk/streaming";
+import { CortiError, CortiTimeoutError } from "@newsioaps/agent-sdk/errors";
+```
+
+All types are still reachable from the root `@newsioaps/agent-sdk` import — subpaths are optional. The `errors` subpath re-exports the underlying `@corti/sdk` error classes, so `instanceof` checks work identically against either package.
+
 ## Quick start
 
 ```typescript
-import { CortiClient } from "@corti/sdk";
-import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
+import { CortiClient, connectors } from "@newsioaps/agent-sdk";
 
 const client = new CortiClient({
-  tenantName: "my-tenant",
-  environment: "eu",
-  auth: { clientId: "...", clientSecret: "..." },
+  token: process.env.CORTI_TOKEN!,
+  tenant: "my-tenant",
+  region: "eu",
 });
 
-const agents = new AgentsClient(client);
-
-const agent = await agents.create({
+const agent = await client.agents.create({
   name: "coder",
   description: "Returns ICD-10 codes for clinical terms.",
   systemPrompt: "Respond with only the ICD-10 code.",
   connectors: [connectors.registry({ name: "coding-expert" })],
 });
 
-const ctx = agent.createContext();
+const handle = await client.createAgentHandle(agent.id);
+const ctx = handle.createContext();
 const reply = await ctx.sendText("Hypertension?");
 console.log(reply.text);        // "I10"
 console.log(reply.status);      // "completed"

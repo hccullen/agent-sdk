@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { CortiClient } from "../client.js";
-import type { Agent } from "../types.js";
+import { CortiClient } from "../src/client.js";
+import type { Agent } from "../src/types.js";
 
 const agentResponse: Agent = {
   id: "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
@@ -28,7 +28,10 @@ function makeMockSdk(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeClient(sdkOverrides: Record<string, unknown> = {}): { client: CortiClient; mockSdk: ReturnType<typeof makeMockSdk> } {
+function makeClient(sdkOverrides: Record<string, unknown> = {}): {
+  client: CortiClient;
+  mockSdk: ReturnType<typeof makeMockSdk>;
+} {
   const mockSdk = makeMockSdk(sdkOverrides);
   return { client: new CortiClient({ sdkClient: mockSdk as never }), mockSdk };
 }
@@ -43,19 +46,27 @@ describe("CortiClient.agents", () => {
     });
 
     expect(result).toEqual(agentResponse);
-    expect(mockSdk.agentic.agents.create).toHaveBeenCalledWith({
-      name: "coder",
-      description: "Returns ICD-10 codes.",
-    }, undefined);
+    expect(mockSdk.agentic.agents.create).toHaveBeenCalledWith(
+      {
+        name: "coder",
+        description: "Returns ICD-10 codes.",
+      },
+      undefined,
+    );
   });
 
   it("get delegates to sdk.agentic.agents.get", async () => {
     const { client, mockSdk } = makeClient();
 
-    const result = await client.agents.get("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
+    const result = await client.agents.get(
+      "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
+    );
 
     expect(result).toEqual(agentResponse);
-    expect(mockSdk.agentic.agents.get).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40", undefined);
+    expect(mockSdk.agentic.agents.get).toHaveBeenCalledWith(
+      "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
+      undefined,
+    );
   });
 
   it("list delegates to sdk.agentic.agents.list and returns response", async () => {
@@ -68,11 +79,14 @@ describe("CortiClient.agents", () => {
     });
 
     expect(result.agents).toHaveLength(1);
-    expect(mockSdk.agentic.agents.list).toHaveBeenCalledWith({
-      visibility: ["private"],
-      lifecycle: "persistent",
-      q: "coder",
-    }, undefined);
+    expect(mockSdk.agentic.agents.list).toHaveBeenCalledWith(
+      {
+        visibility: ["private"],
+        lifecycle: "persistent",
+        q: "coder",
+      },
+      undefined,
+    );
   });
 
   it("update delegates to sdk.agentic.agents.update", async () => {
@@ -85,10 +99,13 @@ describe("CortiClient.agents", () => {
       },
     });
 
-    const result = await client.agents.update("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40", {
-      name: "coder-v2",
-      model: null,
-    });
+    const result = await client.agents.update(
+      "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
+      {
+        name: "coder-v2",
+        model: null,
+      },
+    );
 
     expect(result.name).toBe("coder-v2");
     expect(mockSdk.agentic.agents.update).toHaveBeenCalledWith(
@@ -103,6 +120,9 @@ describe("CortiClient.agents", () => {
 
     await client.agents.delete("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40");
 
-    expect(mockSdk.agentic.agents.delete).toHaveBeenCalledWith("agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40", undefined);
+    expect(mockSdk.agentic.agents.delete).toHaveBeenCalledWith(
+      "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
+      undefined,
+    );
   });
 });

@@ -1,0 +1,25 @@
+title = "agent-sdk gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "corti-client-secret"
+description = "Hardcoded Corti OAuth client secret"
+regex = '''(?i)(client[_-]?secret)[[:space:]]*[:=][[:space:]]*["'][A-Za-z0-9+/_=-]{16,}["']'''
+keywords = ["clientsecret", "client_secret"]
+
+[[rules]]
+id = "generic-hardcoded-secret"
+description = "Generic hardcoded secret/token/password assignment"
+regex = '''(?i)(secret|token|password|passwd|api[_-]?key)[[:space:]]*[:=][[:space:]]*["'][A-Za-z0-9+/=]{20,}["']'''
+entropy = 3.5
+keywords = ["secret", "token", "password", "passwd", "apikey", "api_key"]
+
+[allowlist]
+description = "Placeholders and examples"
+regexes = [
+  '''(?i)(your|my|replace|change|example|placeholder|redacted|dummy|test[-_]?(secret|token)|xxx+)''',
+  '''process\.env\.[A-Z_]+''',
+]
+paths = ['''\.env\.example$''']

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentContext } from "../context.js";
-import { MessageResponse } from "../response.js";
-import { dataPart } from "../types.js";
-import type { SendMessageResponse, StreamResponse } from "../types.js";
+import { AgentContext } from "../src/context.js";
+import { MessageResponse } from "../src/response.js";
+import type { SendMessageResponse, StreamResponse } from "../src/types.js";
+import { dataPart } from "../src/types.js";
 
 const taskResponse: SendMessageResponse = {
   task: {
@@ -19,14 +19,19 @@ const taskResponse: SendMessageResponse = {
   },
 };
 
-function makeMockClient(sendMessageImpl?: (agentId: string, body: unknown) => Promise<unknown>) {
+function makeMockClient(
+  sendMessageImpl?: (agentId: string, body: unknown) => Promise<unknown>,
+) {
   const mock = {
     sendMessage: vi.fn(sendMessageImpl ?? (async () => taskResponse)),
     streamMessage: vi.fn(),
     getTask: vi.fn(),
     cancelTask: vi.fn(),
   };
-  return { client: mock as unknown as import("../client.js").CortiClient, mock };
+  return {
+    client: mock as unknown as import("../client.js").CortiClient,
+    mock,
+  };
 }
 
 describe("AgentContext", () => {
@@ -101,14 +106,28 @@ describe("AgentContext", () => {
   describe("streamMessage", () => {
     it("yields events from the stream", async () => {
       const events: StreamResponse[] = [
-        { task: { id: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_WORKING" } } },
-        { statusUpdate: { taskId: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_COMPLETED" } } },
+        {
+          task: {
+            id: "t1",
+            contextId: "ctx-s",
+            status: { state: "TASK_STATE_WORKING" },
+          },
+        },
+        {
+          statusUpdate: {
+            taskId: "t1",
+            contextId: "ctx-s",
+            status: { state: "TASK_STATE_COMPLETED" },
+          },
+        },
       ];
 
       const { client, mock } = makeMockClient();
-      mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
-        for (const e of events) yield e;
-      })());
+      mock.streamMessage = vi.fn().mockResolvedValue(
+        (async function* () {
+          for (const e of events) yield e;
+        })(),
+      );
 
       const ctx = new AgentContext(client, "agent-1");
 
@@ -123,29 +142,47 @@ describe("AgentContext", () => {
 
     it("captures contextId from stream events", async () => {
       const events: StreamResponse[] = [
-        { statusUpdate: { taskId: "t1", contextId: "stream-ctx", status: { state: "TASK_STATE_WORKING" } } },
+        {
+          statusUpdate: {
+            taskId: "t1",
+            contextId: "stream-ctx",
+            status: { state: "TASK_STATE_WORKING" },
+          },
+        },
       ];
 
       const { client, mock } = makeMockClient();
-      mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
-        for (const e of events) yield e;
-      })());
+      mock.streamMessage = vi.fn().mockResolvedValue(
+        (async function* () {
+          for (const e of events) yield e;
+        })(),
+      );
 
       const ctx = new AgentContext(client, "agent-1");
-      for await (const _ of ctx.streamMessage([{ text: "Hi" }])) { /* drain */ }
+      for await (const _ of ctx.streamMessage([{ text: "Hi" }])) {
+        /* drain */
+      }
 
       expect(ctx.id).toBe("stream-ctx");
     });
   });
 
   it("getTask delegates to client.getTask with agent id and abort signal", async () => {
-    const mockTask = { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_COMPLETED" } };
+    const mockTask = {
+      id: "task.1",
+      contextId: "ctx.1",
+      status: { state: "TASK_STATE_COMPLETED" },
+    };
     const { client, mock } = makeMockClient();
     mock.getTask = vi.fn().mockResolvedValue(mockTask);
     const ctx = new AgentContext(client, "agent-1");
     const result = await ctx.getTask("task.1");
     expect(result).toEqual(mockTask);
-    expect(mock.getTask).toHaveBeenCalledWith("agent-1", "task.1", expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+    expect(mock.getTask).toHaveBeenCalledWith(
+      "agent-1",
+      "task.1",
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+    );
   });
 
   it("cancelTask delegates to client.cancelTask with agent id and abort signal", async () => {
@@ -155,7 +192,11 @@ describe("AgentContext", () => {
     const ctx = new AgentContext(client, "agent-1");
     const result = await ctx.cancelTask("task.1");
     expect(result).toEqual(mockTask);
-    expect(mock.cancelTask).toHaveBeenCalledWith("agent-1", "task.1", expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+    expect(mock.cancelTask).toHaveBeenCalledWith(
+      "agent-1",
+      "task.1",
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+    );
   });
 
   describe("auth-required connector flow", () => {
@@ -206,7 +247,7 @@ describe("AgentContext", () => {
     };
 
     it("detects auth-required status from MCP connector 401", async () => {
-      const { client, mock } = makeMockClient(async () => authRequiredResponse);
+      const { client } = makeMockClient(async () => authRequiredResponse);
       const ctx = new AgentContext(client, "agent-1");
       const r = await ctx.sendText("What should I do if I have a fever?");
       expect(r.status).toBe("auth-required");
@@ -250,7 +291,9 @@ describe("AgentContext", () => {
 
       // Verify the resume message included contextId (taskId is matched server-side)
       const resumeCall = mock.sendMessage.mock.calls[1];
-      const resumeBody = resumeCall[1] as { message: { contextId?: string; parts: unknown[] } };
+      const resumeBody = resumeCall[1] as {
+        message: { contextId?: string; parts: unknown[] };
+      };
       expect(resumeBody.message.contextId).toBe("ctx.auth.1");
       expect(resumeBody.message.parts).toHaveLength(2);
     });
@@ -265,10 +308,16 @@ describe("AgentContext", () => {
       // matches the connector name. Verified against staging-eu: registry
       // connector "clinicalkey-expert" produces mcp_name "clinicalkey".
       const statusParts = r.task?.status?.message?.parts ?? [];
-      const dataHint = statusParts.find((p: Record<string, unknown>) => "data" in p);
+      const dataHint = statusParts.find(
+        (p: Record<string, unknown>) => "data" in p,
+      );
       expect(dataHint).toBeDefined();
-      expect((dataHint as { data: Record<string, string> }).data.mcp_name).toBe("clinicalkey");
-      expect((dataHint as { data: Record<string, string> }).data.type).toBe("token");
+      expect((dataHint as { data: Record<string, string> }).data.mcp_name).toBe(
+        "clinicalkey",
+      );
+      expect((dataHint as { data: Record<string, string> }).data.type).toBe(
+        "token",
+      );
     });
   });
 });

@@ -1,16 +1,12 @@
-import { AgentHandle } from "./handle.js";
-import type { AgentHandleFactory } from "./handle.js";
-import { MessageResponse } from "./response.js";
-import type { Part } from "./types.js";
-import {
-  compileWorkflow,
-  runWorkflow,
-} from "./declarativeGraph.js";
 import type {
   WorkflowDefinition,
-  WorkflowNode,
   WorkflowHandlers,
+  WorkflowNode,
 } from "./declarativeGraph.js";
+import { compileWorkflow, runWorkflow } from "./declarativeGraph.js";
+import type { AgentHandle, AgentHandleFactory } from "./handle.js";
+import type { MessageResponse } from "./response.js";
+import type { Part } from "./types.js";
 
 export type { StateGraphResult, StateGraphStep } from "./declarativeGraph.js";
 
@@ -51,19 +47,20 @@ export class StateGraph<S extends AnyState> {
     opts?: { maxIterations?: number },
   ): Promise<import("./declarativeGraph.js").StateGraphResult<S>> {
     const { def, handlers } = this._build(entryNode);
-    const compiled = await compileWorkflow(
-      def,
-      this._factory,
-      handlers,
-    );
-    return runWorkflow(compiled, initialState, opts) as Promise<import("./declarativeGraph.js").StateGraphResult<S>>;
+    const compiled = await compileWorkflow(def, this._factory, handlers);
+    return runWorkflow(compiled, initialState, opts) as Promise<
+      import("./declarativeGraph.js").StateGraphResult<S>
+    >;
   }
 
   toDefinition(entryNode: string): WorkflowDefinition {
     return this._build(entryNode).def;
   }
 
-  private _build(entryNode: string): { def: WorkflowDefinition; handlers: WorkflowHandlers } {
+  private _build(entryNode: string): {
+    def: WorkflowDefinition;
+    handlers: WorkflowHandlers;
+  } {
     const nodes: WorkflowNode[] = [];
     const edges: { source: string; target: string }[] = [];
     const handlers: WorkflowHandlers = {};
@@ -117,7 +114,9 @@ export class StateGraph<S extends AnyState> {
   }
 }
 
-export function stateGraph<S extends AnyState>(factory?: AgentHandleFactory): StateGraph<S> {
+export function stateGraph<S extends AnyState>(
+  factory?: AgentHandleFactory,
+): StateGraph<S> {
   return new StateGraph<S>(factory);
 }
 
@@ -126,5 +125,6 @@ export function agentNode<S extends AnyState>(
   getInput: (state: S) => string | Part[],
   mergeResponse: (response: MessageResponse, state: S) => Partial<S>,
 ): NodeFn<S> {
-  return async (state: S) => mergeResponse(await agent.run(getInput(state)), state);
+  return async (state: S) =>
+    mergeResponse(await agent.run(getInput(state)), state);
 }

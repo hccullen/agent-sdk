@@ -10,17 +10,23 @@ import { writeFileSync } from "fs";
 
 // ── Environment configs ─────────────────────────────────────────────────────
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required env var ${name}`);
+  return value;
+}
+
 const ENVS = {
   "staging-eu": {
-    tenant: "base",
-    clientId: "corti-hc-0e20155c-e528-4d92-9249-13bb3e17aaaa-test",
-    clientSecret: "xmrN8J6OOAqZNgf0FrZqWxiyxwvKqzN7",
+    tenant: process.env.STAGING_TENANT ?? "base",
+    clientId: requireEnv("STAGING_CLIENT_ID"),
+    clientSecret: requireEnv("STAGING_CLIENT_SECRET"),
     env: "staging-eu",
   },
   "dev-weu": {
-    tenant: "base",
-    clientId: "corti-testing-bb04f724-ba49-4c64-9992-3169112406a8-default_client",
-    clientSecret: "hWdjsH4Uqys9pXyWnjeQLKX7pFlr5Cu2",
+    tenant: process.env.DEV_TENANT ?? "base",
+    clientId: requireEnv("DEV_CLIENT_ID"),
+    clientSecret: requireEnv("DEV_CLIENT_SECRET"),
     env: "dev-weu",
   },
 } as const;

@@ -27,11 +27,13 @@ export type McpConnector = Corti.CommonMcpConnector;
 export type A2AConnector = Corti.CommonA2AConnector;
 export type AgentConnector = Corti.CommonAgentConnector;
 export type SchemaConnector = Corti.CommonSchemaConnector;
-export type RegistryConnectorProvisioned = Corti.CommonRegistryConnectorProvisioned;
+export type RegistryConnectorProvisioned =
+  Corti.CommonRegistryConnectorProvisioned;
 export type SchemaConnectorTransition = Corti.CommonSchemaConnectorTransition;
 
 export type RegistryConnector = Corti.AgenticRegistryConnector;
-export type RegistryConnectorListResponse = Corti.AgenticRegistryConnectorsListResponse;
+export type RegistryConnectorListResponse =
+  Corti.AgenticRegistryConnectorsListResponse;
 
 export type Role = Corti.CommonRole;
 export type Part = Corti.CommonPart;
@@ -45,7 +47,8 @@ export type Artifact = Corti.CommonArtifactResponse;
 export type Usage = Corti.CommonUsage;
 
 export type SendMessageRequest = Corti.AgenticAgentsSendMessageRequest;
-export type SendMessageConfiguration = Corti.AgenticAgentsSendMessageConfiguration;
+export type SendMessageConfiguration =
+  Corti.AgenticAgentsSendMessageConfiguration;
 
 export interface SendMessageResponse {
   task?: Corti.CommonTaskResponse;
@@ -82,10 +85,13 @@ export type AgentCard = Corti.AgenticAgentCardResponse;
 export type AgentCardCapabilities = Corti.AgenticAgentCardResponseCapabilities;
 export type AgentCardProvider = Corti.AgenticAgentCardResponseProvider;
 export type AgentCardSkillsItem = Corti.AgenticAgentCardResponseSkillsItem;
-export type AgentCardSignaturesItem = Corti.AgenticAgentCardResponseSignaturesItem;
-export type AgentCardSupportedInterfacesItem = Corti.AgenticAgentCardResponseSupportedInterfacesItem;
+export type AgentCardSignaturesItem =
+  Corti.AgenticAgentCardResponseSignaturesItem;
+export type AgentCardSupportedInterfacesItem =
+  Corti.AgenticAgentCardResponseSupportedInterfacesItem;
 
-export type FeedbackCreateRequest = Corti.agentic.contexts.tasks.AgenticFeedbackCreateRequest;
+export type FeedbackCreateRequest =
+  Corti.agentic.contexts.tasks.AgenticFeedbackCreateRequest;
 export type FeedbackResponse = Corti.AgenticFeedbackResponse;
 export type FeedbackListResponse = Corti.AgenticFeedbackListResponse;
 export type FeedbackRating = Corti.AgenticFeedbackRating;
@@ -105,11 +111,15 @@ export type ErrorResponseError = Corti.CommonErrorResponseError;
 export type NextPageToken = Corti.CommonNextPageToken;
 export type TotalSize = Corti.CommonTotalSize;
 export type AgentsLabels = Corti.AgentsLabels;
-export type RegistryConnectorCapabilities = Corti.AgenticRegistryConnectorCapabilities;
+export type RegistryConnectorCapabilities =
+  Corti.AgenticRegistryConnectorCapabilities;
 export type RegistryIcon = Corti.AgenticRegistryIcon;
 
 export type TextPart = { text: string; metadata?: Record<string, unknown> };
-export type DataPart = { data: Record<string, unknown>; metadata?: Record<string, unknown> };
+export type DataPart = {
+  data: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
 export type FilePart = {
   filename?: string;
   mediaType?: string;
@@ -118,11 +128,17 @@ export type FilePart = {
   metadata?: Record<string, unknown>;
 };
 
-export function textPart(text: string, metadata?: Record<string, unknown>): TextPart {
+export function textPart(
+  text: string,
+  metadata?: Record<string, unknown>,
+): TextPart {
   return { text, ...(metadata !== undefined && { metadata }) };
 }
 
-export function dataPart(data: Record<string, unknown>, metadata?: Record<string, unknown>): DataPart {
+export function dataPart(
+  data: Record<string, unknown>,
+  metadata?: Record<string, unknown>,
+): DataPart {
   return { data, ...(metadata !== undefined && { metadata }) };
 }
 

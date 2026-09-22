@@ -1,28 +1,25 @@
-import type { Part } from "../types.js";
 import type { AgentHandleFactory } from "../handle.js";
-import { evalCel } from "./compile.js";
+import type { Part } from "../types.js";
 import type { CompiledGraph, CompiledNode } from "./compile.js";
-import { parseWorkflowDefinition } from "./parse.js";
-import { compileWorkflow } from "./compile.js";
+import { compileWorkflow, evalCel } from "./compile.js";
 import type {
-  WorkflowDefinition,
-  AgentCallConfig,
-  SwitchConfig,
-  SetStateConfig,
   HttpCallConfig,
   InterruptConfig,
-  WaitConfig,
   ParallelConfig,
-  CallbackConfig,
-  WorkflowHandlers,
-  WorkflowHandler,
+  SwitchConfig,
+  WorkflowDefinition,
   WorkflowHandlerResult,
+  WorkflowHandlers,
 } from "./parse.js";
+import { parseWorkflowDefinition } from "./parse.js";
 
 type AnyState = Record<string, unknown>;
 
 export interface HttpPort {
-  fetch(url: string, init: { method: string; headers: Record<string, string>; body?: string }): Promise<Response>;
+  fetch(
+    url: string,
+    init: { method: string; headers: Record<string, string>; body?: string },
+  ): Promise<Response>;
 }
 
 export interface TimerPort {
@@ -58,7 +55,11 @@ export interface WorkflowInterrupt {
   checkpoint: string;
 }
 
-export type { WorkflowHandler, WorkflowHandlerResult, WorkflowHandlers } from "./parse.js";
+export type {
+  WorkflowHandler,
+  WorkflowHandlerResult,
+  WorkflowHandlers,
+} from "./parse.js";
 
 interface NodeExecutionResult {
   delta: Partial<AnyState>;
@@ -104,7 +105,11 @@ export async function executeNode(
   state: AnyState,
   opts?: {
     handlers?: WorkflowHandlers;
-    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    onInterrupt?: (
+      node: string,
+      prompt: string,
+      state: AnyState,
+    ) => Promise<unknown>;
     httpPort?: HttpPort;
     timerPort?: TimerPort;
   },
@@ -117,15 +122,30 @@ export async function executeNode(
   const nodeType = node.type;
 
   if (nodeType === "agent_call") {
-    const agentInput = evalCel(node.inputExpr!, { state }) as string | Part[];
-    const response = await node.agentHandle!.run(agentInput);
+    if (!node.inputExpr) {
+      throw new Error(
+        `[DeclarativeGraph] Agent node "${current}" is missing compiled input expression.`,
+      );
+    }
+    if (!node.agentHandle) {
+      throw new Error(
+        `[DeclarativeGraph] Agent node "${current}" has no agent handle.`,
+      );
+    }
+    const agentInput = evalCel(node.inputExpr, { state }) as string | Part[];
+    const response = await node.agentHandle.run(agentInput);
     const responseBinding = {
       text: response.text,
       status: response.status,
       artifacts: response.artifacts,
     };
     const delta: Partial<AnyState> = {};
-    for (const [field, expr] of node.outputExprs!) {
+    if (!node.outputExprs) {
+      throw new Error(
+        `[DeclarativeGraph] Agent node "${current}" is missing compiled output expressions.`,
+      );
+    }
+    for (const [field, expr] of node.outputExprs) {
       const value = evalCel(expr, { state, response: responseBinding });
       state[field] = value;
       delta[field] = value;
@@ -135,8 +155,13 @@ export async function executeNode(
 
   if (nodeType === "switch") {
     const cfg = node.config as SwitchConfig;
+    if (!node.caseExprs) {
+      throw new Error(
+        `[DeclarativeGraph] Switch node "${current}" is missing compiled case expressions.`,
+      );
+    }
     for (let i = 0; i < cfg.cases.length; i++) {
-      if (evalCel(node.caseExprs![i], { state })) {
+      if (evalCel(node.caseExprs[i], { state })) {
         return { delta: {}, next: cfg.cases[i].target };
       }
     }
@@ -145,7 +170,12 @@ export async function executeNode(
 
   if (nodeType === "set_state") {
     const delta: Partial<AnyState> = {};
-    for (const [field, expr] of node.setExprs!) {
+    if (!node.setExprs) {
+      throw new Error(
+        `[DeclarativeGraph] Set-state node "${current}" is missing compiled set expressions.`,
+      );
+    }
+    for (const [field, expr] of node.setExprs) {
       const value = evalCel(expr, { state });
       state[field] = value;
       delta[field] = value;
@@ -155,7 +185,12 @@ export async function executeNode(
 
   if (nodeType === "http_call") {
     const cfg = node.config as HttpCallConfig;
-    const url = evalCel(node.urlExpr!, { state }) as string;
+    if (!node.urlExpr) {
+      throw new Error(
+        `[DeclarativeGraph] HTTP node "${current}" is missing compiled url expression.`,
+      );
+    }
+    const url = evalCel(node.urlExpr, { state }) as string;
     const method = cfg.method;
     const headers: Record<string, string> = {};
     if (node.headerExprs) {
@@ -179,7 +214,9 @@ export async function executeNode(
       ? await httpResponse.json()
       : await httpResponse.text();
     if (!httpResponse.ok) {
-      throw new Error(`[DeclarativeGraph] HTTP ${method} ${url} failed with status ${httpResponse.status}: ${typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody)}`);
+      throw new Error(
+        `[DeclarativeGraph] HTTP ${method} ${url} failed with status ${httpResponse.status}: ${typeof responseBody === "string" ? responseBody : JSON.stringify(responseBody)}`,
+      );
     }
     const responseBinding = {
       status: httpResponse.status,
@@ -187,7 +224,12 @@ export async function executeNode(
       body: responseBody,
     };
     const delta: Partial<AnyState> = {};
-    for (const [field, expr] of node.outputExprs!) {
+    if (!node.outputExprs) {
+      throw new Error(
+        `[DeclarativeGraph] HTTP node "${current}" is missing compiled output expressions.`,
+      );
+    }
+    for (const [field, expr] of node.outputExprs) {
       const value = evalCel(expr, { state, response: responseBinding });
       state[field] = value;
       delta[field] = value;
@@ -197,14 +239,23 @@ export async function executeNode(
 
   if (nodeType === "interrupt") {
     const cfg = node.config as InterruptConfig;
-    const prompt = evalCel(node.promptExpr!, { state }) as string;
+    if (!node.promptExpr) {
+      throw new Error(
+        `[DeclarativeGraph] Interrupt node "${current}" is missing compiled prompt expression.`,
+      );
+    }
+    const prompt = evalCel(node.promptExpr, { state }) as string;
     if (opts?.onInterrupt) {
       const answer = await opts.onInterrupt(current, prompt, { ...state });
       state[cfg.field] = answer;
       const delta = { [cfg.field]: answer };
       return { delta, next: resolveRoute(compiled, current, node, state) };
     }
-    return { delta: {}, next: undefined, interrupt: { node: current, prompt, field: cfg.field } };
+    return {
+      delta: {},
+      next: undefined,
+      interrupt: { node: current, prompt, field: cfg.field },
+    };
   }
 
   if (nodeType === "wait") {
@@ -217,7 +268,9 @@ export async function executeNode(
       ms = new Date(target).getTime() - Date.now();
       if (ms < 0) ms = 0;
     } else {
-      throw new Error(`[DeclarativeGraph] Wait node "${current}" requires either duration or until.`);
+      throw new Error(
+        `[DeclarativeGraph] Wait node "${current}" requires either duration or until.`,
+      );
     }
     const timer = opts?.timerPort ?? defaultTimerPort;
     await timer.wait(ms);
@@ -227,8 +280,21 @@ export async function executeNode(
   if (nodeType === "parallel") {
     const cfg = node.config as ParallelConfig;
     const branchPromises = cfg.branches.map(async (branch) => {
-      const branchState = evalCel(node.branchInputExprs!.get(branch.name)!, { state }) as AnyState;
-      const result = await runSubGraph(compiled, branch.node, branchState, opts);
+      const branchInputExpr = node.branchInputExprs?.get(branch.name);
+      if (!branchInputExpr) {
+        throw new Error(
+          `[AgentSDK] Missing branch input expression: ${branch.name}`,
+        );
+      }
+      const branchState = evalCel(branchInputExpr, {
+        state,
+      }) as AnyState;
+      const result = await runSubGraph(
+        compiled,
+        branch.node,
+        branchState,
+        opts,
+      );
       return { name: branch.name, result };
     });
     const results: Record<string, unknown> = {};
@@ -246,12 +312,19 @@ export async function executeNode(
         if (s.status === "fulfilled") {
           results[s.value.name] = s.value.result.state;
         } else {
-          throw new Error(`[DeclarativeGraph] Parallel branch failed: ${(s.reason as Error).message}`);
+          throw new Error(
+            `[DeclarativeGraph] Parallel branch failed: ${(s.reason as Error).message}`,
+          );
         }
       }
     }
     const delta: Partial<AnyState> = {};
-    for (const [field, expr] of node.outputExprs!) {
+    if (!node.outputExprs) {
+      throw new Error(
+        `[DeclarativeGraph] Node "${current}" is missing compiled output expressions.`,
+      );
+    }
+    for (const [field, expr] of node.outputExprs) {
       const value = evalCel(expr, { state, results });
       state[field] = value;
       delta[field] = value;
@@ -260,22 +333,31 @@ export async function executeNode(
   }
 
   if (nodeType === "callback") {
-    const handler = opts?.handlers?.[node.handlerName!] ?? compiled.handlers[node.handlerName!];
+    if (!node.handlerName) {
+      throw new Error(
+        `[DeclarativeGraph] Callback node "${current}" is missing a handler name.`,
+      );
+    }
+    const handler =
+      opts?.handlers?.[node.handlerName] ?? compiled.handlers[node.handlerName];
     if (!handler) {
-      throw new Error(`[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`);
+      throw new Error(
+        `[DeclarativeGraph] No handler registered for callback node "${current}" (handler: "${node.handlerName}").`,
+      );
     }
     const rawResult = await handler({ ...state });
     const delta: Partial<AnyState> = {};
 
     const isStructured =
-      rawResult != null && typeof rawResult === "object" &&
+      rawResult != null &&
+      typeof rawResult === "object" &&
       ("delta" in rawResult || "next" in rawResult);
     const handlerDelta = isStructured
-      ? (rawResult as WorkflowHandlerResult).delta ?? {}
-      : rawResult as Partial<AnyState>;
+      ? ((rawResult as WorkflowHandlerResult).delta ?? {})
+      : (rawResult as Partial<AnyState>);
     const handlerNext = isStructured
       ? (rawResult as WorkflowHandlerResult).next
-      : (rawResult as AnyState).__next as string | undefined;
+      : ((rawResult as AnyState).__next as string | undefined);
 
     if (node.outputExprs && node.outputExprs.size > 0) {
       for (const [field, expr] of node.outputExprs) {
@@ -305,7 +387,11 @@ async function* runGraph(
     maxIterations?: number;
     priorSteps?: StateGraphStep<AnyState>[];
     priorIterations?: number;
-    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    onInterrupt?: (
+      node: string,
+      prompt: string,
+      state: AnyState,
+    ) => Promise<unknown>;
     handlers?: WorkflowHandlers;
     httpPort?: HttpPort;
     timerPort?: TimerPort;
@@ -313,7 +399,7 @@ async function* runGraph(
 ): AsyncGenerator<WorkflowInterrupt | StateGraphResult<AnyState>> {
   const maxIter = opts?.maxIterations ?? compiled.maxIterations;
   const steps = opts?.priorSteps ?? [];
-  let state: AnyState = { ...initialState };
+  const state: AnyState = { ...initialState };
   let current = startNode;
   let iterations = opts?.priorIterations ?? 0;
   let terminatedBy: StateGraphResult<AnyState>["terminatedBy"] = "end";
@@ -333,7 +419,13 @@ async function* runGraph(
         steps: [...steps],
         iterations,
       });
-      yield { kind: "interrupt" as const, node: current, prompt: result.interrupt.prompt, state: { ...state }, checkpoint };
+      yield {
+        kind: "interrupt" as const,
+        node: current,
+        prompt: result.interrupt.prompt,
+        state: { ...state },
+        checkpoint,
+      };
       return;
     }
 
@@ -356,7 +448,11 @@ async function runSubGraph(
   initialState: AnyState,
   opts?: {
     maxIterations?: number;
-    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    onInterrupt?: (
+      node: string,
+      prompt: string,
+      state: AnyState,
+    ) => Promise<unknown>;
     handlers?: WorkflowHandlers;
     httpPort?: HttpPort;
     timerPort?: TimerPort;
@@ -365,7 +461,9 @@ async function runSubGraph(
   const gen = runGraph(compiled, entryNode, initialState, opts);
   const first = await gen.next();
   if (first.value && (first.value as WorkflowInterrupt).kind === "interrupt") {
-    throw new Error(`[DeclarativeGraph] Interrupt node "${(first.value as WorkflowInterrupt).node}" not supported in parallel branches.`);
+    throw new Error(
+      `[DeclarativeGraph] Interrupt node "${(first.value as WorkflowInterrupt).node}" not supported in parallel branches.`,
+    );
   }
   return first.value as StateGraphResult<AnyState>;
 }
@@ -375,7 +473,11 @@ export async function runWorkflow(
   initialState: AnyState,
   opts?: {
     maxIterations?: number;
-    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    onInterrupt?: (
+      node: string,
+      prompt: string,
+      state: AnyState,
+    ) => Promise<unknown>;
     handlers?: WorkflowHandlers;
     httpPort?: HttpPort;
     timerPort?: TimerPort;
@@ -384,7 +486,9 @@ export async function runWorkflow(
   const gen = runGraph(compiled, compiled.entryNode, initialState, opts);
   const first = await gen.next();
   if (first.value && (first.value as WorkflowInterrupt).kind === "interrupt") {
-    throw new Error(`[DeclarativeGraph] Interrupt node "${(first.value as WorkflowInterrupt).node}" requires onInterrupt callback in runWorkflow options.`);
+    throw new Error(
+      `[DeclarativeGraph] Interrupt node "${(first.value as WorkflowInterrupt).node}" requires onInterrupt callback in runWorkflow options.`,
+    );
   }
   return first.value as StateGraphResult<AnyState>;
 }
@@ -395,7 +499,11 @@ export async function executeWorkflow(
   initialState: AnyState,
   opts?: {
     maxIterations?: number;
-    onInterrupt?: (node: string, prompt: string, state: AnyState) => Promise<unknown>;
+    onInterrupt?: (
+      node: string,
+      prompt: string,
+      state: AnyState,
+    ) => Promise<unknown>;
     handlers?: WorkflowHandlers;
     httpPort?: HttpPort;
     timerPort?: TimerPort;
@@ -418,11 +526,12 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
   }
 
   while (queue.length > 0) {
-    const current = queue.pop()!;
-    if (reachable.has(current)) continue;
-    reachable.add(current);
+    const nodeId = queue.pop();
+    if (nodeId === undefined) break;
+    if (reachable.has(nodeId)) continue;
+    reachable.add(nodeId);
 
-    const node = def.nodes.find((n) => n.id === current);
+    const node = def.nodes.find((n) => n.id === nodeId);
     if (!node) continue;
 
     if (node.type === "switch") {
@@ -440,16 +549,22 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
       }
     }
 
-    if (node.type !== "end" && node.type !== "switch" && node.type !== "parallel") {
+    if (
+      node.type !== "end" &&
+      node.type !== "switch" &&
+      node.type !== "parallel"
+    ) {
       for (const edge of def.edges) {
-        if (edge.source === current && !reachable.has(edge.target)) {
+        if (edge.source === nodeId && !reachable.has(edge.target)) {
           queue.push(edge.target);
         }
       }
     }
   }
 
-  const unreachable = [...nodeIds].filter((id) => !reachable.has(id) && id !== "__end__");
+  const unreachable = [...nodeIds].filter(
+    (id) => !reachable.has(id) && id !== "__end__",
+  );
 
   const deadEnds: string[] = [];
   for (const node of def.nodes) {
@@ -462,14 +577,17 @@ export function analyzeGraphStructure(def: WorkflowDefinition): GraphAnalysis {
       }
     } else if (node.type === "parallel") {
       const cfg = node.config as ParallelConfig;
-      if (!cfg.branches.some((b) => reachable.has(b.node) || b.node === "__end__")) {
+      if (
+        !cfg.branches.some((b) => reachable.has(b.node) || b.node === "__end__")
+      ) {
         deadEnds.push(node.id);
       }
     } else if (node.type === "callback") {
       const hasEdge = def.edges.some((e) => e.source === node.id);
       const cfg = node.config as unknown as Record<string, unknown>;
       const hasRouteFrom = cfg?.route_from !== undefined;
-      const hasHandler = typeof cfg?.handler === "string" && cfg.handler.length > 0;
+      const hasHandler =
+        typeof cfg?.handler === "string" && cfg.handler.length > 0;
       if (!hasEdge && !hasRouteFrom && !hasHandler) {
         deadEnds.push(node.id);
       }
@@ -513,10 +631,12 @@ export async function* resumeWorkflow(
   const cp = decodeCheckpoint(checkpoint);
   const node = compiled.nodes.get(cp.nodeId);
   if (!node) {
-    throw new Error(`[DeclarativeGraph] Checkpoint node "${cp.nodeId}" not found in compiled graph.`);
+    throw new Error(
+      `[DeclarativeGraph] Checkpoint node "${cp.nodeId}" not found in compiled graph.`,
+    );
   }
 
-  let state: AnyState = { ...cp.state };
+  const state: AnyState = { ...cp.state };
   let iterations = cp.iterations;
   const steps: StateGraphStep<AnyState>[] = [...cp.steps];
 
@@ -538,5 +658,9 @@ export async function* resumeWorkflow(
     return;
   }
 
-  yield* runGraph(compiled, next, state, { ...opts, priorSteps: steps, priorIterations: iterations });
+  yield* runGraph(compiled, next, state, {
+    ...opts,
+    priorSteps: steps,
+    priorIterations: iterations,
+  });
 }

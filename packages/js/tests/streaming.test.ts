@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeAbortController, parseSSEStream, parseA2AStream, collectText, StreamCollector, collectCitations, toMarkdown } from "../streaming.js";
-import type { StreamResponse } from "../types.js";
+import {
+  collectCitations,
+  collectText,
+  makeAbortController,
+  parseA2AStream,
+  parseSSEStream,
+  StreamCollector,
+  toMarkdown,
+} from "../src/streaming.js";
+import type { StreamResponse } from "../src/types.js";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -57,14 +65,14 @@ describe("parseSSEStream", () => {
   });
 
   it("concatenates multiple data: lines with \\n", async () => {
-    const events = await collectSSE(['data: line1\ndata: line2\n\n']);
+    const events = await collectSSE(["data: line1\ndata: line2\n\n"]);
     expect(events).toEqual([{ data: "line1\nline2" }]);
   });
 
   it("skips [DONE] events", async () => {
     const events = await collectSSE([
       'data: {"n":1}\n\n',
-      'data: [DONE]\n\n',
+      "data: [DONE]\n\n",
       'data: {"n":2}\n\n',
     ]);
     expect(events).toHaveLength(2);
@@ -111,30 +119,54 @@ describe("parseA2AStream", () => {
   }
 
   it("parses a task event", async () => {
-    const task = { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_COMPLETED" } } };
+    const task = {
+      task: {
+        id: "task.1",
+        contextId: "ctx.1",
+        status: { state: "TASK_STATE_COMPLETED" },
+      },
+    };
     const results = await collectA2A([`data: ${JSON.stringify(task)}\n\n`]);
     expect(results).toEqual([task]);
   });
 
   it("parses a statusUpdate event", async () => {
-    const update = { statusUpdate: { taskId: "task.1", status: { state: "TASK_STATE_WORKING" }, final: false } };
+    const update = {
+      statusUpdate: {
+        taskId: "task.1",
+        status: { state: "TASK_STATE_WORKING" },
+        final: false,
+      },
+    };
     const results = await collectA2A([`data: ${JSON.stringify(update)}\n\n`]);
     expect(results).toEqual([update]);
   });
 
   it("parses an artifactUpdate event", async () => {
-    const update = { artifactUpdate: { taskId: "task.1", artifact: { artifactId: "art.1", parts: [{ text: "x" }] }, lastChunk: true } };
+    const update = {
+      artifactUpdate: {
+        taskId: "task.1",
+        artifact: { artifactId: "art.1", parts: [{ text: "x" }] },
+        lastChunk: true,
+      },
+    };
     const results = await collectA2A([`data: ${JSON.stringify(update)}\n\n`]);
     expect(results).toEqual([update]);
   });
 
   it("skips malformed JSON", async () => {
-    const results = await collectA2A(['data: {invalid\n\n']);
+    const results = await collectA2A(["data: {invalid\n\n"]);
     expect(results).toEqual([]);
   });
 
   it("handles multiple events in one chunk", async () => {
-    const e1 = { task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } };
+    const e1 = {
+      task: {
+        id: "t1",
+        contextId: "c1",
+        status: { state: "TASK_STATE_SUBMITTED" },
+      },
+    };
     const e2 = { statusUpdate: { taskId: "t1", final: true } };
     const results = await collectA2A([
       `data: ${JSON.stringify(e1)}\n\ndata: ${JSON.stringify(e2)}\n\n`,
@@ -153,13 +185,17 @@ describe("makeAbortController", () => {
   it("returns an already-aborted controller when abortSignal is already aborted", () => {
     const external = new AbortController();
     external.abort();
-    const { controller } = makeAbortController({ abortSignal: external.signal });
+    const { controller } = makeAbortController({
+      abortSignal: external.signal,
+    });
     expect(controller.signal.aborted).toBe(true);
   });
 
   it("aborts the controller when the external signal fires", () => {
     const external = new AbortController();
-    const { controller } = makeAbortController({ abortSignal: external.signal });
+    const { controller } = makeAbortController({
+      abortSignal: external.signal,
+    });
     expect(controller.signal.aborted).toBe(false);
     external.abort();
     expect(controller.signal.aborted).toBe(true);
@@ -181,10 +217,25 @@ describe("makeAbortController", () => {
 // ---------------------------------------------------------------------------
 
 /** Build a realistic event sequence: task → working → tokens → lastChunk → completed. */
-function makeTokenStreamEvents(tokens: string[], finalText: string): StreamResponse[] {
+function makeTokenStreamEvents(
+  tokens: string[],
+  finalText: string,
+): StreamResponse[] {
   const events: StreamResponse[] = [
-    { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_SUBMITTED" } } },
-    { statusUpdate: { taskId: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_WORKING" } } },
+    {
+      task: {
+        id: "task.1",
+        contextId: "ctx.1",
+        status: { state: "TASK_STATE_SUBMITTED" },
+      },
+    },
+    {
+      statusUpdate: {
+        taskId: "task.1",
+        contextId: "ctx.1",
+        status: { state: "TASK_STATE_WORKING" },
+      },
+    },
   ];
 
   // First chunk: no `append`, no `lastChunk` — creates the artifact.
@@ -231,7 +282,9 @@ function makeTokenStreamEvents(tokens: string[], finalText: string): StreamRespo
   return events;
 }
 
-function makeAsyncIterable(events: StreamResponse[]): AsyncIterable<StreamResponse> {
+function makeAsyncIterable(
+  events: StreamResponse[],
+): AsyncIterable<StreamResponse> {
   return (async function* () {
     for (const e of events) yield e;
   })();
@@ -287,7 +340,10 @@ describe("collectText", () => {
     }
 
     // Accumulated from deltas (before the lastChunk override)
-    const accumulatedFromDeltas = chunks.filter((c) => !c.done).map((c) => c.delta).join("");
+    const accumulatedFromDeltas = chunks
+      .filter((c) => !c.done)
+      .map((c) => c.delta)
+      .join("");
     // Authoritative text from the lastChunk event
     const finalFromLastChunk = chunks.find((c) => c.done)?.text ?? "";
 
@@ -297,9 +353,19 @@ describe("collectText", () => {
 
   it("skips non-artifactUpdate events silently", async () => {
     const events: StreamResponse[] = [
-      { task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } },
-      { statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } } },
-      { message: { role: "ROLE_AGENT", parts: [{ text: "should be skipped" }] } },
+      {
+        task: {
+          id: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_SUBMITTED" },
+        },
+      },
+      {
+        statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } },
+      },
+      {
+        message: { role: "ROLE_AGENT", parts: [{ text: "should be skipped" }] },
+      },
     ];
 
     const chunks = [];
@@ -324,7 +390,10 @@ describe("collectText", () => {
         artifactUpdate: {
           taskId: "t1",
           contextId: "c1",
-          artifact: { artifactId: "a1", parts: [{ text: "complete response" }] },
+          artifact: {
+            artifactId: "a1",
+            parts: [{ text: "complete response" }],
+          },
           lastChunk: true,
         },
       },
@@ -381,7 +450,10 @@ describe("collectText", () => {
         artifactUpdate: {
           taskId: "t1",
           contextId: "c1",
-          artifact: { artifactId: "a1", parts: [{ text: "Hello" }, { text: " " }, { text: "world" }] },
+          artifact: {
+            artifactId: "a1",
+            parts: [{ text: "Hello" }, { text: " " }, { text: "world" }],
+          },
         },
       },
       {
@@ -467,7 +539,10 @@ describe("collectText", () => {
 describe("StreamCollector", () => {
   it("accumulates text from sequential update() calls", () => {
     const collector = new StreamCollector();
-    const events = makeTokenStreamEvents(["Hello", " world", "!"], "Hello world!");
+    const events = makeTokenStreamEvents(
+      ["Hello", " world", "!"],
+      "Hello world!",
+    );
 
     const deltas: string[] = [];
     for (const event of events) {
@@ -484,9 +559,19 @@ describe("StreamCollector", () => {
   it("returns null for non-artifactUpdate events", () => {
     const collector = new StreamCollector();
 
-    const result1 = collector.update({ task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } });
-    const result2 = collector.update({ statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } } });
-    const result3 = collector.update({ message: { role: "ROLE_AGENT", parts: [{ text: "hi" }] } });
+    const result1 = collector.update({
+      task: {
+        id: "t1",
+        contextId: "c1",
+        status: { state: "TASK_STATE_SUBMITTED" },
+      },
+    });
+    const result2 = collector.update({
+      statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } },
+    });
+    const result3 = collector.update({
+      message: { role: "ROLE_AGENT", parts: [{ text: "hi" }] },
+    });
 
     expect(result1).toBeNull();
     expect(result2).toBeNull();
@@ -523,7 +608,10 @@ describe("StreamCollector", () => {
       artifactUpdate: {
         taskId: "t1",
         contextId: "c1",
-        artifact: { artifactId: "a1", parts: [{ text: "partial more complete" }] },
+        artifact: {
+          artifactId: "a1",
+          parts: [{ text: "partial more complete" }],
+        },
         lastChunk: true,
       },
     });
@@ -577,42 +665,101 @@ describe("StreamCollector", () => {
     // task → statusUpdate(WORKING) → statusUpdate(WORKING) → first chunk →
     // append chunks... → lastChunk → statusUpdate(COMPLETED with usage)
     const collector = new StreamCollector();
-    const tokens = ["Photo", "synthesis", " is", " the", " process", " by", " which"];
+    const tokens = [
+      "Photo",
+      "synthesis",
+      " is",
+      " the",
+      " process",
+      " by",
+      " which",
+    ];
     const finalText = "Photosynthesis is the process by which";
 
     const results: string[] = [];
 
     // task event
-    expect(collector.update({ task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } })).toBeNull();
+    expect(
+      collector.update({
+        task: {
+          id: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_SUBMITTED" },
+        },
+      }),
+    ).toBeNull();
 
     // working status events
-    expect(collector.update({ statusUpdate: { taskId: "t1", contextId: "c1", status: { state: "TASK_STATE_WORKING" } } })).toBeNull();
-    expect(collector.update({ statusUpdate: { taskId: "t1", contextId: "c1", status: { state: "TASK_STATE_WORKING" } } })).toBeNull();
+    expect(
+      collector.update({
+        statusUpdate: {
+          taskId: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_WORKING" },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      collector.update({
+        statusUpdate: {
+          taskId: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_WORKING" },
+        },
+      }),
+    ).toBeNull();
 
     // first artifact chunk (no append)
-    results.push(collector.update({
-      artifactUpdate: { taskId: "t1", contextId: "c1", artifact: { artifactId: "a1", parts: [{ text: tokens[0] }] } },
-    })!);
+    results.push(
+      collector.update({
+        artifactUpdate: {
+          taskId: "t1",
+          contextId: "c1",
+          artifact: { artifactId: "a1", parts: [{ text: tokens[0] }] },
+        },
+      })!,
+    );
 
     // append chunks
     for (let i = 1; i < tokens.length; i++) {
-      results.push(collector.update({
-        artifactUpdate: { taskId: "t1", contextId: "c1", artifact: { artifactId: "a1", parts: [{ text: tokens[i] }] }, append: true },
-      })!);
+      results.push(
+        collector.update({
+          artifactUpdate: {
+            taskId: "t1",
+            contextId: "c1",
+            artifact: { artifactId: "a1", parts: [{ text: tokens[i] }] },
+            append: true,
+          },
+        })!,
+      );
     }
 
     expect(collector.text).toBe("Photosynthesis is the process by which");
     expect(collector.done).toBe(false);
 
     // lastChunk — authoritative complete text
-    results.push(collector.update({
-      artifactUpdate: { taskId: "t1", contextId: "c1", artifact: { artifactId: "a1", parts: [{ text: finalText }] }, lastChunk: true },
-    })!);
+    results.push(
+      collector.update({
+        artifactUpdate: {
+          taskId: "t1",
+          contextId: "c1",
+          artifact: { artifactId: "a1", parts: [{ text: finalText }] },
+          lastChunk: true,
+        },
+      })!,
+    );
 
     // completed status with usage metadata
-    expect(collector.update({
-      statusUpdate: { taskId: "t1", contextId: "c1", status: { state: "TASK_STATE_COMPLETED" }, metadata: { corti: { usage: { creditsConsumed: 0.05 } } } },
-    })).toBeNull();
+    expect(
+      collector.update({
+        statusUpdate: {
+          taskId: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_COMPLETED" },
+          metadata: { corti: { usage: { creditsConsumed: 0.05 } } },
+        },
+      }),
+    ).toBeNull();
 
     expect(collector.text).toBe(finalText);
     expect(collector.done).toBe(true);
@@ -726,12 +873,32 @@ function makeSearchResult(
 describe("collectCitations", () => {
   it("yields deltas during streaming then citations on lastChunk", async () => {
     const results = [
-      makeSearchResult("https://fifa.com/final", "FIFA World Cup 2026 Final", "Spain claimed ultimate glory..."),
-      makeSearchResult("https://espn.com/world-cup", "World Cup Final Recap", "Spain beat Argentina 1-0..."),
+      makeSearchResult(
+        "https://fifa.com/final",
+        "FIFA World Cup 2026 Final",
+        "Spain claimed ultimate glory...",
+      ),
+      makeSearchResult(
+        "https://espn.com/world-cup",
+        "World Cup Final Recap",
+        "Spain beat Argentina 1-0...",
+      ),
     ];
     const events: StreamResponse[] = [
-      { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_SUBMITTED" } } },
-      { statusUpdate: { taskId: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_WORKING" } } },
+      {
+        task: {
+          id: "task.1",
+          contextId: "ctx.1",
+          status: { state: "TASK_STATE_SUBMITTED" },
+        },
+      },
+      {
+        statusUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          status: { state: "TASK_STATE_WORKING" },
+        },
+      },
       {
         artifactUpdate: {
           taskId: "task.1",
@@ -743,21 +910,37 @@ describe("collectCitations", () => {
         artifactUpdate: {
           taskId: "task.1",
           contextId: "ctx.1",
-          artifact: { artifactId: "art.1", parts: [{ text: "won the World Cup." }] },
+          artifact: {
+            artifactId: "art.1",
+            parts: [{ text: "won the World Cup." }],
+          },
           append: true,
         },
       },
       makeCitationEvent(
         "Spain won the World Cup.",
         [
-          { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 5 },
-          { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 22 },
+          {
+            data_part_id: "tool_data_01",
+            locator: "/results/0/snippet",
+            offset: 5,
+          },
+          {
+            data_part_id: "tool_data_01",
+            locator: "/results/1/snippet",
+            offset: 22,
+          },
         ],
         results,
       ),
     ];
 
-    const chunks: { delta: string; text: string; done: boolean; citations: unknown[] }[] = [];
+    const chunks: {
+      delta: string;
+      text: string;
+      done: boolean;
+      citations: unknown[];
+    }[] = [];
     for await (const chunk of collectCitations(makeAsyncIterable(events))) {
       chunks.push(chunk);
     }
@@ -778,14 +961,14 @@ describe("collectCitations", () => {
     expect(chunks[2].delta).toBe("");
     expect(chunks[2].done).toBe(true);
     expect(chunks[2].citations).toHaveLength(2);
-    expect(chunks[2].citations![0]).toMatchObject({
+    expect(chunks[2].citations?.[0]).toMatchObject({
       offset: 5,
       url: "https://fifa.com/final",
       title: "FIFA World Cup 2026 Final",
       snippet: "Spain claimed ultimate glory...",
       siteName: "fifa.com",
     });
-    expect(chunks[2].citations![1]).toMatchObject({
+    expect(chunks[2].citations?.[1]).toMatchObject({
       offset: 22,
       url: "https://espn.com/world-cup",
       title: "World Cup Final Recap",
@@ -796,16 +979,38 @@ describe("collectCitations", () => {
 
   it("extracts citations with correct source info from data parts", async () => {
     const results = [
-      makeSearchResult("https://example.com/1", "Result One", "Snippet one", "example.com", "https://example.com/icon.png"),
+      makeSearchResult(
+        "https://example.com/1",
+        "Result One",
+        "Snippet one",
+        "example.com",
+        "https://example.com/icon.png",
+      ),
       makeSearchResult("https://example.com/2", "Result Two", "Snippet two"),
-      makeSearchResult("https://example.com/3", "Result Three", "Snippet three"),
+      makeSearchResult(
+        "https://example.com/3",
+        "Result Three",
+        "Snippet three",
+      ),
     ];
     const event = makeCitationEvent(
       "Text with refs.",
       [
-        { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 },
-        { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 5 },
-        { data_part_id: "tool_data_01", locator: "/results/2/snippet", offset: 10 },
+        {
+          data_part_id: "tool_data_01",
+          locator: "/results/0/snippet",
+          offset: 0,
+        },
+        {
+          data_part_id: "tool_data_01",
+          locator: "/results/1/snippet",
+          offset: 5,
+        },
+        {
+          data_part_id: "tool_data_01",
+          locator: "/results/2/snippet",
+          offset: 10,
+        },
       ],
       results,
     );
@@ -817,7 +1022,7 @@ describe("collectCitations", () => {
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].citations).toHaveLength(3);
-    expect(chunks[0].citations![0]).toMatchObject({
+    expect(chunks[0].citations?.[0]).toMatchObject({
       offset: 0,
       url: "https://example.com/1",
       title: "Result One",
@@ -825,13 +1030,13 @@ describe("collectCitations", () => {
       siteName: "example.com",
       faviconUrl: "https://example.com/icon.png",
     });
-    expect(chunks[0].citations![1]).toMatchObject({
+    expect(chunks[0].citations?.[1]).toMatchObject({
       offset: 5,
       url: "https://example.com/2",
       title: "Result Two",
       snippet: "Snippet two",
     });
-    expect(chunks[0].citations![2]).toMatchObject({
+    expect(chunks[0].citations?.[2]).toMatchObject({
       offset: 10,
       url: "https://example.com/3",
       title: "Result Three",
@@ -851,12 +1056,18 @@ describe("collectCitations", () => {
             {
               text: "Some text.",
               metadata: {
-                citations: [{ data_part_id: "tool_data_01", locator: "", offset: 4 }],
+                citations: [
+                  { data_part_id: "tool_data_01", locator: "", offset: 4 },
+                ],
                 offsetUnit: "chars",
               },
             },
             {
-              data: { url: "https://top-level.com", title: "Top Level Result", snippet: "Top snippet" },
+              data: {
+                url: "https://top-level.com",
+                title: "Top Level Result",
+                snippet: "Top snippet",
+              },
               metadata: { dataPartId: "tool_data_01", toolName: "search" },
             },
           ],
@@ -871,7 +1082,7 @@ describe("collectCitations", () => {
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].citations).toHaveLength(1);
-    expect(chunks[0].citations![0]).toMatchObject({
+    expect(chunks[0].citations?.[0]).toMatchObject({
       offset: 4,
       url: "https://top-level.com",
       title: "Top Level Result",
@@ -919,7 +1130,13 @@ describe("collectCitations", () => {
             {
               text: "Missing data.",
               metadata: {
-                citations: [{ data_part_id: "nonexistent", locator: "/results/0/snippet", offset: 0 }],
+                citations: [
+                  {
+                    data_part_id: "nonexistent",
+                    locator: "/results/0/snippet",
+                    offset: 0,
+                  },
+                ],
                 offsetUnit: "chars",
               },
             },
@@ -953,12 +1170,20 @@ describe("collectCitations", () => {
             {
               text: "No URL.",
               metadata: {
-                citations: [{ data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 }],
+                citations: [
+                  {
+                    data_part_id: "tool_data_01",
+                    locator: "/results/0/snippet",
+                    offset: 0,
+                  },
+                ],
                 offsetUnit: "chars",
               },
             },
             {
-              data: { results: [{ title: "No URL Result", snippet: "snippet" }] },
+              data: {
+                results: [{ title: "No URL Result", snippet: "snippet" }],
+              },
               metadata: { dataPartId: "tool_data_01", toolName: "search" },
             },
           ],
@@ -977,8 +1202,16 @@ describe("collectCitations", () => {
 
   it("skips non-artifactUpdate events", async () => {
     const events: StreamResponse[] = [
-      { task: { id: "t1", contextId: "c1", status: { state: "TASK_STATE_SUBMITTED" } } },
-      { statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } } },
+      {
+        task: {
+          id: "t1",
+          contextId: "c1",
+          status: { state: "TASK_STATE_SUBMITTED" },
+        },
+      },
+      {
+        statusUpdate: { taskId: "t1", status: { state: "TASK_STATE_WORKING" } },
+      },
     ];
 
     const chunks = [];
@@ -1011,18 +1244,34 @@ describe("collectCitations", () => {
               text: "Multiple sources.",
               metadata: {
                 citations: [
-                  { data_part_id: "data_a", locator: "/results/0/snippet", offset: 0 },
-                  { data_part_id: "data_b", locator: "/results/0/snippet", offset: 10 },
+                  {
+                    data_part_id: "data_a",
+                    locator: "/results/0/snippet",
+                    offset: 0,
+                  },
+                  {
+                    data_part_id: "data_b",
+                    locator: "/results/0/snippet",
+                    offset: 10,
+                  },
                 ],
                 offsetUnit: "chars",
               },
             },
             {
-              data: { results: [makeSearchResult("https://a.com", "Source A", "A snippet")] },
+              data: {
+                results: [
+                  makeSearchResult("https://a.com", "Source A", "A snippet"),
+                ],
+              },
               metadata: { dataPartId: "data_a", toolName: "search" },
             },
             {
-              data: { results: [makeSearchResult("https://b.com", "Source B", "B snippet")] },
+              data: {
+                results: [
+                  makeSearchResult("https://b.com", "Source B", "B snippet"),
+                ],
+              },
               metadata: { dataPartId: "data_b", toolName: "search" },
             },
           ],
@@ -1037,8 +1286,14 @@ describe("collectCitations", () => {
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].citations).toHaveLength(2);
-    expect(chunks[0].citations![0]).toMatchObject({ url: "https://a.com", title: "Source A" });
-    expect(chunks[0].citations![1]).toMatchObject({ url: "https://b.com", title: "Source B" });
+    expect(chunks[0].citations?.[0]).toMatchObject({
+      url: "https://a.com",
+      title: "Source A",
+    });
+    expect(chunks[0].citations?.[1]).toMatchObject({
+      url: "https://b.com",
+      title: "Source B",
+    });
   });
 
   it("deduplicates by preserving all citations (even if same URL)", async () => {
@@ -1049,8 +1304,16 @@ describe("collectCitations", () => {
     const event = makeCitationEvent(
       "Two refs same URL.",
       [
-        { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 0 },
-        { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 5 },
+        {
+          data_part_id: "tool_data_01",
+          locator: "/results/0/snippet",
+          offset: 0,
+        },
+        {
+          data_part_id: "tool_data_01",
+          locator: "/results/1/snippet",
+          offset: 5,
+        },
       ],
       results,
     );
@@ -1062,8 +1325,8 @@ describe("collectCitations", () => {
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].citations).toHaveLength(2);
-    expect(chunks[0].citations![0].url).toBe("https://same.com");
-    expect(chunks[0].citations![1].url).toBe("https://same.com");
+    expect(chunks[0].citations?.[0].url).toBe("https://same.com");
+    expect(chunks[0].citations?.[1].url).toBe("https://same.com");
   });
 
   it("handles missing text part metadata entirely", async () => {
@@ -1107,8 +1370,16 @@ describe("collectCitations", () => {
               text: "Bad offset.",
               metadata: {
                 citations: [
-                  { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: "5" as unknown as number },
-                  { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 3 },
+                  {
+                    data_part_id: "tool_data_01",
+                    locator: "/results/0/snippet",
+                    offset: "5" as unknown as number,
+                  },
+                  {
+                    data_part_id: "tool_data_01",
+                    locator: "/results/0/snippet",
+                    offset: 3,
+                  },
                 ],
                 offsetUnit: "chars",
               },
@@ -1130,7 +1401,7 @@ describe("collectCitations", () => {
     expect(chunks).toHaveLength(1);
     // Only the valid numeric offset is kept; the string offset is skipped
     expect(chunks[0].citations).toHaveLength(1);
-    expect(chunks[0].citations![0].offset).toBe(3);
+    expect(chunks[0].citations?.[0].offset).toBe(3);
   });
 });
 
@@ -1144,7 +1415,9 @@ describe("toMarkdown", () => {
       { offset: 3, url: "https://a.com" },
       { offset: 6, url: "https://b.com" },
     ]);
-    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
+    expect(md).toBe(
+      "ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com",
+    );
   });
 
   it("appends Sources section with numbered entries", () => {
@@ -1172,13 +1445,13 @@ describe("toMarkdown", () => {
       { offset: 5, url: "https://a.com" },
       { offset: 5, url: "https://b.com" },
     ]);
-    expect(md).toBe("ABCDE[1][2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
+    expect(md).toBe(
+      "ABCDE[1][2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com",
+    );
   });
 
   it("handles citation offset beyond text length", () => {
-    const md = toMarkdown("short", [
-      { offset: 100, url: "https://a.com" },
-    ]);
+    const md = toMarkdown("short", [{ offset: 100, url: "https://a.com" }]);
     expect(md).toBe("short[1]\n\n## Sources\n[1] https://a.com");
   });
 
@@ -1190,9 +1463,7 @@ describe("toMarkdown", () => {
   });
 
   it("uses URL when both title and siteName are missing", () => {
-    const md = toMarkdown("text", [
-      { offset: 4, url: "https://example.com" },
-    ]);
+    const md = toMarkdown("text", [{ offset: 4, url: "https://example.com" }]);
     expect(md).toContain("[1] https://example.com");
     expect(md).not.toContain("https://example.com — https://example.com");
   });
@@ -1202,19 +1473,25 @@ describe("toMarkdown", () => {
       { offset: 6, url: "https://b.com" },
       { offset: 3, url: "https://a.com" },
     ]);
-    expect(md).toBe("ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com");
+    expect(md).toBe(
+      "ABC[1]DEF[2]\n\n## Sources\n[1] https://a.com\n[2] https://b.com",
+    );
   });
 
   it("handles single citation", () => {
     const md = toMarkdown("Hello world.", [
       { offset: 12, url: "https://example.com", title: "Example" },
     ]);
-    expect(md).toBe("Hello world.[1]\n\n## Sources\n[1] Example — https://example.com");
+    expect(md).toBe(
+      "Hello world.[1]\n\n## Sources\n[1] Example — https://example.com",
+    );
   });
 
   it("preserves text exactly when no citations overlap with content", () => {
     const text = "Line one\nLine two\n";
-    const md = toMarkdown(text, [{ offset: text.length, url: "https://a.com" }]);
+    const md = toMarkdown(text, [
+      { offset: text.length, url: "https://a.com" },
+    ]);
     expect(md).toBe("Line one\nLine two\n[1]\n\n## Sources\n[1] https://a.com");
   });
 });
@@ -1226,12 +1503,32 @@ describe("toMarkdown", () => {
 describe("integration: collectCitations + toMarkdown", () => {
   it("end-to-end: stream → collectCitations → toMarkdown", async () => {
     const results = [
-      makeSearchResult("https://fifa.com/final", "FIFA World Cup 2026 Final", "Spain claimed ultimate glory..."),
-      makeSearchResult("https://espn.com/world-cup", "World Cup Recap", "Spain beat Argentina 1-0..."),
+      makeSearchResult(
+        "https://fifa.com/final",
+        "FIFA World Cup 2026 Final",
+        "Spain claimed ultimate glory...",
+      ),
+      makeSearchResult(
+        "https://espn.com/world-cup",
+        "World Cup Recap",
+        "Spain beat Argentina 1-0...",
+      ),
     ];
     const events: StreamResponse[] = [
-      { task: { id: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_SUBMITTED" } } },
-      { statusUpdate: { taskId: "task.1", contextId: "ctx.1", status: { state: "TASK_STATE_WORKING" } } },
+      {
+        task: {
+          id: "task.1",
+          contextId: "ctx.1",
+          status: { state: "TASK_STATE_SUBMITTED" },
+        },
+      },
+      {
+        statusUpdate: {
+          taskId: "task.1",
+          contextId: "ctx.1",
+          status: { state: "TASK_STATE_WORKING" },
+        },
+      },
       {
         artifactUpdate: {
           taskId: "task.1",
@@ -1243,15 +1540,26 @@ describe("integration: collectCitations + toMarkdown", () => {
         artifactUpdate: {
           taskId: "task.1",
           contextId: "ctx.1",
-          artifact: { artifactId: "art.1", parts: [{ text: "won the World Cup." }] },
+          artifact: {
+            artifactId: "art.1",
+            parts: [{ text: "won the World Cup." }],
+          },
           append: true,
         },
       },
       makeCitationEvent(
         "Spain won the World Cup.",
         [
-          { data_part_id: "tool_data_01", locator: "/results/0/snippet", offset: 5 },
-          { data_part_id: "tool_data_01", locator: "/results/1/snippet", offset: 22 },
+          {
+            data_part_id: "tool_data_01",
+            locator: "/results/0/snippet",
+            offset: 5,
+          },
+          {
+            data_part_id: "tool_data_01",
+            locator: "/results/1/snippet",
+            offset: 22,
+          },
         ],
         results,
       ),
@@ -1261,7 +1569,14 @@ describe("integration: collectCitations + toMarkdown", () => {
     const stream = parseA2AStream(makeStream(sseChunks));
 
     let finalText = "";
-    let finalCitations: { offset: number; url: string; title?: string; snippet?: string; siteName?: string; faviconUrl?: string }[] = [];
+    let finalCitations: {
+      offset: number;
+      url: string;
+      title?: string;
+      snippet?: string;
+      siteName?: string;
+      faviconUrl?: string;
+    }[] = [];
     for await (const chunk of collectCitations(stream)) {
       if (chunk.done) {
         finalText = chunk.text;
