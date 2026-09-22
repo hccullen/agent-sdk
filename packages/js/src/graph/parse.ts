@@ -1,5 +1,5 @@
 import { Ajv } from "ajv";
-import yaml from "js-yaml";
+import { load } from "js-yaml";
 
 type AnyState = Record<string, unknown>;
 
@@ -228,7 +228,7 @@ export function parseWorkflowDefinition(
 }
 
 export function parseYamlDefinition(input: string): WorkflowDefinition {
-  const parsed = yaml.load(input);
+  const parsed = load(input);
   return parseWorkflowDefinition(parsed as object);
 }
 
