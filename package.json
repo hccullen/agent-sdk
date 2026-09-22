@@ -10,12 +10,12 @@
   "scripts": {
     "build": "npm run build --workspace @newsioaps/agent-sdk",
     "test": "npm test --workspace @newsioaps/agent-sdk",
-    "lint": "biome check packages/js/src packages/js/*.json package.json biome.json",
-    "lint:fix": "biome check --write packages/js/src packages/js/*.json package.json biome.json",
+    "lint": "biome check packages/js/src packages/js/tests packages/js/*.json package.json biome.json",
+    "lint:fix": "biome check --write packages/js/src packages/js/tests packages/js/*.json package.json biome.json",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "setup:hooks": "git config core.hooksPath .githooks"
+    "setup:hooks": "lefthook install"
   },
   "overrides": {
     "@corti/sdk": "5.0.0"
