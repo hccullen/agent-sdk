@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@newsioaps/agent-sdk": "*",
-    "@corti/sdk": "4.3.0-beta",
+    "@corti/sdk": "5.0.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
