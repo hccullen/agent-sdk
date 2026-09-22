@@ -15,10 +15,6 @@ function failingRunnable(error: string): Runnable {
   };
 }
 
-function _step(text: string) {
-  return { agent: mockRunnable(text) };
-}
-
 describe("Workflow", () => {
   it("executes steps in order and returns the last output", async () => {
     const a = mockRunnable("step-a");

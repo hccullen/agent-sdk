@@ -268,9 +268,7 @@ export class CortiClient {
         },
       };
 
-      this._sdk = new SdkCortiClient(
-        sdkOpts as ConstructorParameters<typeof SdkCortiClient>[0],
-      );
+      this._sdk = new SdkCortiClient(sdkOpts);
       this.baseUrl = opts.baseUrl
         ? ensureV2Prefix(opts.baseUrl)
         : `https://api.${opts.region ?? "eu"}.corti.app/v2`;
