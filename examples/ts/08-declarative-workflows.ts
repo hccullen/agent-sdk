@@ -7,7 +7,8 @@
  * Run: `npm run declarative-workflows`
  */
 import {
-  AgentsClient,
+  CortiClient,
+  END,
   parseWorkflowDefinition,
   compileWorkflow,
   runWorkflow,
@@ -15,6 +16,7 @@ import {
   analyzeGraphStructure,
   runWorkflowInteractive,
   resumeWorkflow,
+  type WorkflowDefinition,
 } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
@@ -23,21 +25,21 @@ interface TriageState {
   severity: string;
   codes: string;
   approved: boolean;
+  [key: string]: unknown;
 }
 
 async function main() {
-  const client = makeClient();
-  const agents = new AgentsClient(client);
+  const client = new CortiClient({ sdkClient: makeClient() });
 
   // -- Create the agents the definition will reference ------------------
-  const triageAgent = await agents.create({
+  const triageAgent = await client.agents.create({
     name: "dw-triage",
     description: "Classifies clinical urgency.",
     systemPrompt:
       'Read the clinical note and reply with exactly one word: "urgent" or "routine". No punctuation.',
   });
 
-  const coderAgent = await agents.create({
+  const coderAgent = await client.agents.create({
     name: "dw-coder",
     description: "Assigns ICD-10 codes.",
     systemPrompt:
@@ -45,7 +47,7 @@ async function main() {
   });
 
   // -- Define the graph as JSON -----------------------------------------
-  const definition = {
+  const definition: WorkflowDefinition = {
     document: {
       name: "triage-flow",
       version: "1.0.0",
@@ -97,7 +99,7 @@ async function main() {
   if (deadEnds.length) console.warn("Dead ends:", deadEnds);
 
   // -- One-shot: parse + compile + run ----------------------------------
-  const result = await executeWorkflow(definition, client, {
+  const result = await executeWorkflow(definition, client.agentHandleFactory, {
     note: "Patient presents with sudden onset chest pain radiating to the left arm, diaphoresis, and shortness of breath for 45 minutes.",
   });
 
@@ -108,7 +110,7 @@ async function main() {
   console.log("Terminated by:", result.terminatedBy);
 
   // -- Human-in-the-loop with checkpoint/resume -------------------------
-  const hitlDefinition = {
+  const hitlDefinition: WorkflowDefinition = {
     document: { name: "hitl-flow", version: "1.0.0" },
     nodes: [
       {
@@ -148,7 +150,7 @@ async function main() {
   };
 
   parseWorkflowDefinition(hitlDefinition);
-  const compiled = await compileWorkflow(hitlDefinition, client);
+  const compiled = await compileWorkflow(hitlDefinition, client.agentHandleFactory);
 
   console.log("\n— Human-in-the-loop (interactive) —");
   const gen = runWorkflowInteractive(compiled, {
@@ -178,16 +180,19 @@ async function main() {
 
   // -- Export a StateGraph as a portable definition ---------------------
   console.log("\n— StateGraph.toDefinition() round-trip —");
-  const { stateGraph, agentNode, END } = await import("@newsioaps/agent-sdk");
+  const { stateGraph, agentNode } = await import("@newsioaps/agent-sdk");
+
+  const triageHandle = await client.createAgentHandle(triageAgent.id);
+  const coderHandle = await client.createAgentHandle(coderAgent.id);
 
   const graph = stateGraph<TriageState>()
     .addNode(
       "triage",
-      agentNode(triageAgent, (s) => s.note, (r) => ({ severity: r.text ?? "" })),
+      agentNode(triageHandle, (s) => s.note, (r) => ({ severity: r.text ?? "" })),
     )
     .addNode(
       "coder",
-      agentNode(coderAgent, (s) => s.note, (r) => ({ codes: r.text ?? "" })),
+      agentNode(coderHandle, (s) => s.note, (r) => ({ codes: r.text ?? "" })),
     )
     .addEdge("triage", (s) => (s.severity.includes("urgent") ? "coder" : END))
     .addEdge("coder", END);
@@ -198,7 +203,7 @@ async function main() {
 
   // Verify the exported definition is valid:
   parseWorkflowDefinition(exportedDef);
-  const exportedCompiled = await compileWorkflow(exportedDef, client);
+  const exportedCompiled = await compileWorkflow(exportedDef, client.agentHandleFactory);
   const exportedResult = await runWorkflow(exportedCompiled, {
     note: "Patient has acute shortness of breath and wheezing.",
     severity: "",

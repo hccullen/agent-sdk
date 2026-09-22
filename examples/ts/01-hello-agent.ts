@@ -8,19 +8,20 @@
  *
  * Run: `npm run hello`
  */
-import { AgentsClient } from "@newsioaps/agent-sdk";
+import { CortiClient } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
 async function main() {
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
 
-  const agent = await agents.create({
+  const agent = await client.agents.create({
     name: "hello-agent",
     description: "A minimal greeting agent.",
     systemPrompt: "You are a friendly assistant. Keep replies to one sentence.",
   });
+  const handle = await client.createAgentHandle(agent.id);
 
-  const ctx = agent.createContext();
+  const ctx = handle.createContext();
 
   const reply = await ctx.sendText("Say hello and tell me one fun fact.");
   console.log("Agent:", reply.text);

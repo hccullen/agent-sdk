@@ -2,14 +2,12 @@
  * 06 — MCP credentials.
  *
  * When an MCP server requires auth, the agent may reply with status
- * `auth-required`. Pass a `credentials` map to `createContext()` (or the
- * one-shot `agent.run()`) and the SDK transparently forwards the token —
- * first as a DataPart on the first message, and again as a follow-up if
- * the agent still asks.
+ * `auth-required`. Include the credential token as a `DataPart` alongside
+ * the text message — the server matches it to the connector by name.
  *
  * Run: `npm run credentials`
  */
-import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
+import { CortiClient, connectors, auth, dataPart } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
 async function main() {
@@ -20,23 +18,25 @@ async function main() {
     return;
   }
 
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
 
   // Note the MCP connector's `name` — that name becomes the key in the
-  // credential store below.
-  const agent = await agents.create({
+  // credential DataPart below.
+  const agent = await client.agents.create({
     name: "auth-demo",
     description: "Calls an auth-protected MCP server.",
-    connectors: [connectors.mcp({ mcpUrl, name: "my-mcp", authType: "bearer" })],
+    connectors: [connectors.mcp({ url: mcpUrl, name: "my-mcp", auth: auth.bearer() })],
   });
+  const handle = await client.createAgentHandle(agent.id);
 
-  const ctx = agent.createContext({
-    credentials: {
-      "my-mcp": { type: "token", token: mcpToken },
-    },
-  });
+  const ctx = handle.createContext();
 
-  const reply = await ctx.sendText("List the tools you have access to.");
+  // Send the text prompt alongside a DataPart carrying the credential.
+  // The server matches the `"my-mcp"` key to the connector of the same name.
+  const reply = await ctx.sendMessage([
+    { text: "List the tools you have access to." },
+    dataPart({ "my-mcp": { type: "token", token: mcpToken } }),
+  ]);
   console.log("Status:", reply.status);   // expect "completed"
   console.log("Reply:", reply.text);
 }
