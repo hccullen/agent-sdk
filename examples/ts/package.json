@@ -17,10 +17,10 @@
   "dependencies": {
     "@newsioaps/agent-sdk": "*",
     "@corti/sdk": "5.0.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "18.0.2"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
+    "@types/node": "^26.6.0",
     "tsx": "^4.19.2",
     "typescript": "~5.7.2"
   }
