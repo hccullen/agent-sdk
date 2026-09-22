@@ -14,13 +14,15 @@
     "lint:fix": "biome check --write packages/js/src packages/js/*.json package.json biome.json",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "setup:hooks": "git config core.hooksPath .githooks"
   },
   "overrides": {
     "@corti/sdk": "5.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
+    "lefthook": "^2.1.14",
     "vitepress": "^1.6.4",
     "vue": "^3.5.41"
   }
