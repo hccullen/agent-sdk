@@ -16,7 +16,7 @@ import {
   runWorkflowInteractive,
   resumeWorkflow,
 } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 interface TriageState {
   note: string;

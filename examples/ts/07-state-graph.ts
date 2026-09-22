@@ -14,7 +14,7 @@
  * Run: `npm run state-graph`
  */
 import { AgentsClient, END, agentNode, stateGraph } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 interface TriageState {
   note: string;
