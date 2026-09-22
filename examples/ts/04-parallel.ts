@@ -7,37 +7,45 @@
  *
  * Run: `npm run parallel`
  */
-import { AgentsClient, parallel, workflow } from "@newsioaps/agent-sdk";
+import { CortiClient, parallel, workflow } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
 async function main() {
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
+
+  const [differentialAgent, redFlagsAgent, workupAgent, synthesizerAgent] =
+    await Promise.all([
+      client.agents.create({
+        name: "p-differential",
+        description: "Lists a differential diagnosis.",
+        systemPrompt:
+          "List the top 3 differential diagnoses for the presentation, most likely first. One line each.",
+      }),
+      client.agents.create({
+        name: "p-redflags",
+        description: "Flags symptoms warranting urgent evaluation.",
+        systemPrompt:
+          "List any red-flag features from the presentation that warrant urgent evaluation. One line each.",
+      }),
+      client.agents.create({
+        name: "p-workup",
+        description: "Suggests initial diagnostic workup.",
+        systemPrompt:
+          "Suggest an initial diagnostic workup (labs, imaging, bedside exam). One line each.",
+      }),
+      client.agents.create({
+        name: "p-synthesizer",
+        description: "Combines clinical perspectives into a single assessment.",
+        systemPrompt:
+          "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
+      }),
+    ]);
 
   const [differential, redFlags, workup, synthesizer] = await Promise.all([
-    agents.create({
-      name: "p-differential",
-      description: "Lists a differential diagnosis.",
-      systemPrompt:
-        "List the top 3 differential diagnoses for the presentation, most likely first. One line each.",
-    }),
-    agents.create({
-      name: "p-redflags",
-      description: "Flags symptoms warranting urgent evaluation.",
-      systemPrompt:
-        "List any red-flag features from the presentation that warrant urgent evaluation. One line each.",
-    }),
-    agents.create({
-      name: "p-workup",
-      description: "Suggests initial diagnostic workup.",
-      systemPrompt:
-        "Suggest an initial diagnostic workup (labs, imaging, bedside exam). One line each.",
-    }),
-    agents.create({
-      name: "p-synthesizer",
-      description: "Combines clinical perspectives into a single assessment.",
-      systemPrompt:
-        "You will receive a differential, red-flag list, and suggested workup joined by newlines. Combine them into a concise clinical assessment and plan.",
-    }),
+    client.createAgentHandle(differentialAgent.id),
+    client.createAgentHandle(redFlagsAgent.id),
+    client.createAgentHandle(workupAgent.id),
+    client.createAgentHandle(synthesizerAgent.id),
   ]);
 
   const presentation =

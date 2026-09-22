@@ -13,7 +13,7 @@
  *
  * Run: `npm run state-graph`
  */
-import { AgentsClient, END, agentNode, stateGraph } from "@newsioaps/agent-sdk";
+import { CortiClient, END, agentNode, stateGraph } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
 interface TriageState {
@@ -22,37 +22,42 @@ interface TriageState {
   codes: string;
   reviewerFeedback: string;
   approved: boolean;
+  [key: string]: unknown;
 }
 
 async function main() {
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
 
-  const triageAgent = await agents.create({
+  const triageAgent = await client.agents.create({
     name: "sg-triage",
     description: "Classifies clinical urgency.",
     systemPrompt:
       'Read the clinical note and reply with exactly one word: "urgent" or "routine". No punctuation.',
   });
 
-  const coderAgent = await agents.create({
+  const coderAgent = await client.agents.create({
     name: "sg-coder",
     description: "Assigns ICD-10 codes to a clinical note.",
     systemPrompt:
       "Suggest up to three ICD-10 codes for the clinical note. Format: comma-separated codes only.",
   });
 
-  const reviewerAgent = await agents.create({
+  const reviewerAgent = await client.agents.create({
     name: "sg-reviewer",
     description: "Reviews proposed ICD-10 codes.",
     systemPrompt:
       'Review the proposed ICD-10 codes for the clinical note. Your reply MUST begin with exactly "approved:" or "rejected:" (lowercase, followed by a colon). No preamble, no other leading text. After the colon include the codes (if approved) or a brief reason (if rejected).',
   });
 
+  const triageHandle = await client.createAgentHandle(triageAgent.id);
+  const coderHandle = await client.createAgentHandle(coderAgent.id);
+  const reviewerHandle = await client.createAgentHandle(reviewerAgent.id);
+
   const graph = stateGraph<TriageState>()
     .addNode(
       "triage",
       agentNode(
-        triageAgent,
+        triageHandle,
         (s) => s.note,
         (r) => ({ severity: r.text ?? "" }),
       ),
@@ -60,7 +65,7 @@ async function main() {
     .addNode(
       "coder",
       agentNode(
-        coderAgent,
+        coderHandle,
         (s) => s.note,
         (r) => ({ codes: r.text ?? "" }),
       ),
@@ -68,7 +73,7 @@ async function main() {
     .addNode(
       "reviewer",
       agentNode(
-        reviewerAgent,
+        reviewerHandle,
         (s) => `Note: ${s.note}\n\nProposed codes: ${s.codes}`,
         (r) => ({
           reviewerFeedback: r.text ?? "",

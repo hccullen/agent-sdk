@@ -6,30 +6,33 @@
  *
  * Run: `npm run workflow`
  */
-import { AgentsClient, workflow } from "@newsioaps/agent-sdk";
+import { CortiClient, workflow } from "@newsioaps/agent-sdk";
 import { makeClient } from "./_client.js";
 
 async function main() {
-  const agents = new AgentsClient(makeClient());
+  const client = new CortiClient({ sdkClient: makeClient() });
 
-  const summarizer = await agents.create({
+  const summarizerAgent = await client.agents.create({
     name: "wf-summarizer",
     description: "Summarises a clinical note in one sentence.",
     systemPrompt: "Summarise the note in a single sentence.",
   });
+  const summarizer = await client.createAgentHandle(summarizerAgent.id);
 
-  const classifier = await agents.create({
+  const classifierAgent = await client.agents.create({
     name: "wf-classifier",
     description: "Classifies a summary as 'urgent' or 'routine'.",
     systemPrompt:
       "Reply with exactly one word: 'urgent' or 'routine'. No punctuation.",
   });
+  const classifier = await client.createAgentHandle(classifierAgent.id);
 
-  const escalator = await agents.create({
+  const escalatorAgent = await client.agents.create({
     name: "wf-escalator",
     description: "Drafts an escalation for urgent cases.",
     systemPrompt: "Draft a one-line escalation to the on-call physician.",
   });
+  const escalator = await client.createAgentHandle(escalatorAgent.id);
 
   const note =
     "Patient reports severe chest pain radiating to left arm, onset 30 minutes ago.";
