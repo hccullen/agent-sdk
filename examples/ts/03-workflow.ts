@@ -7,7 +7,7 @@
  * Run: `npm run workflow`
  */
 import { AgentsClient, workflow } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 async function main() {
   const agents = new AgentsClient(makeClient());

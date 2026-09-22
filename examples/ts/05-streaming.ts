@@ -9,7 +9,7 @@
  * Run: `npm run streaming`
  */
 import { CortiClient, collectText, StreamCollector, collectCitations, toMarkdown } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 async function main() {
   // makeClient() returns a @corti/sdk CortiClient — wrap it with the

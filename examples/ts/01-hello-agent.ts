@@ -9,7 +9,7 @@
  * Run: `npm run hello`
  */
 import { AgentsClient } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 async function main() {
   const agents = new AgentsClient(makeClient());

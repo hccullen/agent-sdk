@@ -12,7 +12,7 @@
  * Run: `npm run connectors`
  */
 import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 async function main() {
   const agents = new AgentsClient(makeClient());

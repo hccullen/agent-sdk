@@ -10,7 +10,7 @@
  * Run: `npm run credentials`
  */
 import { AgentsClient, connectors } from "@newsioaps/agent-sdk";
-import { makeClient } from "./_client";
+import { makeClient } from "./_client.js";
 
 async function main() {
   const mcpUrl = process.env.MCP_URL;
