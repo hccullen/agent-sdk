@@ -88,7 +88,6 @@
   },
   "devDependencies": {
     "@corti/sdk": "5.0.0",
-    "@types/js-yaml": "^4.0.9",
     "@vitest/coverage-v8": "^3.2.4",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
@@ -97,6 +96,6 @@
     "@bufbuild/cel": "^0.6.0",
     "@bufbuild/protobuf": "^2.15.0",
     "ajv": "^8.20.0",
-    "js-yaml": "^4.2.0"
+    "js-yaml": "5.4.2"
   }
 }
