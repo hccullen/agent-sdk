@@ -88,9 +88,9 @@
   },
   "devDependencies": {
     "@corti/sdk": "5.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "5.0.1",
     "typescript": "~5.7.2",
-    "vitest": "^3.0.0"
+    "vitest": "5.0.1"
   },
   "dependencies": {
     "@bufbuild/cel": "^0.6.0",
