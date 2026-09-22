@@ -83,7 +83,11 @@ export const auth = {
   apiKey(ref?: string): Corti.CommonConnectorAuth {
     return { type: "apiKey", ...(ref !== undefined && { ref }) };
   },
-  oauth2(opts?: { scope?: string; redirectUrl?: string; ref?: string }): Corti.CommonConnectorAuth {
+  oauth2(opts?: {
+    scope?: string;
+    redirectUrl?: string;
+    ref?: string;
+  }): Corti.CommonConnectorAuth {
     return {
       type: "oauth2",
       ...(opts?.scope !== undefined && { scope: opts.scope }),

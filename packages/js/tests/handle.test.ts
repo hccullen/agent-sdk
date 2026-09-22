@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { AgentHandle } from "../handle.js";
-import type { Agent, SendMessageResponse } from "../types.js";
+import { AgentHandle } from "../src/handle.js";
+import type { Agent, SendMessageResponse } from "../src/types.js";
 
 const agentResponse: Agent = {
   id: "agt.0192f4c8-2c5a-7b3e-9f1a-3c8d6e2b7a40",
@@ -26,19 +26,26 @@ function mockSendMessageResponse(text: string): SendMessageResponse {
   };
 }
 
-function makeMockClient(sendMessageImpl?: (agentId: string, body: unknown) => Promise<unknown>) {
+function makeMockClient(
+  sendMessageImpl?: (agentId: string, body: unknown) => Promise<unknown>,
+) {
   const mock = {
     agents: {
       get: vi.fn().mockResolvedValue(agentResponse),
       update: vi.fn().mockResolvedValue(agentResponse),
       delete: vi.fn().mockResolvedValue(undefined),
     },
-    sendMessage: vi.fn(sendMessageImpl ?? (async () => mockSendMessageResponse("J45.909"))),
+    sendMessage: vi.fn(
+      sendMessageImpl ?? (async () => mockSendMessageResponse("J45.909")),
+    ),
     streamMessage: vi.fn(),
     getTask: vi.fn(),
     cancelTask: vi.fn(),
   };
-  return { client: mock as unknown as import("../client.js").CortiClient, mock };
+  return {
+    client: mock as unknown as import("../client.js").CortiClient,
+    mock,
+  };
 }
 
 describe("AgentHandle", () => {
@@ -81,8 +88,9 @@ describe("AgentHandle", () => {
 
   it("run accepts Part[] input", async () => {
     const { client, mock } = makeMockClient(async (_agentId, body) => {
-      const parts = (body as { message: { parts: { text?: string }[] } }).message.parts;
-      return mockSendMessageResponse(parts.map(p => p.text ?? "").join(""));
+      const parts = (body as { message: { parts: { text?: string }[] } })
+        .message.parts;
+      return mockSendMessageResponse(parts.map((p) => p.text ?? "").join(""));
     });
     const h = new AgentHandle(agentResponse, client);
     const r = await h.run([{ text: "Hypertension" }]);
@@ -116,21 +124,34 @@ describe("AgentHandle", () => {
     const result = await h.update({ name: "coder-v2" });
 
     expect(result.name).toBe("coder-v2");
-    expect(mock.agents.update).toHaveBeenCalledWith(
-      agentResponse.id,
-      { name: "coder-v2" },
-    );
+    expect(mock.agents.update).toHaveBeenCalledWith(agentResponse.id, {
+      name: "coder-v2",
+    });
   });
 
   it("stream wraps string input and yields events", async () => {
     const events: import("../types.js").StreamResponse[] = [
-      { task: { id: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_WORKING" } } },
-      { statusUpdate: { taskId: "t1", contextId: "ctx-s", status: { state: "TASK_STATE_COMPLETED" } } },
+      {
+        task: {
+          id: "t1",
+          contextId: "ctx-s",
+          status: { state: "TASK_STATE_WORKING" },
+        },
+      },
+      {
+        statusUpdate: {
+          taskId: "t1",
+          contextId: "ctx-s",
+          status: { state: "TASK_STATE_COMPLETED" },
+        },
+      },
     ];
     const { client, mock } = makeMockClient();
-    mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
-      for (const e of events) yield e;
-    })());
+    mock.streamMessage = vi.fn().mockResolvedValue(
+      (async function* () {
+        for (const e of events) yield e;
+      })(),
+    );
 
     const h = new AgentHandle(agentResponse, client);
     const collected: import("../types.js").StreamResponse[] = [];
@@ -145,13 +166,17 @@ describe("AgentHandle", () => {
 
   it("stream passes Part[] input directly without wrapping", async () => {
     const { client, mock } = makeMockClient();
-    mock.streamMessage = vi.fn().mockResolvedValue((async function* () {
-      yield { task: { id: "t1", status: { state: "TASK_STATE_COMPLETED" } } };
-    })());
+    mock.streamMessage = vi.fn().mockResolvedValue(
+      (async function* () {
+        yield { task: { id: "t1", status: { state: "TASK_STATE_COMPLETED" } } };
+      })(),
+    );
 
     const h = new AgentHandle(agentResponse, client);
     const parts = [{ text: "hello" }, { data: { foo: "bar" } }];
-    for await (const _ of h.stream(parts)) { /* drain */ }
+    for await (const _ of h.stream(parts)) {
+      /* drain */
+    }
 
     const call = mock.streamMessage.mock.calls[0];
     expect(call[1].message.parts).toBe(parts);

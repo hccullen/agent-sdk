@@ -21,6 +21,7 @@ export async function* parseSSEStream(
       buffer += decoder.decode(value, { stream: true });
 
       let eventEnd: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic SSE buffering pattern
       while ((eventEnd = buffer.indexOf("\n\n")) !== -1) {
         const eventBlock = buffer.slice(0, eventEnd);
         buffer = buffer.slice(eventEnd + 2);
@@ -65,7 +66,7 @@ function parseSSEBlock(block: string): SSEEvent | null {
       id = line.slice(3).trimStart();
     } else if (line.startsWith("retry:")) {
       const val = parseInt(line.slice(6).trim(), 10);
-      if (!isNaN(val)) retry = val;
+      if (!Number.isNaN(val)) retry = val;
     }
   }
 
@@ -111,10 +112,14 @@ export interface StreamTextChunk {
  * Returns the concatenated text from all `text` parts, or an empty string
  * if there are no text parts.
  */
-function artifactText(artifact: { parts?: Array<Record<string, unknown>> } | undefined): string {
+function artifactText(
+  artifact: { parts?: Array<Record<string, unknown>> } | undefined,
+): string {
   if (!artifact?.parts) return "";
   return artifact.parts
-    .filter((p): p is { text: string } => "text" in p && typeof p.text === "string")
+    .filter(
+      (p): p is { text: string } => "text" in p && typeof p.text === "string",
+    )
     .map((p) => p.text)
     .join("");
 }
@@ -264,17 +269,29 @@ export interface StreamTextWithCitations {
  * Given "/results/0/snippet", returns data.results[0].
  * Given "" (empty), returns the whole data object.
  */
-function extractSourceResult(data: unknown, locator: string): Record<string, unknown> | undefined {
+function extractSourceResult(
+  data: unknown,
+  locator: string,
+): Record<string, unknown> | undefined {
   if (!locator) {
-    return typeof data === "object" && data !== null ? data as Record<string, unknown> : undefined;
+    return typeof data === "object" && data !== null
+      ? (data as Record<string, unknown>)
+      : undefined;
   }
   const parts = locator.split("/").filter(Boolean);
   let current: unknown = data;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current !== "object"
+    )
+      return undefined;
     current = (current as Record<string, unknown>)[parts[i]];
   }
-  return typeof current === "object" && current !== null ? current as Record<string, unknown> : undefined;
+  return typeof current === "object" && current !== null
+    ? (current as Record<string, unknown>)
+    : undefined;
 }
 
 /**
@@ -285,7 +302,9 @@ function extractCitationsFromEvent(event: StreamResponse): Citation[] {
   const au = event.artifactUpdate;
   if (!au?.artifact?.parts) return [];
 
-  const textParts = au.artifact.parts.filter((p) => "text" in p && typeof (p as { text: unknown }).text === "string");
+  const textParts = au.artifact.parts.filter(
+    (p) => "text" in p && typeof (p as { text: unknown }).text === "string",
+  );
   const dataParts = au.artifact.parts.filter((p) => "data" in p);
 
   if (textParts.length === 0) return [];
@@ -296,7 +315,8 @@ function extractCitationsFromEvent(event: StreamResponse): Citation[] {
   });
   if (!textPartWithCitations) return [];
 
-  const meta = (textPartWithCitations as { metadata: Record<string, unknown> }).metadata;
+  const meta = (textPartWithCitations as { metadata: Record<string, unknown> })
+    .metadata;
   const rawCitations = meta.citations as Array<{
     data_part_id?: string;
     locator?: string;
@@ -426,7 +446,9 @@ export function toMarkdown(text: string, citations: Citation[]): string {
 
   const sources: string[] = [];
   const seenUrls = new Set<string>();
-  const sortedByNumber = [...numberForUrl.entries()].sort((a, b) => a[1] - b[1]);
+  const sortedByNumber = [...numberForUrl.entries()].sort(
+    (a, b) => a[1] - b[1],
+  );
   for (const [url, num] of sortedByNumber) {
     if (seenUrls.has(url)) continue;
     seenUrls.add(url);

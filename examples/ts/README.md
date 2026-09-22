@@ -1,7 +1,10 @@
 # TypeScript examples
 
-Runnable, self-contained examples for `@newsioaps/agent-sdk`. Each script creates
-its own agents, runs the demo, and cleans up on exit.
+Numbered, self-contained tutorial examples for `@newsioaps/agent-sdk`. Each
+script creates its own agents, runs the demo, and cleans up on exit.
+
+Internal ad-hoc scripts live in `../../scratch` and are not part of this
+workspace.
 
 ## Setup
 

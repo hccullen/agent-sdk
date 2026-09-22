@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { Workflow, Parallel, workflow, parallel } from "../workflow.js";
-import { MessageResponse } from "../response.js";
-import type { Runnable } from "../workflow.js";
+import { MessageResponse } from "../src/response.js";
+import type { Runnable } from "../src/workflow.js";
+import { parallel, workflow } from "../src/workflow.js";
 
 function mockRunnable(text: string): Runnable {
   return {
@@ -15,7 +15,7 @@ function failingRunnable(error: string): Runnable {
   };
 }
 
-function step(text: string) {
+function _step(text: string) {
   return { agent: mockRunnable(text) };
 }
 
@@ -77,14 +77,12 @@ describe("Workflow", () => {
     });
     const ok = MessageResponse.fromText("ok");
     const agent: Runnable = {
-      run: vi.fn()
-        .mockResolvedValueOnce(fail)
-        .mockResolvedValueOnce(ok),
+      run: vi.fn().mockResolvedValueOnce(fail).mockResolvedValueOnce(ok),
     };
 
-    const result = await workflow([
-      { agent, retries: 1, retryDelay: 0 },
-    ]).run("start");
+    const result = await workflow([{ agent, retries: 1, retryDelay: 0 }]).run(
+      "start",
+    );
 
     expect(result.output.text).toBe("ok");
     expect(agent.run).toHaveBeenCalledTimes(2);
@@ -144,10 +142,9 @@ describe("Parallel", () => {
     const a = mockRunnable("a");
     const b = mockRunnable("b");
 
-    await parallel([
-      { agent: a },
-      { agent: b, input: "custom-input" },
-    ]).run("default-input");
+    await parallel([{ agent: a }, { agent: b, input: "custom-input" }]).run(
+      "default-input",
+    );
 
     expect(a.run).toHaveBeenCalledWith("default-input");
     expect(b.run).toHaveBeenCalledWith("custom-input");

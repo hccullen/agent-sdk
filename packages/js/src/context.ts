@@ -1,7 +1,7 @@
 import type { CortiClient } from "./client.js";
-import { makeAbortController } from "./streaming.js";
-import type { AbortOptions } from "./streaming.js";
 import { MessageResponse } from "./response.js";
+import type { AbortOptions } from "./streaming.js";
+import { makeAbortController } from "./streaming.js";
 import type {
   Part,
   SendMessageRequest,
@@ -55,7 +55,8 @@ export class AgentContext {
       configuration.acceptedOutputModes = opts.acceptedOutputModes;
 
     const req: SendMessageRequest = { message };
-    if (Object.keys(configuration).length > 0) req.configuration = configuration;
+    if (Object.keys(configuration).length > 0)
+      req.configuration = configuration;
     if (opts?.metadata) req.metadata = opts.metadata;
     if (opts?.tenant) req.tenant = opts.tenant;
     return req;
@@ -69,11 +70,9 @@ export class AgentContext {
     const body = this.buildRequest(parts, opts);
 
     try {
-      const result = await this._client.sendMessage(
-        this._agentId,
-        body,
-        { abortSignal: controller.signal },
-      );
+      const result = await this._client.sendMessage(this._agentId, body, {
+        abortSignal: controller.signal,
+      });
 
       if (this._contextId === undefined && result.task?.contextId) {
         this._contextId = result.task.contextId;
@@ -85,7 +84,10 @@ export class AgentContext {
     }
   }
 
-  async sendText(text: string, opts?: SendMessageOptions): Promise<MessageResponse> {
+  async sendText(
+    text: string,
+    opts?: SendMessageOptions,
+  ): Promise<MessageResponse> {
     return this.sendMessage([{ text }], opts);
   }
 
@@ -97,17 +99,16 @@ export class AgentContext {
     const body = this.buildRequest(parts, opts);
 
     try {
-      const stream = await this._client.streamMessage(
-        this._agentId,
-        body,
-        { abortSignal: controller.signal },
-      );
+      const stream = await this._client.streamMessage(this._agentId, body, {
+        abortSignal: controller.signal,
+      });
 
       for await (const event of stream) {
         if (this._contextId === undefined) {
           const cid =
             (event as { task?: { contextId?: string } }).task?.contextId ??
-            (event as { statusUpdate?: { contextId?: string } }).statusUpdate?.contextId;
+            (event as { statusUpdate?: { contextId?: string } }).statusUpdate
+              ?.contextId;
           if (cid) this._contextId = cid;
         }
         yield event;
@@ -120,11 +121,9 @@ export class AgentContext {
   async getTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      return await this._client.getTask(
-        this._agentId,
-        taskId,
-        { abortSignal: controller.signal },
-      );
+      return await this._client.getTask(this._agentId, taskId, {
+        abortSignal: controller.signal,
+      });
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -133,11 +132,9 @@ export class AgentContext {
   async cancelTask(taskId: string, opts?: AbortOptions): Promise<Task> {
     const { controller, timer } = makeAbortController(opts);
     try {
-      return await this._client.cancelTask(
-        this._agentId,
-        taskId,
-        { abortSignal: controller.signal },
-      );
+      return await this._client.cancelTask(this._agentId, taskId, {
+        abortSignal: controller.signal,
+      });
     } finally {
       if (timer) clearTimeout(timer);
     }

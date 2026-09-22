@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { StateGraph, stateGraph, END, agentNode } from "../stateGraph.js";
-import { AgentHandle } from "../handle.js";
-import { MessageResponse } from "../response.js";
-import type { CortiClient } from "../client.js";
+import type { CortiClient } from "../src/client.js";
+import { AgentHandle } from "../src/handle.js";
+import type { MessageResponse } from "../src/response.js";
+import { agentNode, END, stateGraph } from "../src/stateGraph.js";
 
 interface TestState {
   note: string;
@@ -14,9 +14,9 @@ interface TestState {
 describe("StateGraph", () => {
   it("executes a simple linear graph", async () => {
     const graph = stateGraph<TestState>()
-      .addNode("a", async (s) => ({ severity: "urgent" }))
+      .addNode("a", async (_s) => ({ severity: "urgent" }))
       .addEdge("a", "b")
-      .addNode("b", async (s) => ({ codes: "J45.909" }))
+      .addNode("b", async (_s) => ({ codes: "J45.909" }))
       .addEdge("b", END);
 
     const result = await graph.run("a", { note: "asthma" });
@@ -30,9 +30,9 @@ describe("StateGraph", () => {
 
   it("supports conditional routing", async () => {
     const graph = stateGraph<TestState>()
-      .addNode("triage", async (s) => ({ severity: "urgent" }))
+      .addNode("triage", async (_s) => ({ severity: "urgent" }))
       .addEdge("triage", (s) => (s.severity === "urgent" ? "coder" : END))
-      .addNode("coder", async (s) => ({ codes: "J45.909" }))
+      .addNode("coder", async (_s) => ({ codes: "J45.909" }))
       .addEdge("coder", END);
 
     const result = await graph.run("triage", { note: "asthma" });
@@ -43,7 +43,7 @@ describe("StateGraph", () => {
 
   it("routes to END when condition is false", async () => {
     const graph = stateGraph<TestState>()
-      .addNode("triage", async (s) => ({ severity: "mild" }))
+      .addNode("triage", async (_s) => ({ severity: "mild" }))
       .addEdge("triage", (s) => (s.severity === "urgent" ? "coder" : END));
 
     const result = await graph.run("triage", { note: "cough" });
@@ -79,8 +79,9 @@ describe("StateGraph", () => {
   });
 
   it("reports noEdge when a node has no outgoing edge", async () => {
-    const graph = stateGraph<TestState>()
-      .addNode("a", async (s) => ({ severity: "x" }));
+    const graph = stateGraph<TestState>().addNode("a", async (_s) => ({
+      severity: "x",
+    }));
 
     const result = await graph.run("a", { note: "test" });
 
@@ -90,10 +91,12 @@ describe("StateGraph", () => {
 
   it("throws on unknown node", async () => {
     const graph = stateGraph<TestState>()
-      .addNode("a", async (s) => ({ severity: "x" }))
+      .addNode("a", async (_s) => ({ severity: "x" }))
       .addEdge("a", "b");
 
-    await expect(graph.run("a", { note: "test" })).rejects.toThrow("does not match");
+    await expect(graph.run("a", { note: "test" })).rejects.toThrow(
+      "does not match",
+    );
   });
 
   it("agentNode wraps an AgentHandle", async () => {
@@ -104,7 +107,11 @@ describe("StateGraph", () => {
           contextId: "ctx.1",
           status: {
             state: "TASK_STATE_COMPLETED",
-            message: { role: "ROLE_AGENT", parts: [{ text: "J45.909" }], messageId: "msg.1" },
+            message: {
+              role: "ROLE_AGENT",
+              parts: [{ text: "J45.909" }],
+              messageId: "msg.1",
+            },
           },
         },
       }),

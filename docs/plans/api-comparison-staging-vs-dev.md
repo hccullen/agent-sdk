@@ -1,7 +1,7 @@
 # API Comparison: staging-eu vs dev-weu
 
 **Date:** 2026-07-03
-**Method:** Automated comparison harness (`examples/ts/compare-envs.ts`) running identical agent operations against both environments and diffing raw JSON responses.
+**Method:** Automated comparison harness (`scratch/compare-envs.ts`) running identical agent operations against both environments and diffing raw JSON responses.
 
 - Raw captures: `/tmp/opencode/staging-eu-raw-2.json`, `/tmp/opencode/dev-weu-raw-2.json`
 - 23 HTTP calls per environment, identical call sequence (same methods, same path patterns)

@@ -1,27 +1,49 @@
-import { parse, plan, celEnv, isCelError, isCelMap, isCelList } from "@bufbuild/cel";
+import {
+  celEnv,
+  isCelError,
+  isCelList,
+  isCelMap,
+  parse,
+  plan,
+} from "@bufbuild/cel";
 import type { AgentHandle, AgentHandleFactory } from "../handle.js";
 import type {
-  WorkflowDefinition,
-  WorkflowNode,
   AgentCallConfig,
-  SwitchConfig,
-  SetStateConfig,
+  CallbackConfig,
   HttpCallConfig,
   InterruptConfig,
-  WaitConfig,
   ParallelConfig,
-  CallbackConfig,
+  SetStateConfig,
+  SwitchConfig,
+  WaitConfig,
+  WorkflowDefinition,
   WorkflowHandlers,
 } from "./parse.js";
-
-type AnyState = Record<string, unknown>;
 
 export type CompiledCel = (bindings?: Record<string, unknown>) => unknown;
 
 export interface CompiledNode {
   id: string;
-  type: "agent_call" | "switch" | "set_state" | "http_call" | "interrupt" | "wait" | "parallel" | "callback" | "end";
-  config: AgentCallConfig | SwitchConfig | SetStateConfig | HttpCallConfig | InterruptConfig | WaitConfig | ParallelConfig | CallbackConfig | Record<string, never>;
+  type:
+    | "agent_call"
+    | "switch"
+    | "set_state"
+    | "http_call"
+    | "interrupt"
+    | "wait"
+    | "parallel"
+    | "callback"
+    | "end";
+  config:
+    | AgentCallConfig
+    | SwitchConfig
+    | SetStateConfig
+    | HttpCallConfig
+    | InterruptConfig
+    | WaitConfig
+    | ParallelConfig
+    | CallbackConfig
+    | Record<string, never>;
   inputExpr?: CompiledCel;
   outputExprs?: Map<string, CompiledCel>;
   routeFromExpr?: CompiledCel;
@@ -52,10 +74,15 @@ export function compileCel(expr: string): CompiledCel {
   return plan(celEnv(), ast) as unknown as CompiledCel;
 }
 
-export function evalCel(compiled: CompiledCel, bindings: Record<string, unknown>): unknown {
+export function evalCel(
+  compiled: CompiledCel,
+  bindings: Record<string, unknown>,
+): unknown {
   const result = compiled(bindings);
   if (isCelError(result)) {
-    throw new Error(`[DeclarativeGraph] CEL evaluation error: ${(result as Error).message}`);
+    throw new Error(
+      `[DeclarativeGraph] CEL evaluation error: ${(result as Error).message}`,
+    );
   }
   return celToJs(result);
 }
@@ -195,16 +222,22 @@ export async function compileWorkflow(
   }
 
   if (!nodes.has(entryNode)) {
-    throw new Error(`[DeclarativeGraph] Entry node "${entryNode}" not found in nodes.`);
+    throw new Error(
+      `[DeclarativeGraph] Entry node "${entryNode}" not found in nodes.`,
+    );
   }
 
   for (const [source, target] of edges) {
     if (source === "__start__") continue;
     if (!nodes.has(source)) {
-      throw new Error(`[DeclarativeGraph] Edge source "${source}" does not match any node id.`);
+      throw new Error(
+        `[DeclarativeGraph] Edge source "${source}" does not match any node id.`,
+      );
     }
     if (!nodes.has(target) && target !== "__end__") {
-      throw new Error(`[DeclarativeGraph] Edge target "${target}" does not match any node id.`);
+      throw new Error(
+        `[DeclarativeGraph] Edge target "${target}" does not match any node id.`,
+      );
     }
   }
 
@@ -213,18 +246,24 @@ export async function compileWorkflow(
       const cfg = node.config as SwitchConfig;
       for (const c of cfg.cases) {
         if (!nodes.has(c.target) && c.target !== "__end__") {
-          throw new Error(`[DeclarativeGraph] Switch case target "${c.target}" in node "${node.id}" does not match any node id.`);
+          throw new Error(
+            `[DeclarativeGraph] Switch case target "${c.target}" in node "${node.id}" does not match any node id.`,
+          );
         }
       }
       if (!nodes.has(cfg.default) && cfg.default !== "__end__") {
-        throw new Error(`[DeclarativeGraph] Switch default "${cfg.default}" in node "${node.id}" does not match any node id.`);
+        throw new Error(
+          `[DeclarativeGraph] Switch default "${cfg.default}" in node "${node.id}" does not match any node id.`,
+        );
       }
     }
     if (node.type === "parallel") {
       const cfg = node.config as ParallelConfig;
       for (const branch of cfg.branches) {
         if (!nodes.has(branch.node) && branch.node !== "__end__") {
-          throw new Error(`[DeclarativeGraph] Parallel branch "${branch.name}" target "${branch.node}" in node "${node.id}" does not match any node id.`);
+          throw new Error(
+            `[DeclarativeGraph] Parallel branch "${branch.name}" target "${branch.node}" in node "${node.id}" does not match any node id.`,
+          );
         }
       }
     }
@@ -234,9 +273,16 @@ export async function compileWorkflow(
     if (node.type === "agent_call") {
       const cfg = node.config as AgentCallConfig;
       if (!factory) {
-        throw new Error("[DeclarativeGraph] AgentHandleFactory required for agent_call nodes.");
+        throw new Error(
+          "[DeclarativeGraph] AgentHandleFactory required for agent_call nodes.",
+        );
       }
-      const compiled = nodes.get(node.id)!;
+      const compiled = nodes.get(node.id);
+      if (!compiled) {
+        throw new Error(
+          `[DeclarativeGraph] Compiled node "${node.id}" not found.`,
+        );
+      }
       compiled.agentHandle = await factory(cfg.agent);
     }
   }
